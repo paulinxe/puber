@@ -309,6 +309,7 @@ CREATE TABLE drivers (
     status VARCHAR(20) CHECK (status IN ('OFFLINE','AVAILABLE','BUSY')),
     current_lat DECIMAL(10,8),
     current_lng DECIMAL(11,8),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL
 );
 
@@ -327,7 +328,9 @@ CREATE TABLE rides (
     requested_at TIMESTAMPTZ NOT NULL,
     matched_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,
-    fare DECIMAL(10,2) NOT NULL
+    fare DECIMAL(10,2) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- driver_locations: audit trail / time-series
@@ -336,7 +339,9 @@ CREATE TABLE driver_locations (
     driver_id UUID REFERENCES drivers(id),
     lat DECIMAL(10,8) NOT NULL,
     lng DECIMAL(11,8) NOT NULL,
-    recorded_at TIMESTAMPTZ NOT NULL
+    recorded_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- fare_rules: static config, one row in V1
@@ -345,7 +350,9 @@ CREATE TABLE fare_rules (
     base_fare DECIMAL(10,2) NOT NULL,
     per_km DECIMAL(10,2) NOT NULL,
     per_minute DECIMAL(10,2) NOT NULL,
-    surge_multiplier DECIMAL(3,2) DEFAULT 1.00 NOT NULL
+    surge_multiplier DECIMAL(3,2) DEFAULT 1.00 NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
 
@@ -353,21 +360,21 @@ CREATE TABLE fare_rules (
 
 ```sql
 -- 10 demo drivers spread across the 4 km × 4 km Lisbon grid
-INSERT INTO drivers (id, name, status, current_lat, current_lng, updated_at) VALUES
-  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Driver 1', 'AVAILABLE', 38.712, -9.158, NOW()),
-  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12', 'Driver 2', 'AVAILABLE', 38.740, -9.130, NOW()),
-  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13', 'Driver 3', 'AVAILABLE', 38.720, -9.140, NOW()),
-  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14', 'Driver 4', 'AVAILABLE', 38.735, -9.155, NOW()),
-  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a15', 'Driver 5', 'AVAILABLE', 38.715, -9.125, NOW()),
-  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a16', 'Driver 6', 'OFFLINE',   38.730, -9.145, NOW()),
-  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a17', 'Driver 7', 'AVAILABLE', 38.742, -9.132, NOW()),
-  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a18', 'Driver 8', 'AVAILABLE', 38.710, -9.150, NOW()),
-  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a19', 'Driver 9', 'BUSY',      38.728, -9.138, NOW()),
-  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a1a', 'Driver 10','AVAILABLE', 38.718, -9.160, NOW());
+INSERT INTO drivers (id, name, status, current_lat, current_lng, created_at, updated_at) VALUES
+  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Driver 1', 'AVAILABLE', 38.712, -9.158, NOW(), NOW()),
+  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12', 'Driver 2', 'AVAILABLE', 38.740, -9.130, NOW(), NOW()),
+  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13', 'Driver 3', 'AVAILABLE', 38.720, -9.140, NOW(), NOW()),
+  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14', 'Driver 4', 'AVAILABLE', 38.735, -9.155, NOW(), NOW()),
+  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a15', 'Driver 5', 'AVAILABLE', 38.715, -9.125, NOW(), NOW()),
+  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a16', 'Driver 6', 'OFFLINE',   38.730, -9.145, NOW(), NOW()),
+  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a17', 'Driver 7', 'AVAILABLE', 38.742, -9.132, NOW(), NOW()),
+  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a18', 'Driver 8', 'AVAILABLE', 38.710, -9.150, NOW(), NOW()),
+  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a19', 'Driver 9', 'BUSY',      38.728, -9.138, NOW(), NOW()),
+  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a1a', 'Driver 10','AVAILABLE', 38.718, -9.160, NOW(), NOW());
 
 -- One fare rule
-INSERT INTO fare_rules (base_fare, per_km, per_minute, surge_multiplier)
-  VALUES (2.50, 1.20, 0.30, 1.00);
+INSERT INTO fare_rules (base_fare, per_km, per_minute, surge_multiplier, created_at, updated_at)
+  VALUES (2.50, 1.20, 0.30, 1.00, NOW(), NOW());
 ```
 
 ### V2 Migration (Example — Week 4)

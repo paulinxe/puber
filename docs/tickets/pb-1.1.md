@@ -166,7 +166,7 @@ Since Gradle will **not** be installed on the host machine, the Wrapper files fo
 
 ## Explicitly out of scope for this ticket
 
-- Flyway migrations, database schema, JPA entities, or repositories.
+- Flyway migrations, database schema, JDBC repositories, or domain records.
 - Business endpoints (`POST /rides`, `GET /rides/{id}`, `POST /drivers/{id}/location`, etc.).
 - Inter-service HTTP clients or internal endpoints (`/internal/...`).
 - Kafka, Redis, WebSockets, or any message broker.
