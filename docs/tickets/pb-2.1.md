@@ -127,15 +127,29 @@ Use `org.springframework.jdbc.core.JdbcTemplate` and `RowMapper<T>` for result-s
 
 **RowMappers:** each repository defines a private static `RowMapper<DomainType>` that maps columns to the domain class via the `from(...)` static factory. Use `rs.getObject("col", UUID.class)` and handle `null` explicitly for `@Nullable` fields (e.g. `driver_id`, `matched_at`, `completed_at`). The mapper calls `DomainClass.from(...)` with `null` passed for absent `@Nullable` columns.
 
-#### 6. Exception shells (custom unchecked exceptions)
+#### 6. Exception hierarchy (base + concrete)
 
-| Exception | Where |
-|-----------|-------|
-| `RideNotFoundException` | `com.puber.rider.exceptions` |
-| `DriverNotFoundException` | `com.puber.driver.exceptions` |
-| `RiderAlreadyHasActiveRideException` | `com.puber.rider.exceptions` |
+Custom exceptions extend abstract base exceptions by HTTP status. The `@ControllerAdvice` catches the **base** class, so adding a new entity-specific exception never requires touching the handler.
 
-All extend `RuntimeException`. Empty constructors for now — handlers and messages are added in their respective subtasks.
+**Base exceptions (one set per service, reused by all domain exceptions):**
+
+```java
+public abstract class NotFoundException extends RuntimeException {
+    protected NotFoundException(String message) { super(message); }
+}
+
+public abstract class ConflictException extends RuntimeException {
+    protected ConflictException(String message) { super(message); }
+}
+```
+
+**Concrete exceptions:**
+
+| Exception | Where | Extends | Purpose |
+|-----------|-------|---------|---------|
+| `RideNotFoundException` | `com.puber.rider.exceptions` | `NotFoundException` | Ride ID does not exist. |
+| `DriverNotFoundException` | `com.puber.driver.exceptions` | `NotFoundException` | Driver ID does not exist. |
+| `RiderAlreadyHasActiveRideException` | `com.puber.rider.exceptions` | `ConflictException` | Rider has an active ride (status not `COMPLETED` / `CANCELLED`). |
 
 #### 7. `matching-engine` scaffolding
 
@@ -205,7 +219,9 @@ public record FareEstimate(
 | Item | Requirement |
 |------|-------------|
 | Class | `com.puber.rider.exceptions.GlobalExceptionHandler` (or `com.puber.shared.exceptions.GlobalExceptionHandler` — pick one service, it only lives in `rider-api` for now). Annotated with `@ControllerAdvice`. |
-| Handler | `@ExceptionHandler(IllegalArgumentException.class)` → `ResponseEntity<ErrorResponse>` with `400 Bad Request`. |
+| Handler | `@ExceptionHandler(IllegalArgumentException.class)` → `400 Bad Request`. |
+| Handler | `@ExceptionHandler(NotFoundException.class)` → `404 Not Found`. |
+| Handler | `@ExceptionHandler(ConflictException.class)` → `409 Conflict`. |
 | `ErrorResponse` | Simple record: `record ErrorResponse(int status, String message, Instant timestamp)`. |
 
 #### 4. Functional test: `EstimateFareTest`
@@ -263,7 +279,7 @@ Allow a rider to request a ride with an upfront fare. Guard against duplicate ac
 
 | Item | Requirement |
 |------|-------------|
-| Add to existing `@ControllerAdvice` | `@ExceptionHandler(RiderAlreadyHasActiveRideException.class)` → `ResponseEntity<ErrorResponse>` with `409 Conflict`. |
+| Verify existing `@ControllerAdvice` | `RiderAlreadyHasActiveRideException` extends `ConflictException`; the existing `@ExceptionHandler(ConflictException.class)` already maps it to `409 Conflict`. No new handler method needed. |
 
 #### 5. Functional test: `RequestRideTest`
 
@@ -279,7 +295,7 @@ Allow a rider to request a ride with an upfront fare. Guard against duplicate ac
 2. `POST /rides` with valid coordinates returns `201` and the response body contains a `UUID id`, `status: "REQUESTED"`, and a `fare` greater than `0`.
 3. `POST /rides` with out-of-bounds lat/lng returns `400`.
 4. `POST /rides` by a rider who already has an active ride returns `409 Conflict`.
-5. `RiderAlreadyHasActiveRideException` is caught by `@ControllerAdvice` and mapped to `409` with an `ErrorResponse` body.
+5. `RiderAlreadyHasActiveRideException` (extends `ConflictException`) is caught by the base `@ExceptionHandler(ConflictException.class)` and mapped to `409` with an `ErrorResponse` body.
 
 ---
 
@@ -314,7 +330,7 @@ Let a rider track their ride status. Extend the exception handler with the ride-
 
 | Item | Requirement |
 |------|-------------|
-| Add to existing `@ControllerAdvice` | `@ExceptionHandler(RideNotFoundException.class)` → `ResponseEntity<ErrorResponse>` with `404 Not Found`. |
+| Verify existing `@ControllerAdvice` | `RideNotFoundException` extends `NotFoundException`; the existing `@ExceptionHandler(NotFoundException.class)` already maps it to `404`. No new handler method needed. |
 
 #### 4. Functional test: `GetRideTest`
 
@@ -328,7 +344,7 @@ Let a rider track their ride status. Extend the exception handler with the ride-
 1. `cd services/rider-api && ./gradlew test` compiles and passes — `GetRideTest` asserts the endpoint against the real Postgres database.
 2. `GET /rides/{id}` for a ride created by `POST /rides` returns `200` and the same ride JSON.
 3. `GET /rides/{randomUUID}` returns `404 Not Found`.
-4. `RideNotFoundException` is caught by `@ControllerAdvice` and mapped to `404` with an `ErrorResponse` body.
+4. `RideNotFoundException` (extends `NotFoundException`) is caught by the base `@ExceptionHandler(NotFoundException.class)` and mapped to `404` with an `ErrorResponse` body.
 
 ---
 
@@ -370,7 +386,7 @@ Allow a driver to update their location. Writes to both `drivers` and `driver_lo
 
 | Item | Requirement |
 |------|-------------|
-| Add to existing `@ControllerAdvice` | `@ExceptionHandler(DriverNotFoundException.class)` → `ResponseEntity<ErrorResponse>` with `404 Not Found`. |
+| Verify existing `@ControllerAdvice` | `DriverNotFoundException` extends `NotFoundException`; the existing `@ExceptionHandler(NotFoundException.class)` already maps it to `404`. No new handler method needed. |
 
 #### 5. Functional test: `UpdateLocationTest`
 
@@ -386,7 +402,7 @@ Allow a driver to update their location. Writes to both `drivers` and `driver_lo
 2. `POST /drivers/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/location` with valid coordinates returns `200`; a subsequent query to `driver_locations` table shows a new row, and `drivers.updated_at` is refreshed.
 3. `POST /drivers/{unknownUUID}/location` returns `404 Not Found`.
 4. `POST /drivers/{fixtureId}/location` with out-of-bounds coordinates returns `400`.
-5. `DriverNotFoundException` is caught by `@ControllerAdvice` and mapped to `404` with an `ErrorResponse` body.
+5. `DriverNotFoundException` (extends `NotFoundException`) is caught by the base `@ExceptionHandler(NotFoundException.class)` and mapped to `404` with an `ErrorResponse` body.
 
 ---
 
@@ -394,7 +410,7 @@ Allow a driver to update their location. Writes to both `drivers` and `driver_lo
 
 - `GET /rides/history` (scheduled for Week 7/8).
 - Matching engine algorithm, nearest-driver query, ETA calculation, `@Scheduled` retry, or offer timeout (Week 3).
-- Inter-service HTTP endpoints (`/internal/match`, `/internal/drivers/{id}/offer`, `/internal/rides/{id}/accept`, `/internal/rides/{id}/complete`) — all Week 5.
+- Inter-service HTTP endpoints (`/internal/match`, `/internal/drivers/{id}/request`, `/internal/rides/{id}/accept`, `/internal/rides/{id}/complete`) — all Week 5.
 - `POST /drivers/{id}/availability` — driver status changes outside of direct DB updates via location endpoint are not yet exposed via REST.
 - Kafka, Redis, WebSockets, or any message broker.
 - Simulator threads, WebClient, or random-location generation (Week 3).
