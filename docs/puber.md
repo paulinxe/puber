@@ -377,12 +377,19 @@ INSERT INTO fare_rules (base_fare, per_km, per_minute, surge_multiplier, created
   VALUES (2.50, 1.20, 0.30, 1.00, NOW(), NOW());
 ```
 
-### V2 Migration (Example — Week 4)
+### Actual Migrations Delivered
 
+**V1.2 — PB-3.1 (Week 3)**
 ```sql
--- Add estimated_duration column for ETA caching (expand-only)
-ALTER TABLE rides ADD COLUMN estimated_duration_seconds INTEGER NULL;
+ALTER TABLE rides ADD COLUMN estimated_duration_minutes INTEGER NULL;
 ```
+
+**V2 — PB-4.1 (Week 4)**
+```sql
+ALTER TABLE rides ADD COLUMN cancelled_at TIMESTAMPTZ NULL;
+```
+
+Both follow expand-only rules: nullable, no backfill, no breaking changes.
 
 ### Indexing Targets (for SQL-7.x EXPLAIN Week)
 
@@ -553,13 +560,15 @@ Assumes **no host JDK** — Docker + Gradle Wrapper + Eclipse Temurin images fro
 | **1** | Docker + Gradle Wrapper + Spring Boot skeleton for `matching-engine`; `spring-boot-starter-actuator` + `GET /actuator/health`; root `docker-compose.yml` with Postgres | Multi-stage `Dockerfile` (Eclipse Temurin JDK → JRE); non-root user; `./gradlew test` runs in container |
 | **2** | Domain model: `Ride`, `Driver`, `Location`, status enums, `FareRule`. Fixture seeding in Flyway V1 | `POST /rides` (creates `REQUESTED`), `POST /drivers/{id}/location` (updates `drivers` table), `GET /rides/{id}` |
 | **3** | In-memory matching engine: nearest available driver query, fare calculation, ETA. `@Scheduled` retry for unmatched rides | Integration test: simulator fixture requests ride → assert `rides.status = MATCHED` and `drivers.status = BUSY` |
-| **4** | Flyway V2: additive change (e.g. `rides.estimated_duration_seconds` nullable); practice expand-only | Clean DB from scratch; V1 + V2 apply in order; verify fixtures re-seed |
-| **5** | Spring Boot skeleton for `rider-api` and `driver-api`; HTTP inter-service calls from `matching-engine` to `driver-api` /internal/offer | Push to GitHub; root README + per-service README + `docs/architecture.md` stub |
+| **4** | Flyway V2: `rides.cancelled_at` additive migration; practice expand-only schema evolution | Clean DB from scratch; V1 + V1.2 + V2 apply in order; verify fixtures re-seed |
+| **5** | Documentation & repo hygiene: root README, per-service READMEs, `docs/architecture.md` stub with V1 service diagram and core flows | Push to GitHub; verify `docker compose up` works from clean clone |
 | **6** | SQL theory: ACID + isolation notes in `docs/sql/`; which isolation level for `rides` + `drivers` concurrent updates and why | One external article/video; 5-bullet summary |
 | **7** | Seed simulator data; EXPLAIN on 2–3 queries: available drivers, ride history for rider, latest driver location | Tune one query with an index; before/after latency in `docs/sql/` |
 | **8** | N+1: `GET /rides/history` returning rides + driver details (bug) → JOIN fix; query count diff | Matching logic unit tests: closest driver wins, no driver available stays REQUESTED, cancellation resets driver; tag `v0.1` *(optional)* |
 
 **Milestone:** "`matching-engine` matches rides to seeded drivers; `rider-api` and `driver-api` handle HTTP; simulator fixture proves it in tests; no Kafka yet."
+
+> **Note on schedule drift:** The original Week 5 plan was "Spring Boot skeleton for `rider-api` and `driver-api` + HTTP inter-service calls." In practice, the skeleton for all three services was delivered in PB-1.1 (Week 1), and the inter-service HTTP wiring was delivered in PB-3.1 (Week 3). Week 5 was therefore repurposed as a documentation and repo-hygiene milestone (PB-5.1).
 
 ### Months 3–4 — Kafka + Resilience + Observability (Weeks 9–16)
 

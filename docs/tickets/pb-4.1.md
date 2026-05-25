@@ -234,6 +234,6 @@ Map `ride.cancelledAt()` into `RideResponse`.
 
 ## Next ticket
 
-- [PB-5.1](pb-5.1.md) — Spring Boot skeleton polish for `rider-api` and `driver-api`; HTTP inter-service call hardening (`/internal/offer`, retries, timeouts); root README + per-service README + `docs/architecture.md` stub
+- [PB-5.1](pb-5.1.md) — Documentation & V1 Milestone: root README, per-service READMEs, `docs/architecture.md` stub, and repo hygiene
 
 (End of file)
