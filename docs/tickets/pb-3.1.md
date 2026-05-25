@@ -67,7 +67,41 @@ Implement the matching brain inside `matching-engine`. It can find the nearest a
 | `matching-engine` | `RideRepository` | `findByIdForUpdate(UUID id)` — `SELECT ... FROM rides r LEFT JOIN drivers d ON r.driver_id = d.id WHERE r.id = ? FOR UPDATE`. Returns `Optional<Ride>`. Used inside `@Transactional` to prevent concurrent match attempts on the same ride. |
 | `matching-engine` | `RideRepository` | `save(Ride ride)` — `INSERT ... ON CONFLICT (id) DO UPDATE ...` (UPSERT). Handles both new rides (simulator fixture) and existing ride updates (matching flow). |
 
-#### 2. Domain transition methods (immutable copies)
+#### 2. Schema migration: `rides.estimated_duration_minutes`
+
+| Item | Requirement |
+|------|-------------|
+| `V1_2__add_estimated_duration_minutes.sql` | `ALTER TABLE rides ADD COLUMN estimated_duration_minutes INTEGER NULL;` |
+| Location | `src/main/resources/db/migration/` inside `matching-engine`, `rider-api`, and `driver-api`. Identical files in all three services. |
+| Rationale | The estimated trip duration (pickup → dropoff) is computed at request time by `FareCalculator` / `EstimateFare` and is now persisted on the `rides` row for receipts and analytics. Kept nullable so V1 rows remain valid. |
+
+#### 3. Domain object update: `Ride`
+
+| Item | Requirement |
+|------|-------------|
+| New field | `final @Nullable Integer estimatedDurationMinutes` |
+| Constructor | Updated to accept `estimatedDurationMinutes`. |
+| `create(...)` | Signature: `create(UUID riderId, Location pickup, Location dropoff, BigDecimal fare, @Nullable Integer estimatedDurationMinutes)`. Generates `id`, `status = REQUESTED`, `requestedAt = now()`, `createdAt = now()`, `updatedAt = now()`, `driver = null`, `matchedAt = null`, `completedAt = null`. |
+| `from(...)` | Updated to read `rs.getObject("estimated_duration_minutes", Integer.class)` and pass it to the constructor. |
+| State transitions | `assignDriver`, `resetToRequested`, `markInProgress`, `markCompleted` all preserve `estimatedDurationMinutes` into the new immutable instance. |
+
+#### 4. Repository SQL updates (`matching-engine` and `rider-api`)
+
+All `RideRepository` methods that touch `rides` columns are updated to include `estimated_duration_minutes`.
+
+| Service | Repository | Change |
+|---------|-----------|--------|
+| `rider-api` | `RideRepository.save(Ride ride)` | `INSERT` now includes `estimated_duration_minutes` and binds `ride.estimatedDurationMinutes()`. |
+| `rider-api` | `RideRepository.findById(UUID id)` | `SELECT` includes `r.estimated_duration_minutes`. `RowMapper` updated. |
+| `matching-engine` | `RideRepository.save(Ride ride)` | `INSERT ... ON CONFLICT ... DO UPDATE ...` includes `estimated_duration_minutes` in both clauses. |
+| `matching-engine` | `RideRepository.findById(UUID id)` | `SELECT` includes `r.estimated_duration_minutes`. `RowMapper` updated. |
+| `matching-engine` | `RideRepository.findByStatus(...)` | `SELECT` includes `r.estimated_duration_minutes`. `RowMapper` updated. |
+| `matching-engine` | `RideRepository.findExpiredMatches(...)` | `SELECT` includes `r.estimated_duration_minutes`. `RowMapper` updated. |
+| `matching-engine` | `RideRepository.findByIdForUpdate(...)` | `SELECT` includes `r.estimated_duration_minutes`. `RowMapper` updated. |
+
+> `driver-api` does not query `rides` directly in V1, but the migration file must still be present so it can boot against a fresh database.
+
+#### 5. Domain transition methods (immutable copies)
 
 State changes are expressed as methods on immutable domain objects. Each method returns a new instance with the updated field and a fresh `updatedAt`.
 
@@ -76,12 +110,12 @@ State changes are expressed as methods on immutable domain objects. Each method 
 | `Driver` | `setBusy()` | Returns new `Driver` with `status = BUSY`, `updatedAt = now()`. |
 | `Driver` | `setAvailable()` | Returns new `Driver` with `status = AVAILABLE`, `updatedAt = now()`. |
 | `Driver` | `setOffline()` | Returns new `Driver` with `status = OFFLINE`, `updatedAt = now()`. |
-| `Ride` | `assignDriver(Driver driver, Instant matchedAt)` | Returns new `Ride` with `driver = driver`, `status = MATCHED`, `matchedAt = matchedAt`, `updatedAt = now()`. |
-| `Ride` | `resetToRequested()` | Returns new `Ride` with `driver = null`, `status = REQUESTED`, `matchedAt = null`, `updatedAt = now()`. |
-| `Ride` | `markInProgress()` | Returns new `Ride` with `status = IN_PROGRESS`, `updatedAt = now()`. |
-| `Ride` | `markCompleted(Instant completedAt)` | Returns new `Ride` with `status = COMPLETED`, `completedAt = completedAt`, `updatedAt = now()`. |
+| `Ride` | `assignDriver(Driver driver, Instant matchedAt)` | Returns new `Ride` with `driver = driver`, `status = MATCHED`, `matchedAt = matchedAt`, `updatedAt = now()`, preserving `estimatedDurationMinutes`. |
+| `Ride` | `resetToRequested()` | Returns new `Ride` with `driver = null`, `status = REQUESTED`, `matchedAt = null`, `updatedAt = now()`, preserving `estimatedDurationMinutes`. |
+| `Ride` | `markInProgress()` | Returns new `Ride` with `status = IN_PROGRESS`, `updatedAt = now()`, preserving `estimatedDurationMinutes`. |
+| `Ride` | `markCompleted(Instant completedAt)` | Returns new `Ride` with `status = COMPLETED`, `completedAt = completedAt`, `updatedAt = now()`, preserving `estimatedDurationMinutes`. |
 
-#### 3. `PickupEtaCalculator` service
+#### 6. `PickupEtaCalculator` service
 
 | Item | Requirement |
 |------|-------------|
@@ -90,7 +124,7 @@ State changes are expressed as methods on immutable domain objects. Each method 
 | Method | `long calculateEtaMinutes(Location pickup, Location driverLocation)` |
 | Logic | `distanceKm = haversineKm(pickup, driverLocation)`; `hours = distanceKm / AVERAGE_SPEED_KMH`; return `Math.round(hours * 60.0)`. Result is in whole minutes. |
 
-#### 4. Coordinator service
+#### 7. Coordinator service
 
 **`MatchEngine`**
 
@@ -105,7 +139,7 @@ State changes are expressed as methods on immutable domain objects. Each method 
 
 > The controller is a thin HTTP adapter: it delegates to `matchEngine.execute(rideId)` and maps the boolean to `200 OK` or `202 Accepted`. No orchestration logic lives in the controller.
 
-#### 5. Worker services (one per responsibility)
+#### 8. Worker services (one per responsibility)
 
 Each operation is its own `@Service` with a single public `execute(...)` method. No god-class. `MatchEngine` composes them; the scheduler and controller do not.
 
@@ -164,7 +198,7 @@ Each operation is its own `@Service` with a single public `execute(...)` method.
 public record DriverMatch(Driver driver, double distanceKm) {}
 ```
 
-#### 6. Scheduler services (one per responsibility)
+#### 9. Scheduler services (one per responsibility)
 
 Each scheduled task is its own `@Service` with a single `@Scheduled` method. No god-class scheduler.
 
@@ -190,7 +224,7 @@ Each scheduled task is its own `@Service` with a single `@Scheduled` method. No 
 | Method | `void execute()` |
 | Logic | `var expired = rideRepository.findExpiredMatches(Duration.ofSeconds(OFFER_TIMEOUT_SECONDS))`; for each, `releaseDriver.execute(ride)`; then immediately `matchEngine.execute(ride.id())` — try the next driver. |
 
-#### 7. Exception shells (hierarchy, not flat)
+#### 10. Exception shells (hierarchy, not flat)
 
 Custom exceptions extend abstract base exceptions by HTTP status. The `@ControllerAdvice` catches the **base** class, so adding a new entity-specific exception never requires touching the handler.
 
@@ -214,7 +248,7 @@ public abstract class ConflictException extends RuntimeException {
 | `RideAlreadyMatchedException` | `ConflictException` | Ride is not in `REQUESTED` state when match is attempted. |
 | `NoAvailableDriverException` | `RuntimeException` (optional) | `findNearestDriver` returned empty. Handled silently in `MatchEngine` (returns `false`), so no handler needed. |
 
-#### 8. Concurrency: pessimistic row locking (`SELECT ... FOR UPDATE`)
+#### 11. Concurrency: pessimistic row locking (`SELECT ... FOR UPDATE`)
 
 V1 runs in a single Docker Compose stack, but concurrent HTTP requests and the `@Scheduled` task can race. We prevent double-booking with Postgres row-level pessimistic locks inside `@Transactional` boundaries.
 
@@ -230,10 +264,13 @@ V1 runs in a single Docker Compose stack, but concurrent HTTP requests and the `
 ### Acceptance criteria (done = all true)
 
 1. `cd services/matching-engine && ./gradlew test` compiles and passes (context-load smoke test at minimum).
-2. `FindNearestDriver.execute` returns the correct fixture driver when multiple are available (unit-style test via `@SpringBootTest` is fine).
-3. `AssignDriver.execute` updates the DB so that `rides.status = 'MATCHED'`, `rides.driver_id = X`, `rides.matched_at` is set, and `drivers.status = 'BUSY'`.
-4. `ReleaseDriver.execute` reverts the ride to `REQUESTED` and the driver to `AVAILABLE`.
-5. `RetryUnmatchedRides` and `ExpireStaleRequests` beans are registered and their `@Scheduled` methods exist (a test can verify the beans are present; real timing tests are in PB-3.1.5).
+2. Flyway V1.2 migration applies cleanly; `rides.estimated_duration_minutes` exists and is nullable.
+3. `Ride.create(...)` accepts `estimatedDurationMinutes`; all state-transition methods carry it forward.
+4. `RideRepository` `SELECT` / `INSERT` / `UPSERT` statements include `estimated_duration_minutes`.
+5. `FindNearestDriver.execute` returns the correct fixture driver when multiple are available (unit-style test via `@SpringBootTest` is fine).
+6. `AssignDriver.execute` updates the DB so that `rides.status = 'MATCHED'`, `rides.driver_id = X`, `rides.matched_at` is set, and `drivers.status = 'BUSY'`.
+7. `ReleaseDriver.execute` reverts the ride to `REQUESTED` and the driver to `AVAILABLE`.
+8. `RetryUnmatchedRides` and `ExpireStaleRequests` beans are registered and their `@Scheduled` methods exist (a test can verify the beans are present; real timing tests are in PB-3.1.5).
 
 ### Explicitly out of scope for this subtask
 
@@ -420,22 +457,25 @@ After `rider-api` persists a new `REQUESTED` ride, it immediately tells `matchin
 
 | Item | Requirement |
 |------|-------------|
-| Change | After `rideRepository.save(ride)` and before returning, call `matchingEngineClient.triggerMatch(ride.id())`. |
+| `estimatedDurationMinutes` | Compute from the same haversine distance used for fare: `distanceKm = haversineKm(pickup, dropoff)`; `estimatedMinutes = Math.round(distanceKm / 0.5)`; pass into `Ride.create(...)`. This is the same value already returned by `EstimateFare` (trip duration, not driver ETA). |
+| `RideResponse` | Add `estimatedDurationMinutes` field. `GET /rides/{id}` now returns it. |
+| Trigger matching | After `rideRepository.save(ride)` and before returning, call `matchingEngineClient.triggerMatch(ride.id())`. |
 | Failure handling | If the HTTP call fails (e.g., connection refused in local dev), log a `WARN` but do **not** roll back the transaction — the `@Scheduled` retry in `matching-engine` will eventually pick up the `REQUESTED` ride. |
 
 #### 3. Functional test update: `RequestRideTest`
 
 | Test | What it asserts |
 |------|----------------|
-| `POST /rides` still creates ride | Same assertions as PB-2.1 (`201`, `REQUESTED`, `fare > 0`). |
+| `POST /rides` still creates ride | Same assertions as PB-2.1 (`201`, `REQUESTED`, `fare > 0`), plus `estimatedDurationMinutes > 0`. |
 | `POST /rides` triggers match | Mock `MatchingEngineClient`; verify `triggerMatch(rideId)` is called exactly once with the newly created ride's UUID. |
 
 ### Acceptance criteria (done = all true)
 
 1. `cd services/rider-api && ./gradlew test` compiles and passes.
-2. `POST /rides` still returns `201 Created` with the ride payload.
+2. `POST /rides` still returns `201 Created` with the ride payload; response includes `estimatedDurationMinutes > 0`.
 3. `RequestRide` invokes `matchingEngineClient.triggerMatch(rideId)` after DB insert.
 4. If `triggerMatch` throws (simulated mock exception), the ride is still persisted and the test passes (exception is caught and logged).
+5. `GET /rides/{id}` for a newly created ride returns `estimatedDurationMinutes` equal to the value from `POST /rides`.
 
 ---
 
@@ -456,7 +496,7 @@ Prove the matching flow end-to-end with a deterministic simulator test fixture. 
 | Injection | `RideRepository`, `DriverRepository`, `MatchEngine`, `AcceptRide`, `CompleteRide`, `ReleaseDriver`, `RetryUnmatchedRides`, `ExpireStaleRequests`, `TestRestTemplate` (optional) |
 | Seeded `Random` | `new Random(12345)` for deterministic coordinates. |
 | Known driver UUIDs | Same 10 fixture UUIDs from `puber.md` and PB-2.1. |
-| `requestRide(UUID riderId, Location pickup, Location dropoff)` | Saves a `Ride` directly via `RideRepository` (status `REQUESTED`), then calls `matchEngine.execute(ride.id())` or calls `POST /internal/match` via `TestRestTemplate`. |
+| `requestRide(UUID riderId, Location pickup, Location dropoff)` | Computes `distanceKm = haversineKm(pickup, dropoff)` and `estimatedMinutes = Math.round(distanceKm / 0.5)`. Saves a `Ride` directly via `RideRepository` (status `REQUESTED`, including `estimatedDurationMinutes`), then calls `matchEngine.execute(ride.id())` or calls `POST /internal/match` via `TestRestTemplate`. |
 | `setDriverStatus(UUID driverId, DriverStatus status)` | Loads driver via `driverRepository.findById(driverId)`, applies the domain transition method (e.g., `driver.setAvailable()`), and calls `driverRepository.save(updated)`. |
 | `acceptRequest(UUID driverId, UUID rideId)` | Calls `acceptRide.execute(rideId)` directly or via `TestRestTemplate` on `POST /internal/rides/{id}/accept`. |
 | `completeRide(UUID driverId, UUID rideId)` | Calls `completeRide.execute(rideId)` directly or via `TestRestTemplate`. |
