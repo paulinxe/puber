@@ -209,4 +209,4 @@ Document the following in `07-index-tuning.md` under a "Future targets" heading:
 
 ## Next ticket
 
-- [PB-8.1](pb-8.1.md) — N+1 fix: `GET /rides/history` returning rides + driver details via JOIN vs. separate queries; query-count diff; matching logic focused unit tests
+- [PB-9.1](pb-9.1.md) — Kafka in Docker Compose: KRaft mode, `ride.requested` / `ride.matched` JSON schemas, and `matching-engine` consumer

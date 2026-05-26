@@ -560,7 +560,7 @@ public class PuberSimulator {
 
 Assumes **no host JDK** — Docker + Gradle Wrapper + Eclipse Temurin images from day 0.
 
-### Months 1–2 — Bootstrap + Domain + Matching (Weeks 1–8)
+### Months 1–2 — Bootstrap + Domain + Matching (Weeks 1–7)
 
 **Outcome:** `matching-engine` with domain model, in-memory matching, Postgres persistence, and seeded fixtures. `rider-api` and `driver-api` as HTTP facades. Simulator test fixture proves matching works end-to-end.
 
@@ -572,8 +572,7 @@ Assumes **no host JDK** — Docker + Gradle Wrapper + Eclipse Temurin images fro
 | **4** | Flyway V2: `rides.cancelled_at` additive migration; practice expand-only schema evolution | Clean DB from scratch; V1 + V1.2 + V2 apply in order; verify fixtures re-seed |
 | **5** | Documentation & repo hygiene: root README, per-service READMEs, `docs/architecture.md` stub with V1 service diagram and core flows | Push to GitHub; verify `docker compose up` works from clean clone |
 | **6** | SQL theory: ACID + isolation notes in `docs/sql/`; which isolation level for `rides` + `drivers` concurrent updates and why | One external article/video; 5-bullet summary |
-| **7** | Seed simulator data; EXPLAIN on 3 queries: available drivers (`drivers.status`), ride history (`rides.rider_id` + `ORDER BY requested_at`), active-ride guard (`rides.rider_id` + `status`) | Tune the history query with one composite index (`rides(rider_id, requested_at DESC)`); before/after latency in `docs/sql/` |
-| **8** | N+1: `GET /rides/history` returning rides + driver details (bug) → JOIN fix; query count diff | Matching logic unit tests: closest driver wins, no driver available stays REQUESTED, cancellation resets driver; tag `v0.1` *(optional)* |
+ | **7** | Seed simulator data; EXPLAIN on 3 queries: available drivers (`drivers.status`), ride history (`rides.rider_id` + `ORDER BY requested_at`), active-ride guard (`rides.rider_id` + `status`) | Tune the history query with one composite index (`rides(rider_id, requested_at DESC)`); before/after latency in `docs/sql/` |
 
 **Milestone:** "`matching-engine` matches rides to seeded drivers; `rider-api` and `driver-api` handle HTTP; simulator fixture proves it in tests; no Kafka yet."
 
