@@ -391,12 +391,21 @@ ALTER TABLE rides ADD COLUMN cancelled_at TIMESTAMPTZ NULL;
 
 Both follow expand-only rules: nullable, no backfill, no breaking changes.
 
-### Indexing Targets (for SQL-7.x EXPLAIN Week)
+### Indexing Targets
 
-- `rides(rider_id, requested_at DESC)` — history queries
-- `rides(driver_id, status)` — driver's active ride lookup
-- `drivers(status)` — find all available drivers (used by matching engine)
-- `driver_locations(driver_id, recorded_at DESC)` — latest location history
+#### Shipped in Week 7 (PB-7.1)
+
+- **`rides(rider_id, requested_at DESC)`** — `GET /rides/history`. Composite index covering both the `WHERE` predicate and the `ORDER BY` sort, eliminating the planner's separate `Sort` node. Flyway V2.1.
+
+#### Analysed in Week 7 but left unindexed
+
+- **`drivers(status)`** — `FindNearestDriver.findAvailable()`. Low-cardinality column (3 values). Postgres will `Seq Scan` even with a B-tree index. Documented as a negative learning example.
+
+#### Deferred to future weeks
+
+- **`rides(rider_id, status)`** — `hasActiveRide` guard on `POST /rides`. Partially covered by the `rider_id` prefix of the Week 7 history index (avoids `Seq Scan`), but a dedicated composite would enable an `Index Only Scan`. Deferred because the history index showed the more dramatic plan change, and the guard is not yet a bottleneck at fixture scale. Candidate: Month 3+ when the standalone simulator fires concurrent ride requests.
+- **`rides(driver_id, status)`** — No endpoint queries rides by `driver_id` in V1. Candidate if a "driver's active ride" lookup endpoint is added.
+- **`driver_locations(driver_id, recorded_at DESC)`** — No service queries `driver_locations` in V1; the table is audit-only. Matching engine reads `drivers.current_lat/current_lng`. If a "driver location history" endpoint is added, this index would serve it.
 
 ---
 
@@ -563,7 +572,7 @@ Assumes **no host JDK** — Docker + Gradle Wrapper + Eclipse Temurin images fro
 | **4** | Flyway V2: `rides.cancelled_at` additive migration; practice expand-only schema evolution | Clean DB from scratch; V1 + V1.2 + V2 apply in order; verify fixtures re-seed |
 | **5** | Documentation & repo hygiene: root README, per-service READMEs, `docs/architecture.md` stub with V1 service diagram and core flows | Push to GitHub; verify `docker compose up` works from clean clone |
 | **6** | SQL theory: ACID + isolation notes in `docs/sql/`; which isolation level for `rides` + `drivers` concurrent updates and why | One external article/video; 5-bullet summary |
-| **7** | Seed simulator data; EXPLAIN on 2–3 queries: available drivers, ride history for rider, latest driver location | Tune one query with an index; before/after latency in `docs/sql/` |
+| **7** | Seed simulator data; EXPLAIN on 3 queries: available drivers (`drivers.status`), ride history (`rides.rider_id` + `ORDER BY requested_at`), active-ride guard (`rides.rider_id` + `status`) | Tune the history query with one composite index (`rides(rider_id, requested_at DESC)`); before/after latency in `docs/sql/` |
 | **8** | N+1: `GET /rides/history` returning rides + driver details (bug) → JOIN fix; query count diff | Matching logic unit tests: closest driver wins, no driver available stays REQUESTED, cancellation resets driver; tag `v0.1` *(optional)* |
 
 **Milestone:** "`matching-engine` matches rides to seeded drivers; `rider-api` and `driver-api` handle HTTP; simulator fixture proves it in tests; no Kafka yet."
@@ -582,6 +591,7 @@ Assumes **no host JDK** — Docker + Gradle Wrapper + Eclipse Temurin images fro
 | **12** | Spring Boot Actuator + Micrometer; expose `/actuator/prometheus`; custom metric: `rides.matched.total` | Prometheus in Compose scrapes all services; verify targets are up |
 | **13** | Grafana dashboard: rides requested/min, average match latency, driver online count | Kafka vs SQS one-pager; update `docs/architecture.md` with full command/event diagram |
 | **14** | Extract simulator to standalone Docker container; publishes to Kafka directly | Buffer / mock system-design interview: "Design Uber backend" using your own architecture |
+| **14½** | *(deferred from Week 7)* Add `rides(rider_id, status)` index for `hasActiveRide` guard. Standalone simulator fires concurrent ride requests; the guard becomes a hot path. Composite index enables `Index Only Scan` on `SELECT COUNT(*) ... WHERE rider_id = ? AND status NOT IN (...)`. | — |
 | **15** | Redis: latest driver locations (`SETEX` with TTL); matching engine reads from Redis instead of Postgres. Fallback to Postgres if Redis miss. | Surge pricing: simple multiplier based on `requested / available` ratio in the demo geo cell |
 | **16** | Read K8s: Pods, Deployments, Services, probes; local `kind` or `k3d` install | Deploy nginx trivial pod; `kubectl get nodes` working |
 
