@@ -92,7 +92,9 @@ Brief note for PR / changelog: what shipped, what's next.
 
 The original `order-book` was a good vehicle for learning Java + Spring Boot + SQL depth, but the domain felt too abstract. **Puber** keeps every technical milestone from `plan.md` — Postgres, Kafka, resilience, observability, WebSockets, K8s — but frames them around a **tangible, visual, well-understood domain**: requesting a ride, watching a driver approach, and completing a trip.
 
-**Key principle:** *You control every input.* There are no payment gateways, no Google Maps APIs, no SMS providers. "Users" are Java threads firing real HTTP requests with seeded random data. "Money" is a calculated fare stored in Postgres. "Location" is a `(lat, lng)` pair you generate.
+**Key principle:** *You control every input.* No Google Maps APIs, no SMS providers. "Users" are Java threads firing real HTTP requests with seeded random data. "Location" is a `(lat, lng)` pair you generate.
+
+**Scope expansion (mid-project):** Stripe (sandbox) was added as an in-scope integration in Month 5 to close the fintech-patterns gap — webhooks, idempotency, state machines, retries with jitter. Audit-service (Postgres partitioned → ClickHouse) was added in Month 6 to close the ClickHouse / columnar gap flagged in the broader career plan. Both are real production patterns worth learning; the 6-month arc extends to 8 months to accommodate them.
 
 ---
 
@@ -115,6 +117,9 @@ These choices remove ambiguity so you never freeze on "how do I start?"
 | **Driver offer timeout?** | If a driver does **not** accept within **10 seconds**, the offer expires. The driver returns to `AVAILABLE`; the ride returns to `REQUESTED`; the `@Scheduled` retry task finds the **next nearest** driver. | Prevents a single slow driver from blocking a ride forever. The 10s window is testable with `Awaitility` or a mocked clock. |
 | **Surge pricing (V1)** | One static `fare_rules` row loaded on startup. `surge_multiplier` is always `1.00` in V1. In Month 3–4 you make it dynamic based on `requested_rides / available_drivers` ratio in the demo geo cell. | Defers complexity while keeping the schema ready. |
 | **Simulator location for Month 1–2** | Runs as a **test fixture class** (`@Component` in `matching-engine` test profile) or a **standalone Java main** that runs in the same JVM as tests. In Month 3 it becomes a **separate Docker container** that fires HTTP + Kafka. | Don't over-infrastructure the simulator before you have anything to simulate against. |
+| **Payment integration (Month 5)** | Stripe **sandbox** only. `payment-service` (4th microservice) creates PaymentIntents on `ride.completed`, handles webhooks with signature verification + idempotency, enforces a payment state machine (`INITIATED → AUTHORIZED → CAPTURED → REFUNDED`), and produces `payment.succeeded` / `payment.failed` events. Full refunds only in V1; partial refunds Post-MVP. | Real fintech patterns (webhooks, idempotency, state machines, retry with jitter, provider rate limits) directly relevant to Revolut/Rain/Upvest interviews. Sandbox = no real money, safe to iterate. |
+| **Audit log scope (Month 6)** | **State transitions only** — meaningful business events across ride, driver, payment, and fare-rule domains. NOT location heartbeats (would turn the audit into a location log at ~1.3M events/day; wrong story to tell). | State transitions ≈ ~10k events/day at simulator load, but the schema scales cleanly to millions when needed for the ClickHouse migration story. |
+| **Audit storage strategy** | **Postgres partitioned first, then ClickHouse.** Week 21–22: `audit_events` in Postgres, monthly partitioning, retention via drop-partition. Week 23–24: introduce ClickHouse via Kafka sink, benchmark same analytical query on both, migrate analytics reads. Postgres stays for point lookups + legal retention; ClickHouse handles aggregation queries. | Migration narrative is senior-interview gold: "we started with X, hit constraint Y at scale Z, moved to W". Doing both stores teaches columnar vs. row-oriented trade-offs viscerally, not from a book. Closes the ClickHouse / columnar gap from the broader career plan. |
 
 ---
 
@@ -146,11 +151,28 @@ services/
     • V1: test fixture or standalone main
     • Month 3+: Docker container firing HTTP + Kafka
 
+  payment-service/    # Spring Boot — Stripe sandbox integration (Month 5)
+    • Consumes: ride.completed
+    • Produces: payment.succeeded, payment.failed, payment.refunded
+    • Creates Stripe PaymentIntents; handles webhooks (signature + idempotency)
+    • State machine: INITIATED → AUTHORIZED → CAPTURED → REFUNDED
+    • Postgres: payment_intents, webhook_events (both with idempotency keys)
+    • Reconciliation task: queries Stripe for stuck intents
+
+  audit-service/      # Spring Boot — event capture across all domains (Month 6)
+    • Consumes: ride.*, payment.*, driver.status_changed, fare_rule.updated
+    • Writes to Postgres (partitioned by month) — Weeks 21–22
+    • Writes to ClickHouse via Kafka sink — Weeks 23–24 (migration story)
+    • Query API: GET /audit/entity/{type}/{id}
+    • State-transition audit only — NOT location heartbeats
+
 infra/ (Docker Compose local, K8s later)
-  Postgres 17   — rides, drivers, driver_locations (history), fare rules
-  Kafka (KRaft) — ride.events, driver.events, driver.locations (Month 3+)
+  Postgres 17   — rides, drivers, driver_locations (history), fare rules, payment_intents, webhook_events, audit_events
+  Kafka (KRaft) — ride.events, driver.events, driver.locations, payment.events, audit.events (Month 3+)
   Redis         — latest driver locations, driver online set, surge multiplier (Month 3+)
+  ClickHouse    — audit_events analytical store (Month 6+)
   Prometheus    — scrapes /actuator/prometheus from all services
+  Grafana       — dashboards on rides/min, match latency, payment success rate, audit ingest rate
 ```
 
 ---
@@ -170,7 +192,11 @@ infra/ (Docker Compose local, K8s later)
 | `/internal/match` | `POST` | `matching-engine` | `rider-api` | **V1 only** | Internal: trigger matching for a ride |
 | `/actuator/health` | `GET` | All services | Prometheus / K8s probes | Both | Spring Boot Actuator — replaces custom `GET /health` |
 | `/actuator/prometheus` | `GET` | All services | Prometheus | Month 3+ | Metrics scrape endpoint |
-| `/drivers/{id}/stream` | `WS` | `driver-api` | Browser / WS client | Month 5+ | WebSocket: real-time ride offers |
+| `/drivers/{id}/stream` | `WS` | `driver-api` | Browser / WS client | Month 7+ | WebSocket: real-time ride offers |
+| `/webhooks/stripe` | `POST` | `payment-service` | Stripe (external) | Month 5+ | Public: Stripe webhook — signature-verified, idempotent |
+| `/internal/rides/{id}/refund` | `POST` | `payment-service` | `matching-engine` / admin | Month 5+ | Internal: trigger refund flow |
+| `/audit/entity/{type}/{id}` | `GET` | `audit-service` | Ops / tests | Month 6+ | Query audit trail for a specific entity |
+| `/audit/actor/{id}` | `GET` | `audit-service` | Ops / tests | Month 6+ | Query all actions by a specific actor |
 
 **Health strategy:** No custom `GET /health` controller anywhere. All services rely on **Spring Boot Actuator** (`spring-boot-starter-actuator`) for health, info, and Prometheus metrics. This is introduced in Month 1 (basic) and expanded in Month 3 (`/actuator/prometheus`).
 
@@ -295,6 +321,98 @@ In Month 3, the HTTP calls between services are **replaced by Kafka**:
 
 The V1 HTTP endpoints become **internal compatibility shims** or are removed.
 
+### 7. Payment Flow (Month 5+ — Stripe sandbox)
+
+```text
+matching-engine → produces Kafka: ride.completed {rideId, fare, riderId}
+                            ↓
+                    payment-service consumes ride.completed
+                            ↓
+                    Check idempotency: SELECT * FROM payment_intents WHERE ride_id = ?
+                    If exists → no-op (safe replay)
+                            ↓
+                    Stripe API: create PaymentIntent (with idempotency key = ride_id)
+                            ↓
+                    INSERT payment_intents (id, ride_id, stripe_intent_id, status=INITIATED, amount)
+                            ↓
+                    ... Stripe processes async (mock rider "confirms" in sandbox) ...
+                            ↓
+Stripe → POST /webhooks/stripe {type: 'payment_intent.succeeded', data: {...}}
+                            ↓
+                    payment-service:
+                      1. Verify Stripe-Signature header (HMAC + timestamp anti-replay)
+                      2. Check webhook_events for stripe_event_id → dedupe
+                      3. INSERT webhook_events (stripe_event_id, type, received_at)
+                      4. State machine: transition INITIATED → CAPTURED (reject illegal transitions)
+                      5. UPDATE payment_intents SET status=CAPTURED, captured_at=NOW()
+                      6. Produce Kafka: payment.succeeded {rideId, amount}
+```
+
+**Key patterns exercised:**
+- **Idempotency at 2 layers:** at the Stripe API (using ride_id as idempotency key) AND at the webhook receive layer (dedup by stripe_event_id)
+- **Signature verification:** rejects unsigned or replay-attacked requests
+- **State machine:** an out-of-order webhook (e.g., `payment_intent.failed` arriving after `payment_intent.succeeded`) is rejected as an illegal transition, not silently applied
+- **Retry with jitter:** Stripe API calls use Resilience4j; failures retry with exponential backoff + jitter
+- **Reconciliation task:** `@Scheduled` job queries Stripe for `INITIATED` intents older than N minutes and reconciles; catches missed webhooks
+
+### 8. Refund Flow (Month 5+)
+
+```text
+Rider disputes / admin triggers → POST /internal/rides/{id}/refund
+                            ↓
+                    payment-service: check current state = CAPTURED (reject otherwise)
+                            ↓
+                    Stripe API: create Refund (with idempotency key = payment_intent_id + '-refund')
+                            ↓
+                    UPDATE payment_intents SET refund_pending=true
+                            ↓
+                    ... Stripe processes async ...
+                            ↓
+Stripe → POST /webhooks/stripe {type: 'charge.refunded', ...}
+                            ↓
+                    payment-service:
+                      State machine: CAPTURED → REFUNDED
+                      Produce Kafka: payment.refunded {rideId, amount}
+```
+
+V1: full refunds only. Partial refunds are Post-MVP.
+
+### 9. Audit Flow (Month 6+)
+
+```text
+Any service → produces Kafka event on state change:
+              ride.requested, ride.matched, ride.completed, ride.cancelled,
+              payment.succeeded, payment.failed, payment.refunded,
+              driver.status_changed, fare_rule.updated
+                            ↓
+                    audit-service consumes all *.events topics
+                            ↓
+                    Extract audit fields:
+                      { event_id, actor_type, actor_id, entity_type, entity_id,
+                        action, timestamp, metadata: {...event-specific...} }
+                            ↓
+        Weeks 21–22:  INSERT INTO audit_events (Postgres, partitioned by month)
+                      Dedupe by event_id (UNIQUE constraint)
+                            ↓
+        Weeks 23–24:  ALSO write to ClickHouse via Kafka Engine table
+                      (dual-write during migration for 1 simulated week)
+                            ↓
+                    After cutover: analytical queries go to ClickHouse,
+                                   point lookups stay on Postgres
+```
+
+**Point-lookup queries** (Postgres):
+- `GET /audit/entity/RIDE/{rideId}` → full history for a specific ride
+- `GET /audit/actor/{driverId}` → all actions by a driver
+
+**Analytical queries** (ClickHouse):
+- Rides per driver per day
+- Payment success rate by hour
+- Avg time-in-status per ride state
+- Match latency distribution
+
+**Migration narrative documented in `docs/audit-service.md`:** benchmark same analytical query on Postgres vs ClickHouse, capture the "45s vs 200ms" delta, document the cutover procedure.
+
 ---
 
 ## Data Model (Postgres)
@@ -390,6 +508,91 @@ ALTER TABLE rides ADD COLUMN cancelled_at TIMESTAMPTZ NULL;
 ```
 
 Both follow expand-only rules: nullable, no backfill, no breaking changes.
+
+### V3 Schema — Month 5 (payment-service)
+
+```sql
+-- payment_intents: one row per PaymentIntent created in Stripe
+CREATE TABLE payment_intents (
+    id UUID PRIMARY KEY,
+    ride_id UUID NOT NULL UNIQUE,               -- idempotency: one payment per ride
+    stripe_intent_id TEXT NOT NULL UNIQUE,       -- returned by Stripe API
+    amount DECIMAL(10,2) NOT NULL,
+    currency VARCHAR(3) NOT NULL DEFAULT 'EUR',
+    status VARCHAR(20) CHECK (
+        status IN ('INITIATED','REQUIRES_ACTION','AUTHORIZED','CAPTURED','FAILED','REFUNDED')
+    ),
+    refund_pending BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    captured_at TIMESTAMPTZ NULL,
+    refunded_at TIMESTAMPTZ NULL
+);
+
+-- webhook_events: idempotency dedupe for Stripe webhook deliveries
+CREATE TABLE webhook_events (
+    stripe_event_id TEXT PRIMARY KEY,            -- Stripe's evt_xxx — dedupe key
+    event_type TEXT NOT NULL,                    -- e.g. 'payment_intent.succeeded'
+    received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    payload JSONB NOT NULL                       -- full event body, for audit / debugging
+);
+
+CREATE INDEX idx_payment_intents_ride ON payment_intents(ride_id);
+CREATE INDEX idx_payment_intents_status_updated ON payment_intents(status, updated_at) 
+    WHERE status = 'INITIATED';                  -- reconciliation task scan
+```
+
+### V4 Schema — Month 6 (audit-service)
+
+```sql
+-- audit_events: append-only, partitioned by month
+CREATE TABLE audit_events (
+    id UUID NOT NULL,
+    event_id TEXT NOT NULL,                      -- upstream Kafka event id (dedupe key)
+    actor_type VARCHAR(20) NOT NULL,             -- 'RIDER', 'DRIVER', 'SYSTEM', 'ADMIN'
+    actor_id UUID,                               -- nullable for SYSTEM
+    entity_type VARCHAR(20) NOT NULL,            -- 'RIDE', 'DRIVER', 'PAYMENT', 'FARE_RULE'
+    entity_id UUID NOT NULL,
+    action VARCHAR(40) NOT NULL,                 -- 'CREATED', 'MATCHED', 'CAPTURED', 'REFUNDED', etc.
+    timestamp TIMESTAMPTZ NOT NULL,              -- when the action occurred (from upstream event)
+    metadata JSONB NOT NULL DEFAULT '{}',        -- event-specific payload
+    ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (id, timestamp)                  -- partitioning key must be in PK
+) PARTITION BY RANGE (timestamp);
+
+-- Monthly partitions (created by scheduled task in audit-service)
+CREATE TABLE audit_events_2026_09 PARTITION OF audit_events
+    FOR VALUES FROM ('2026-09-01') TO ('2026-10-01');
+-- ... etc
+
+-- Composite index: point-lookup by entity
+CREATE INDEX idx_audit_entity ON audit_events(entity_type, entity_id, timestamp DESC);
+-- Dedupe by upstream event_id
+CREATE UNIQUE INDEX idx_audit_event_id ON audit_events(event_id);
+```
+
+**Retention:** monthly `@Scheduled` task drops partitions older than 12 months. Legal retention config lives in `application.yml`.
+
+### V4+ ClickHouse Schema — Month 6 (Weeks 23–24)
+
+```sql
+-- ClickHouse MergeTree, partitioned by month, ordered for entity-lookup + range scan
+CREATE TABLE audit_events (
+    event_id String,
+    actor_type LowCardinality(String),
+    actor_id UUID,
+    entity_type LowCardinality(String),
+    entity_id UUID,
+    action LowCardinality(String),
+    timestamp DateTime64(3),
+    metadata String,                             -- JSON as String
+    ingested_at DateTime DEFAULT now()
+) ENGINE = MergeTree()
+PARTITION BY toYYYYMM(timestamp)
+ORDER BY (entity_type, entity_id, timestamp);
+```
+
+**Ingestion:** Kafka Engine table consuming `audit.events` topic OR a Java consumer batching inserts (~1000 rows/batch, flush every 1s). Document the choice in `docs/audit-service.md`.
 
 ### Indexing Targets
 
@@ -596,22 +799,50 @@ Assumes **no host JDK** — Docker + Gradle Wrapper + Eclipse Temurin images fro
 
 **Milestone:** "Kafka is the nexus: commands in, events out; matching engine is the only ride mutator; Grafana shows live metrics; simulator runs as separate container."
 
-### Months 5–6 — WebSockets + K8s + Cloud Deploy (Weeks 17–24)
+### Month 5 — Stripe payment-service (Weeks 17–20)
+
+**Outcome:** `payment-service` runs in the monorepo. Consumes `ride.completed` from Kafka; creates Stripe PaymentIntents via SDK; handles webhooks with signature verification + idempotency; enforces a payment state machine; produces `payment.succeeded` / `payment.failed` events. Refund flow works end-to-end. Reconciliation task catches missed webhooks.
+
+Prerequisite: Stripe sandbox account (free) and `stripe-cli` for local webhook forwarding.
+
+| Week | Session ~2h | Session ~2h |
+|------|-------------|-------------|
+| **17** | `payment-service` skeleton (4th Spring Boot service, Docker, Actuator, Postgres schema V3 with `payment_intents` + `webhook_events`); Stripe SDK dependency; `stripe-cli` added to Compose | Consume Kafka `ride.completed` → create Stripe PaymentIntent (with `ride_id` as idempotency key) → persist to `payment_intents` (status=INITIATED); integration test with Stripe test mode |
+| **18** | `POST /webhooks/stripe`: verify Stripe-Signature header (HMAC + 5-min timestamp anti-replay); reject invalid/replay attempts with proper 401/400 responses | Idempotent webhook handling: `webhook_events` table with `stripe_event_id UNIQUE`; receiving same event twice is a no-op; test with `stripe trigger` firing duplicates |
+| **19** | Payment state machine as first-class code (enum + `Transitions` map); illegal transitions raise domain exceptions; produce `payment.succeeded` / `payment.failed` Kafka events on transition | Resilience4j on Stripe API calls: timeout, retry with exponential backoff + jitter, circuit breaker on repeated 5xx; log state transitions; DLQ for unrecoverable failures |
+| **20** | Refund flow: `POST /internal/rides/{id}/refund` → Stripe Refund API → webhook confirms → transition CAPTURED → REFUNDED. Full refunds only (partial refunds are Post-MVP) | Reconciliation `@Scheduled` task: query Stripe for INITIATED intents older than N minutes; end-to-end integration test with `stripe listen --forward-to`; state machine diagram in `docs/payment-service.md` |
+
+**Milestone (v0.2):** *"Payment service integrates with Stripe sandbox end-to-end; webhook idempotency and signature verification proven by tests; state machine enforces valid transitions; refunds work."* Tag `v0.2` in git.
+
+### Month 6 — Audit-service (Weeks 21–24)
+
+**Outcome:** `audit-service` runs in the monorepo. Consumes state-transition events from ride, payment, and driver domains; writes to Postgres (partitioned by month) in Weeks 21–22; introduces ClickHouse and migrates analytical queries in Weeks 23–24. Migration narrative documented in `docs/audit-service.md`.
+
+| Week | Session ~2h | Session ~2h |
+|------|-------------|-------------|
+| **21** | `audit-service` skeleton (5th Spring Boot service, Docker, Actuator); Postgres schema V4 with `audit_events` PARTITIONED BY month; composite index on `(entity_type, entity_id, timestamp DESC)` + UNIQUE on `event_id` for dedupe | Consume `ride.*`, `payment.*`, `driver.status_changed`, `fare_rule.updated` from Kafka → INSERT INTO `audit_events` (deduped by `event_id`); scheduled task auto-creates next month's partition |
+| **22** | Query API: `GET /audit/entity/{type}/{id}` (point lookup) + `GET /audit/actor/{id}` (actor history); pagination; auth-less like the rest of puber | Retention: `@Scheduled` monthly task drops partitions older than 12 months; EXPLAIN queries on partitioned tables — document partition pruning behavior in `docs/sql/` |
+| **23** | ClickHouse in Compose (single-node, MergeTree engine); schema partitioned by `toYYYYMM(timestamp)`, ordered by `(entity_type, entity_id, timestamp)`; choose ingestion path (Kafka Engine table OR Java consumer batching inserts) — document the choice | Dual-write for one simulated week: both Postgres and ClickHouse consume the same Kafka topic; verify row counts match; write basic aggregation queries (rides per driver per day, payment success rate by hour, avg match latency) |
+| **24** | **Benchmark:** run same analytical query on Postgres partitioned table vs. ClickHouse; capture execution times, plans, storage sizes in `docs/audit-service.md`. Aim for the "45s vs 200ms" reveal | Migration cutover: analytics reads point at ClickHouse; Postgres stays for point lookups + legal retention. Migration narrative documented in `docs/audit-service.md`. Talking-points doc for interviews. CV bullets: ClickHouse for time-series analytics, Kafka-driven audit pipeline, evolutionary migration pattern |
+
+**Milestone (v0.3):** *"Audit service captures every state transition across ride, payment, and driver domains. Postgres partitioned table handles point lookups; ClickHouse handles analytical queries. Migration story documented and defensible in interviews."* Tag `v0.3` in git.
+
+### Months 7–8 — WebSockets + K8s + Cloud Deploy (Weeks 25–32)
 
 **Outcome:** Driver receives ride offers via WebSocket. Local K8s manifests. `puber` running on a hosted platform with HTTPS and managed Postgres.
 
 | Week | Session ~2h | Session ~2h |
 |------|-------------|-------------|
-| **17** | WebSocket server in `driver-api`: `/drivers/{id}/stream`; push `ride.matched` events from Kafka consumer | Test: two WS clients; one rider requests, driver client receives offer within 1s |
-| **18** | WS reconnection: missed events buffer (Redis) for 30s | Load `puber` images into local K8s cluster; `curl /actuator/health` via Service |
-| **19** | Readiness probe: DB + Kafka reachable; liveness probe: simple ping | Pick cloud host + managed Postgres; deploy `rider-api` + `driver-api` + `matching-engine` |
-| **20** | Cloud: secrets via provider (not in git); HTTPS; `/actuator/health` public | Cloud: logs, restart policy, basic alerting if provider supports it |
-| **21** | K8s: `Deployment` + `Service` for all three services; `ConfigMap` for env vars | K8s: HPA concept on matching-engine based on CPU |
-| **22** | Simulator runs in cloud too (or locally against cloud); load test and watch Grafana | N+1 revisit: does cloud DB suffer the same query shapes? Tune if needed |
-| **23** | E2E smoke: simulator requests ride → WS driver accepts → rider sees COMPLETED | Document full deployment runbook in README |
-| **24** | Final `docs/architecture.md`: command/event flow + WS + K8s + cloud diagram | CV bullets: Kafka, ride matching, real-time WS, Postgres tuning, cloud deploy |
+| **25** | WebSocket server in `driver-api`: `/drivers/{id}/stream`; push `ride.matched` events from Kafka consumer | Test: two WS clients; one rider requests, driver client receives offer within 1s |
+| **26** | WS reconnection: missed events buffer (Redis) for 30s | Load `puber` images into local K8s cluster; `curl /actuator/health` via Service |
+| **27** | Readiness probe: DB + Kafka reachable; liveness probe: simple ping | Pick cloud host + managed Postgres; deploy `rider-api` + `driver-api` + `matching-engine` |
+| **28** | Cloud: secrets via provider (not in git); HTTPS; `/actuator/health` public | Cloud: logs, restart policy, basic alerting if provider supports it |
+| **29** | K8s: `Deployment` + `Service` for all five services; `ConfigMap` for env vars | K8s: HPA concept on matching-engine based on CPU |
+| **30** | Simulator runs in cloud too (or locally against cloud); load test and watch Grafana | N+1 revisit: does cloud DB suffer the same query shapes? Tune if needed |
+| **31** | Deploy `payment-service` + `audit-service` to cloud too; managed Postgres for both; managed ClickHouse (or cloud VM) for audit analytics | Virtual threads: enable `spring.threads.virtual.enabled=true` on all services; measure throughput vs. pooled threads; document in `docs/performance.md` |
+| **32** | E2E smoke: simulator requests ride → WS driver accepts → payment captured → audit event ingested → analytics query returns updated row. Final `docs/architecture.md`: full command/event flow + WS + K8s + cloud diagram | CV bullets: Kafka, ride matching, Stripe integration, audit + ClickHouse migration, real-time WS, virtual threads, Postgres tuning, cloud deploy |
 
-**Milestone:** "Puber in prod or strong local+cloud story; drivers get ride offers over WebSocket; metrics visible in Grafana."
+**Milestone (v1.0):** *"Puber in prod or strong local+cloud story; drivers get ride offers over WebSocket; Stripe payments flow end-to-end; audit trail queryable in both Postgres and ClickHouse; metrics visible in Grafana."* Tag `v1.0` in git.
 
 ---
 
@@ -643,7 +874,7 @@ Pick **one** app host and **one** Postgres. Stay on that pair so you finish inst
 | Not Building | Why |
 |--------------|-----|
 | **Driver/rider registration or authentication** | Auth (JWT, passwords, sessions) is a 2–3 week rabbit hole that teaches nothing on the `plan.md` syllabus. Fixtures provide all needed identities. |
-| **Real payment processing** | Fare is calculated and stored; never charged to a real card |
+| ~~**Real payment processing**~~ | **Moved to In-Scope (Month 5).** Stripe **sandbox only** — no real cards, no real money. Focus is on the patterns (idempotency, webhook signature verification, state machines, retry with jitter, provider rate limits) which are core fintech interview material. |
 | **Real maps / routing API** | Distance = Haversine; ETA = distance / 30 km/h |
 | **Real mobile apps** | Clients are `curl`, browser, Java tests, or the simulator |
 | **Multi-city / geo-sharding** | Single 4 km² demo area is enough |
@@ -690,6 +921,10 @@ Pick **one** app host and **one** Postgres. Stay on that pair so you finish inst
 | **Observability** | Actuator + Prometheus + Grafana; business metrics (rides/min, match latency) |
 | **Docker + K8s** | Multi-service Compose from week 1; local K8s + cloud deploy |
 | **System design** | Matching engine, geo-indexing, surge pricing, event-driven state machine |
+| **Payment integration patterns** | `payment-service`: Stripe SDK, PaymentIntent lifecycle, webhook signature verification, idempotency at 2 layers (API + webhook), state machine, retry with jitter, reconciliation task, refund flow |
+| **ClickHouse / columnar** | `audit-service` migration story: Postgres partitioned → ClickHouse; MergeTree engine; benchmark same query on both stores; document trade-offs |
+| **Audit / immutable append-only design** | `audit_events` schema (Postgres partitioned + ClickHouse); dedupe by upstream event_id; retention via drop-partition; separation of point-lookup vs. analytical query paths |
+| **Kafka fan-out to multiple consumers** | Same `ride.completed` event consumed by `payment-service` (act on it) AND `audit-service` (record it); demonstrates real event-driven decoupling |
 
 ---
 
@@ -752,17 +987,20 @@ Materialized view or cached aggregation of `SUM(fare)` per driver per week. Enab
 
 ## Definition of Done (Whole Project)
 
-- [ ] Three Spring Boot services run in Docker with no host JDK.
-- [ ] Postgres schema versioned with Flyway (V1 + V2); fixture drivers seeded automatically.
-- [ ] No auth/registration — all identities come from fixtures.
+- [ ] **Five** Spring Boot services run in Docker with no host JDK (`rider-api`, `driver-api`, `matching-engine`, `payment-service`, `audit-service`).
+- [ ] Postgres schema versioned with Flyway (V1 + V2 + V3 + V4); fixture drivers seeded automatically.
+- [ ] No auth/registration — all identities come from fixtures (except Stripe API keys via env vars).
 - [ ] Simulator generates reproducible concurrent load; tests assert matching correctness and state machine transitions.
-- [ ] Kafka wires command → process → event flow (Month 3+).
-- [ ] Resilience patterns (retry, jitter, circuit breaker) applied and tested.
-- [ ] Prometheus + Grafana dashboard shows live metrics.
+- [ ] Kafka wires command → process → event flow (Month 3+); multiple services consume the same topics without coupling.
+- [ ] Resilience patterns (retry, jitter, circuit breaker) applied and tested — including on Stripe API calls.
+- [ ] Prometheus + Grafana dashboard shows live metrics across all services.
+- [ ] `payment-service`: Stripe sandbox integration works end-to-end; webhook idempotency + signature verification proven by tests; refund flow works; reconciliation task catches missed webhooks.
+- [ ] `audit-service`: captures every state transition; Postgres partitioned by month with retention; ClickHouse holds analytical data; migration narrative documented with benchmarks.
 - [ ] Driver receives ride offers via WebSocket.
 - [ ] Local K8s manifests exist and deploy cleanly.
 - [ ] At least one service deployed to cloud with HTTPS + managed Postgres.
-- [ ] `docs/` contains architecture diagram, SQL EXPLAIN artifacts, and Kafka schema notes.
+- [ ] `docs/` contains architecture diagram, SQL EXPLAIN artifacts, Kafka schema notes, `payment-service.md` (state machine + webhook flow), `audit-service.md` (migration benchmarks + narrative).
+- [ ] Git tags at each milestone: `v0.1` (Kafka + observability), `v0.2` (+ Stripe), `v0.3` (+ Audit + ClickHouse), `v1.0` (+ WS + K8s + Cloud).
 
 ---
 
