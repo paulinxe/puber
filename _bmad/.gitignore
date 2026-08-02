@@ -1,0 +1,17 @@
+# ── BMad runtime ────────────────────────────────────────────────────
+# Managed by the bmad plugin (bmad-init) — do not edit by hand.
+# The _bmad/ runtime is a cache synced to the installed plugin version on
+# session start. Only the config layer below is committed; everything else
+# is regenerated to match the installed plugin version.
+*
+!.gitignore
+!config.toml
+!custom/
+!custom/**
+!bmm/
+!bmm/config.yaml
+!core/
+!core/config.yaml
+# personal install answers stay out of git
+config.user.toml
+custom/*.user.toml
