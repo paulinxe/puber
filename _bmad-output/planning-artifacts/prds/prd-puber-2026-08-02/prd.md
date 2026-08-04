@@ -2,7 +2,7 @@
 title: Puber PRD
 status: final
 created: 2026-08-02
-updated: 2026-08-02
+updated: 2026-08-04
 ---
 
 # Puber — Product Requirements Document
@@ -24,7 +24,7 @@ Success is binary and simple: **the system works, end to end, at every milestone
 - The Simulator generates reproducible, concurrent synthetic load (riders, drivers, rides) and can ramp from fixture-scale up to a stress-test scale (see NFR-2); tests assert matching correctness and state-machine integrity under that load.
 - Kafka wires the full command → process → event flow; multiple services consume the same topics without coupling.
 - Resilience patterns (retry with jitter, circuit breakers) are applied and tested, including on Stripe calls.
-- Prometheus + Grafana show live infra metrics across all services; a separate live dashboard (FR-30) shows live domain/business counts.
+- Prometheus + Grafana show live infra metrics across all services; a separate live dashboard (FR-31) shows live domain/business counts.
 - Stripe sandbox integration works end to end: webhook idempotency and signature verification are proven by tests; refunds work; reconciliation catches missed webhooks.
 - Audit service captures every state transition; Postgres retains it for a bounded window with partitioned drop-based retention (see NFR-6); ClickHouse holds the full analytical copy; the migration story is documented with a before/after benchmark.
 - Drivers receive ride offers over WebSocket.
@@ -66,22 +66,23 @@ Grouped by domain. IDs are stable and global.
 - **FR-20:** Full refund flow is supported (system/admin-triggered); one payment per ride.
 - **FR-21:** A reconciliation task catches missed or failed webhook deliveries.
 
-### E. Audit & Analytics (FR-22–FR-24)
+### E. Audit & Analytics (FR-22–FR-25)
 - **FR-22:** Every domain state transition (ride, driver, payment) is recorded as an audit event.
 - **FR-23:** Audit events are queryable by entity and by actor; retained under a partitioning + retention policy (see NFR-6).
 - **FR-24:** Audit data is mirrored to a columnar store for analytical queries at scale.
+- **FR-25:** Aggregate analytics are computed from data already being collected, giving it an actual consumer instead of sitting unread: distance traveled per driver and ride density by area, computed from the location-ping history (FR-12) mirrored into the columnar store; driver utilization (% time in each status) computed from the existing driver state-transition audit trail (FR-22), not from location pings.
 
-### F. Real-Time & Deployment (FR-25–FR-27)
-- **FR-25:** Drivers receive ride offers via a live push channel (WebSocket), not polling.
-- **FR-26:** All services expose health and metrics; dashboards show live operational KPIs (match latency, ride throughput, driver online count, payment success rate, audit ingest rate).
-- **FR-27:** All services deploy to a local Kubernetes cluster.
+### F. Real-Time & Deployment (FR-26–FR-28)
+- **FR-26:** Drivers receive ride offers via a live push channel (WebSocket), not polling.
+- **FR-27:** All services expose health and metrics; dashboards show live operational KPIs (match latency, ride throughput, driver online count, payment success rate, audit ingest rate).
+- **FR-28:** All services deploy to a local Kubernetes cluster.
 
-### G. Identity & Simulation (FR-28–FR-29)
-- **FR-28:** No authentication or registration exists; identity is passed per-request (rider: header-carried identifier; driver: fixture-seeded identifier) and trusted as-is. This is a deliberate scope decision, not an oversight — auth is out of scope for this project's learning goals.
-- **FR-29:** A Simulator component generates synthetic riders, drivers, and ride traffic at configurable scale (deterministic/seeded) to exercise the system under concurrent load. It runs as an in-process test fixture early on and becomes a standalone containerized load generator later, with the ability to ramp generation volume up toward the stress-test scale in NFR-2.
+### G. Identity & Simulation (FR-29–FR-30)
+- **FR-29:** No authentication or registration exists; identity is passed per-request (rider: header-carried identifier; driver: fixture-seeded identifier) and trusted as-is. This is a deliberate scope decision, not an oversight — auth is out of scope for this project's learning goals.
+- **FR-30:** A Simulator component generates synthetic riders, drivers, and ride traffic at configurable scale (deterministic/seeded) to exercise the system under concurrent load. It runs as an in-process test fixture early on and becomes a standalone containerized load generator later, with the ability to ramp generation volume up toward the stress-test scale in NFR-2.
 
-### H. Live Operational Dashboard (FR-30)
-- **FR-30:** A lightweight custom web UI shows live counts of system state — drivers by status, rides by status, active riders — pushed in real time via the same mechanism as FR-25. This is distinct from the Grafana/Prometheus dashboards (FR-26), which track infrastructure metrics, not domain/business state.
+### H. Live Operational Dashboard (FR-31)
+- **FR-31:** A lightweight custom web UI shows live counts of system state — drivers by status, rides by status, active riders — pushed in real time via the same mechanism as FR-26. This is distinct from the Grafana/Prometheus dashboards (FR-27), which track infrastructure metrics, not domain/business state.
 
 ## 4. Non-Functional Requirements
 
@@ -104,7 +105,7 @@ Unusual framing: most of these are learning targets to prove out, not hard produ
 - Real mobile apps (clients are curl, a browser, Java tests, or the Simulator)
 - Multi-city operation or geographic sharding
 - Advanced/ML-driven surge pricing
-- Real-time turn-by-turn navigation — instead, the Simulator advances a driver's position via straight-line drift toward the destination on each location heartbeat (FR-11), using the same haversine math as the ETA formula, not real road-network routing
+- Real-time turn-by-turn navigation — instead, the Simulator advances a driver's position via straight-line drift toward the destination on each location heartbeat (FR-11), using the same haversine math as the ETA formula, not real road-network routing (this location history is not write-only, though — see FR-25 for its analytics use)
 - Rider profiles or ratings
 - Driver onboarding or document verification
 - Dispatch logic beyond nearest-available-driver
@@ -120,16 +121,16 @@ Five phases across an 8-month / 32-week plan. Detailed week-by-week ticket break
 1. **Bootstrap + Domain + Matching** (Weeks 1–7): Core services stand up; domain model, Postgres persistence, and fixtures land; in-memory nearest-driver matching works end to end against the Simulator, with no Kafka yet.
 2. **Kafka + Resilience + Observability** (Weeks 9–16): Direct inter-service HTTP calls are replaced by an event backbone; resilience patterns and full observability (metrics + dashboards) land; the driver-location fast path is introduced.
 3. **Stripe Payments** (Weeks 17–20): A dedicated payment service consumes ride-completion events, integrates Stripe sandbox PaymentIntents, and proves out idempotent webhook handling, the payment state machine, and refunds. Milestone `v0.2`.
-4. **Audit + ClickHouse** (Weeks 21–24): An audit service captures state-transition events across all domains; storage starts in partitioned Postgres and migrates to ClickHouse for analytics, with the migration benchmarked. Milestone `v0.3`.
-5. **Real-Time + Local Kubernetes** (Weeks 25–32): Drivers receive ride offers over WebSocket; the live operational dashboard (FR-30) ships; the full system is deployed to a local Kubernetes cluster; the stress-test scale target (NFR-2) is exercised. Milestone `v1.0`. *(Local K8s only — no cloud vendor; see NFR-7.)*
+4. **Audit + ClickHouse** (Weeks 21–24): An audit service captures state-transition events across all domains; storage starts in partitioned Postgres and migrates to ClickHouse for analytics, with the migration benchmarked; the same ClickHouse pipeline is reused to compute driver utilization, distance-traveled, and ride-density analytics (FR-25) from location and audit history. Milestone `v0.3`.
+5. **Real-Time + Local Kubernetes** (Weeks 25–32): Drivers receive ride offers over WebSocket; the live operational dashboard (FR-31) ships; the full system is deployed to a local Kubernetes cluster; the stress-test scale target (NFR-2) is exercised. Milestone `v1.0`. *(Local K8s only — no cloud vendor; see NFR-7.)*
 
 ## 7. Glossary
 
-- **Rider** — the actor requesting a ride; identified per-request by a passed identifier (FR-28), no account.
+- **Rider** — the actor requesting a ride; identified per-request by a passed identifier (FR-29), no account.
 - **Driver** — the actor fulfilling rides; fixture-seeded, tracked by location and status.
 - **Admin** — the actor triggering system-level actions (e.g., refunds); not a real authenticated role, just an actor-type label.
 - **System** — the scheduler/automated actor (retry tasks, offer-timeout expiry) acting without a human trigger.
-- **Simulator** — the synthetic load-generation component standing in for real riders and drivers (FR-29).
+- **Simulator** — the synthetic load-generation component standing in for real riders and drivers (FR-30).
 - **Ride states** — `REQUESTED → MATCHED → IN_PROGRESS → COMPLETED`, or `CANCELLED` from `REQUESTED`/`MATCHED`.
 - **Driver status** — `OFFLINE` / `AVAILABLE` / `BUSY`.
 - **Payment states** — `INITIATED → AUTHORIZED → CAPTURED → REFUNDED`, or `FAILED`.
