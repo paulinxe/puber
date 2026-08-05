@@ -52,7 +52,7 @@ Grouped by domain. IDs are stable and global.
 - **FR-10:** A matched driver has a bounded window to accept; on timeout — or on an explicit decline (FR-21) — the offer is released and re-offered to the next-nearest driver.
 - **FR-11:** If no driver can be found within a bounded overall window, the ride transitions to a terminal `NO_DRIVER` state and retrying stops — the rider gets a definitive answer instead of waiting indefinitely.
 - **FR-12:** If the driver holding a `MATCHED` ride goes silent past a staleness window before starting the trip, the ride returns to `REQUESTED` and re-enters matching for the next-nearest driver, and the silent driver is released. The rider was never picked up, so the ride is still fulfillable — it is salvaged rather than killed.
-- **FR-13:** If the driver on an `IN_PROGRESS` ride goes silent past a staleness window, the system auto-completes the ride, charging the fare locked at request time through the normal payment path (FR-31), and releases the driver. This is a deliberate simplification: the system cannot tell a finished trip from one abandoned mid-route, so it assumes completion — acceptable here because no real money moves. The audit trail records `SYSTEM` rather than `DRIVER` as the completing actor, so auto-completions stay distinguishable from genuine ones after the fact.
+- **FR-13:** If the driver on an `IN_PROGRESS` ride goes silent past a staleness window, the system auto-completes the ride, charging the fare locked at request time through the normal payment path (FR-31), and releases the driver. This is a deliberate simplification: the system cannot tell a finished trip from one abandoned mid-route, so it assumes completion — acceptable here because no real money moves, and the rider has no in-system remedy for a wrong charge (see Non-Goals). The audit trail records `SYSTEM` rather than `DRIVER` as the completing actor, so auto-completions stay distinguishable from genuine ones after the fact, and a refund can be issued against one internally (FR-34) if you choose to.
 - **FR-14:** Full ride state machine: `REQUESTED → MATCHED → IN_PROGRESS → COMPLETED`, plus the terminal states `CANCELLED` and `NO_DRIVER`. Recovery from a silent driver (FR-12, FR-13) reuses existing states rather than adding new ones.
 - **FR-15:** Rider may cancel only while `REQUESTED` or `MATCHED`; cancelling a `MATCHED` ride releases the driver back to available. Cancelling with a mismatched rider identity is rejected without revealing whether the ride exists.
 - **FR-16:** Matching is race-safe under concurrency — no driver is ever double-booked.
@@ -81,7 +81,7 @@ Grouped by domain. IDs are stable and global.
 - **FR-31:** On ride completion, the system creates a Stripe sandbox PaymentIntent for the fare.
 - **FR-32:** Payment state machine: `INITIATED → AUTHORIZED → CAPTURED → REFUNDED` (plus `FAILED`).
 - **FR-33:** Stripe webhooks are verified by signature and processed idempotently (deduped by event ID).
-- **FR-34:** Full refund flow is supported (system/admin-triggered); one payment per ride.
+- **FR-34:** Full refund flow is supported end to end — refund issued against the provider, payment moved to `REFUNDED`, refund webhook processed idempotently, and the result reconciled. Refunds are triggered by an internal operator-facing call and exercised by tests and the Simulator; there is no rider-facing way to request one (see Non-Goals). One payment per ride.
 - **FR-35:** A reconciliation task catches missed or failed webhook deliveries.
 
 ### G. Audit & Analytics (FR-36–FR-39)
@@ -130,8 +130,9 @@ Unusual framing: most of these are learning targets to prove out, not hard produ
 - Driver-initiated cancellation — only riders can cancel (FR-15); a driver's exits are declining an offer (FR-21) or completing the ride (FR-22)
 - Multiple vehicle types
 - Any real cloud vendor deployment (see NFR-7)
+- Rider-facing refund requests or dispute handling — refunds exist as a capability (FR-34) but can only be triggered internally. Stated plainly because FR-13 can charge for a trip that did not finish, and a rider has **no in-system remedy** for that: no way to contest a charge, no review workflow, no dispute status. Accepted because no real money moves here; the refund *execution* path is kept for its payment-pattern value, while the intake workflow is deferred.
 
-**Deferred (explicitly out of the current plan, may resurface later):** a real riders table with foreign-key relationships, multiple vehicle types, scheduled/recurring rides, promo codes, a driver earnings dashboard.
+**Deferred (explicitly out of the current plan, may resurface later):** a real riders table with foreign-key relationships, multiple vehicle types, scheduled/recurring rides, promo codes, a driver earnings dashboard, and rider-initiated refund requests with a review/approval workflow.
 
 ## 6. Roadmap
 
@@ -147,7 +148,7 @@ Five phases across an 8-month / 32-week plan. Detailed week-by-week ticket break
 
 - **Rider** — the actor requesting a ride; identified per-request by a passed identifier (FR-43), no account.
 - **Driver** — the actor fulfilling rides; fixture-seeded, tracked by location and status, and responsible for their own availability (FR-18).
-- **Admin** — the actor triggering system-level actions (e.g., refunds); not a real authenticated role, just an actor-type label.
+- **Admin** — an audit `actor_type` label recorded on internally-triggered actions such as refunds (FR-34). Not an authenticated role, not a person with a UI, and not a distinct set of capabilities — with no auth (FR-43) and no review workflow in scope, it exists only to distinguish an operator-triggered action from a `SYSTEM` one in the audit trail.
 - **System** — the scheduler/automated actor (retry tasks, offer-timeout expiry, silent-driver recovery, auto-completion) acting without a human trigger; recorded as the actor on the audit events it causes (FR-36).
 - **Silent driver** — a driver whose last heartbeat is older than the staleness window (FR-27); treated as unavailable, with any ride they hold recovered per FR-12 or FR-13.
 - **Simulator** — the synthetic load-generation component standing in for real riders and drivers (FR-44).
