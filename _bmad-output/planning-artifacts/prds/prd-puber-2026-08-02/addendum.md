@@ -49,3 +49,21 @@ Java / Spring Boot, Postgres, Kafka, Redis, Stripe (sandbox), ClickHouse, Promet
 Target stress scale: ~20k drivers, ~200k riders. The purpose is to surface concrete bottlenecks worth learning from — connection pool exhaustion, missing indexes, Kafka partition throughput ceilings, cache hot-key contention — not to sustain that load indefinitely. Positioned as a late-phase milestone (alongside the local-K8s deploy phase), not a per-phase gate, so early matching-correctness work stays lean.
 
 **Open mechanism question (for Architecture/Epics, not this PRD):** Payments is excluded from the stress test (NFR-8) because Stripe sandbox rate limits are outside Puber's control. The mechanism for that exclusion — a simulator config flag, routing stress-test rides through a stub/no-op payment path, a separate smaller test suite for payment concurrency, or something else — is undecided and belongs to the Architecture or Epics/Stories pass, not here.
+
+## Open Mechanism Questions from the Rider Flow
+
+**Transport for rider-side live driver position (FR-6).** The rider needs the assigned driver's position and ETA to update as the driver moves, but the WebSocket channel (FR-40) is scoped to pushing offers to drivers. Whether the rider polls the ride-read endpoint (FR-5) on an interval, gets a second WebSocket/SSE channel, or something else is an architecture decision, not a product one. Polling is the cheaper starting point and matches the fact that FR-5 already returns ride state; a push channel is the more interesting exercise. Deferred to the Architecture pass.
+
+**Heartbeat staleness windows (FR-27, FR-12, FR-13).** The PRD deliberately fixes no numbers here. The Redis fast path already planned for driver locations makes the idle case nearly free — a TTL on the location key expires dead drivers without a sweep job — but the Postgres-only V1 has no such mechanism and will need either a query-time freshness predicate or a scheduled sweep.
+
+Important: these should almost certainly be **three different windows**, not one shared constant, because the cost of a false positive rises sharply as the ride progresses:
+
+| Case | Consequence of firing wrongly | Implied window |
+|---|---|---|
+| Idle driver un-matchable (FR-27) | Driver misses offers until they report again; self-healing | Shortest — tens of seconds is fine |
+| `MATCHED` ride re-matched (FR-12) | Rider's assigned driver is swapped mid-approach; recoverable but visible | Longer |
+| `IN_PROGRESS` ride auto-completed (FR-13) | Trip is ended and charged while it is still happening; **not** recoverable | Longest by a wide margin |
+
+A single 60s window would end live trips every time a driver drove through a tunnel or a dead zone. Size FR-13's window against how long a plausible trip lasts in the simulated world, not against the heartbeat interval. Decide all three during Architecture alongside the 5s retry interval and 10s offer timeout.
+
+**Bounded window before `NO_DRIVER` (FR-11).** The PRD states the ride gives up after a bounded window of failed retries but deliberately does not fix the number. `puber.md` originally floated 60 seconds as an optional behavior. Pick the concrete value during Architecture or Epics, alongside the existing 5s retry interval and 10s offer timeout, so all three are tuned as one set.
