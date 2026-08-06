@@ -50,20 +50,33 @@ Target stress scale: ~20k drivers, ~200k riders. The purpose is to surface concr
 
 **Open mechanism question (for Architecture/Epics, not this PRD):** Payments is excluded from the stress test (NFR-8) because Stripe sandbox rate limits are outside Puber's control. The mechanism for that exclusion — a simulator config flag, routing stress-test rides through a stub/no-op payment path, a separate smaller test suite for payment concurrency, or something else — is undecided and belongs to the Architecture or Epics/Stories pass, not here.
 
+## Why Rider Accounts and "Debtor" Standing Were Deferred
+
+Considered and deliberately not built: persisting rider accounts, marking a rider a *debtor* when a capture fails, and blocking their future ride requests until they settle. Recorded here because the reasoning is the useful part — the idea is sound, it is the sequencing that is wrong.
+
+1. **The pre-authorization hold (FR-33) largely eliminates the triggering scenario.** A hold reserves the funds; capturing against a valid hold does not fail for insufficient funds. Capture can still fail — card cancelled or reported stolen between authorization and capture, issuer revoking the hold, a hold left to expire — but "the rider had no money" is precisely the case the hold prevents. Building a debt system for it would mean building for a case the design already handles.
+2. **A debtor flag is a one-way door without a clearing mechanism.** Marking a rider requires some way to un-mark them, or the rider is permanently locked out. Clearing means either charging outside any ride context — a payment flow with no ride to hang off — or an operator action, which is the review/approval workflow already deferred above. The exit costs more than the entrance.
+3. **The learning payoff is thin relative to its cost.** Debtor standing is product policy: a flag, a gate at request time, a lifecycle. It exercises a cross-aggregate invariant and little else, competing for the same weeks as Kafka, the ClickHouse migration, and the scale work — all of which sit closer to this project's stated purpose.
+4. **Payments is already over-subscribed.** The phase grew from five FRs to seven when the two-phase lifecycle and both failure paths landed; Weeks 17–20 was sized before that.
+
+**The hook, if this is picked up later:** FR-35 already drives a failed capture to terminal `FAILED` with a full audit trail. A debtor feature would read that state rather than needing anything re-architected — and a riders table (also deferred) is the natural home for the flag. Nothing about the current design forecloses it.
+
 ## Open Mechanism Questions from the Rider Flow
 
-**Transport for rider-side live driver position (FR-6).** The rider needs the assigned driver's position and ETA to update as the driver moves, but the WebSocket channel (FR-40) is scoped to pushing offers to drivers. Whether the rider polls the ride-read endpoint (FR-5) on an interval, gets a second WebSocket/SSE channel, or something else is an architecture decision, not a product one. Polling is the cheaper starting point and matches the fact that FR-5 already returns ride state; a push channel is the more interesting exercise. Deferred to the Architecture pass.
+**Transport for rider-side live driver position (FR-6).** The rider needs the assigned driver's position and ETA to update as the driver moves, but the WebSocket channel (FR-44) is scoped to pushing offers to drivers. Whether the rider polls the ride-read endpoint (FR-5) on an interval, gets a second WebSocket/SSE channel, or something else is an architecture decision, not a product one. Polling is the cheaper starting point and matches the fact that FR-5 already returns ride state; a push channel is the more interesting exercise. Deferred to the Architecture pass.
 
-**Heartbeat staleness windows (FR-27, FR-12, FR-13).** The PRD deliberately fixes no numbers here. The Redis fast path already planned for driver locations makes the idle case nearly free — a TTL on the location key expires dead drivers without a sweep job — but the Postgres-only V1 has no such mechanism and will need either a query-time freshness predicate or a scheduled sweep.
+**Heartbeat staleness windows (FR-29, FR-13, FR-14).** The PRD deliberately fixes no numbers here. The Redis fast path already planned for driver locations makes the idle case nearly free — a TTL on the location key expires dead drivers without a sweep job — but the Postgres-only V1 has no such mechanism and will need either a query-time freshness predicate or a scheduled sweep.
 
 Important: these should almost certainly be **three different windows**, not one shared constant, because the cost of a false positive rises sharply as the ride progresses:
 
 | Case | Consequence of firing wrongly | Implied window |
 |---|---|---|
-| Idle driver un-matchable (FR-27) | Driver misses offers until they report again; self-healing | Shortest — tens of seconds is fine |
-| `MATCHED` ride re-matched (FR-12) | Rider's assigned driver is swapped mid-approach; recoverable but visible | Longer |
-| `IN_PROGRESS` ride auto-completed (FR-13) | Trip is ended and charged while it is still happening; **not** recoverable | Longest by a wide margin |
+| Idle driver un-matchable (FR-29) | Driver misses offers until they report again; self-healing | Shortest — tens of seconds is fine |
+| `MATCHED` ride re-matched (FR-13) | Rider's assigned driver is swapped mid-approach; recoverable but visible | Longer |
+| `IN_PROGRESS` ride auto-completed (FR-14) | Trip is ended and the held fare captured while the trip is still happening; **not** recoverable | Longest by a wide margin |
 
-A single 60s window would end live trips every time a driver drove through a tunnel or a dead zone. Size FR-13's window against how long a plausible trip lasts in the simulated world, not against the heartbeat interval. Decide all three during Architecture alongside the 5s retry interval and 10s offer timeout.
+A single 60s window would end live trips every time a driver drove through a tunnel or a dead zone. Size FR-14's window against how long a plausible trip lasts in the simulated world, not against the heartbeat interval. Decide all three during Architecture alongside the 5s retry interval and 10s offer timeout.
 
-**Bounded window before `NO_DRIVER` (FR-11).** The PRD states the ride gives up after a bounded window of failed retries but deliberately does not fix the number. `puber.md` originally floated 60 seconds as an optional behavior. Pick the concrete value during Architecture or Epics, alongside the existing 5s retry interval and 10s offer timeout, so all three are tuned as one set.
+**Authorization hold lifetime (FR-33, FR-35).** Stripe holds expire on their own after several days, which is far longer than any Puber ride, so expiry is not a real concern at this scale — but it is worth knowing the hold is not indefinite. The more relevant question is whether a hold placed at request time can outlive the ride's own bounded windows (`NO_DRIVER` timeout, staleness windows): every terminal path must void or capture, or holds leak. Worth an explicit sweep or invariant check during Architecture — "no terminal ride has an outstanding `AUTHORIZED` payment" is a cheap and highly testable assertion.
+
+**Bounded window before `NO_DRIVER` (FR-12).** The PRD states the ride gives up after a bounded window of failed retries but deliberately does not fix the number. `puber.md` originally floated 60 seconds as an optional behavior. Pick the concrete value during Architecture or Epics, alongside the existing 5s retry interval and 10s offer timeout, so all three are tuned as one set.
