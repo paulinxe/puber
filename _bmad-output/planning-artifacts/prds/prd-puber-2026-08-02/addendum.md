@@ -40,9 +40,13 @@ Depth pulled out of the PRD proper because it's technical-how (architecture/solu
 
 Java / Spring Boot, Postgres, Kafka, Redis, Stripe (sandbox), ClickHouse, Prometheus + Grafana, Resilience4j, WebSockets, Kubernetes (local only — see PRD NFR-7 for the explicit cloud-deployment override).
 
-## Ticket-Level Source Material
+## Ticket-Level Source Material — Historical, Superseded
 
-`docs/tickets/pb-1.1.md` through `pb-7.1.md` already carry detailed subtasks, acceptance criteria, and per-ticket out-of-scope notes for Weeks 1–7 (bootstrap through query tuning/indexing). Not reproduced here — feeds directly into `bmad-create-epics-and-stories` rather than this PRD.
+`docs/tickets/pb-1.1.md` through `pb-7.1.md` were written before this PRD existed, at an early stage of the project. **They are not authoritative and should not be reconciled against.** When epics and stories are generated, the PRD plus the architecture spine are the source; these tickets are reference material at most.
+
+They are already stale in ways that matter: the driver status enum, the payment flow (no two-phase authorize/capture, no `PAYMENT_FAILED` or `VOIDED`), the ride state machine (no `NO_DRIVER`, no explicit start-trip, no decline), the absence of driver availability and session reads, and a shared-database assumption the architecture run has since overridden with database-per-service.
+
+What was worth keeping from them has already been extracted into this PRD during input reconciliation — the one-active-ride guard, the anti-enumeration cancel behaviour, and the driver accept/complete guard all became FRs that way. The remaining value is narrative: PB-6.1's isolation-level decision record and PB-7.1's `EXPLAIN`/indexing work document reasoning worth re-reading before redoing that work, and PB-4.1's expand-only migration discipline is a convention worth carrying forward even though it is deliberately not a PRD-level NFR.
 
 ## Sizing / Stress-Test Detail (NFR-2)
 
@@ -76,6 +80,19 @@ Important: these should almost certainly be **three different windows**, not one
 | `IN_PROGRESS` ride auto-completed (FR-14) | Trip is ended and the held fare captured while the trip is still happening; **not** recoverable | Longest by a wide margin |
 
 A single 60s window would end live trips every time a driver drove through a tunnel or a dead zone. Size FR-14's window against how long a plausible trip lasts in the simulated world, not against the heartbeat interval. Decide all three during Architecture alongside the 5s retry interval and 10s offer timeout.
+
+**Declared status vs. observed reachability (FR-20, FR-29).** These are deliberately two facts, not one field, and the architecture must keep them apart. Status is the driver's declared intent and is written only by their own action or the ride lifecycle; reachability is derived from heartbeat freshness and is never persisted onto status. Matchability is the conjunction.
+
+This falls out naturally once locations live in Redis: the declared status sits in the owning service's Postgres row, and reachability is simply whether the driver's Redis location key still exists under its TTL. Two stores, two lifetimes, no reconciliation between them — an absent key means unreachable, not offline. Note the architecture run's dispatch enum (`OFFLINE | AVAILABLE | OFFERED | ACCEPTED_RIDE | IN_RIDE`) has no staleness member and should not gain one; staleness is orthogonal to every value in it.
+
+The V1 shortcut needs care here for the same reason the staleness window does: with no Redis yet, freshness has to come from a `last_heartbeat_at` column compared at query time, and the matching query must filter on *both* conditions. A query that filters only on status will happily dispatch to drivers who vanished an hour ago.
+
+**Monotonic vs. wall clock, and where the boundary falls (NFR-9).** NFR-9 requires durations to be measured monotonically, but a monotonic clock is process-local — its readings are meaningless outside the JVM that produced them. That splits Puber's timers into two kinds:
+
+- **In-process deadlines** — the offer timeout and the retry interval are set and evaluated inside matching-engine. Monotonic applies cleanly; no cross-service comparison happens.
+- **Cross-service staleness** — a heartbeat originates at driver-api and its freshness is judged by matching-engine. Monotonic cannot span that boundary, so this necessarily compares wall-clock timestamps taken on two machines, and must tolerate clock skew between them. The staleness window should be comfortably larger than any plausible skew, which is a second reason (alongside tunnels and dead zones) not to make these windows tight.
+
+Once locations move to Redis with a TTL, the TTL becomes the staleness mechanism and Redis's own clock becomes the single reference — which removes the skew question rather than answering it. Worth noting as another way the Kafka-era design is simpler than the V1 shortcut it replaces.
 
 **Authorization hold lifetime (FR-33, FR-35).** Stripe holds expire on their own after several days, which is far longer than any Puber ride, so expiry is not a real concern at this scale — but it is worth knowing the hold is not indefinite. The more relevant question is whether a hold placed at request time can outlive the ride's own bounded windows (`NO_DRIVER` timeout, staleness windows): every terminal path must void or capture, or holds leak. Worth an explicit sweep or invariant check during Architecture — "no terminal ride has an outstanding `AUTHORIZED` payment" is a cheap and highly testable assertion.
 

@@ -1,0 +1,869 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Puber — Flow &amp; Status Map</title>
+<style>
+  :root {
+    --paper:      #F3F5F8;
+    --surface:    #FFFFFF;
+    --surface-2:  #E9EDF2;
+    --ink:        #131A22;
+    --muted:      #5C6975;
+    --faint:      #8794A1;
+    --line:       #D3DAE2;
+    --line-strong:#9DA9B6;
+    --accent:     #C97615;
+    --accent-soft:#F5E6D0;
+    --good:       #17786B;
+    --good-soft:  #D9EBE7;
+    --bad:        #B4442F;
+    --bad-soft:   #F5DFD9;
+    --sys:        #6B5B95;
+    --sys-soft:   #E6E1F0;
+
+    --serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+
+    --col: 66ch;
+    --wide: 76rem;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0E141B;
+      --surface:    #151E27;
+      --surface-2:  #1E2A35;
+      --ink:        #E4EAF0;
+      --muted:      #96A3B0;
+      --faint:      #6C7987;
+      --line:       #2A3745;
+      --line-strong:#4A5A6B;
+      --accent:     #E9A44A;
+      --accent-soft:#3A2C17;
+      --good:       #3FB5A2;
+      --good-soft:  #14302C;
+      --bad:        #E0745C;
+      --bad-soft:   #3A211B;
+      --sys:        #9C8CC4;
+      --sys-soft:   #262135;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:      #0E141B;
+    --surface:    #151E27;
+    --surface-2:  #1E2A35;
+    --ink:        #E4EAF0;
+    --muted:      #96A3B0;
+    --faint:      #6C7987;
+    --line:       #2A3745;
+    --line-strong:#4A5A6B;
+    --accent:     #E9A44A;
+    --accent-soft:#3A2C17;
+    --good:       #3FB5A2;
+    --good-soft:  #14302C;
+    --bad:        #E0745C;
+    --bad-soft:   #3A211B;
+    --sys:        #9C8CC4;
+    --sys-soft:   #262135;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+
+  /* ---- shell ---- */
+  .wrap { max-width: var(--wide); margin: 0 auto; padding: 0 1.5rem; }
+  .col { max-width: var(--col); }
+
+  nav.bar {
+    position: sticky; top: 0; z-index: 20;
+    background: color-mix(in srgb, var(--paper) 88%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+  }
+  .bar-inner {
+    max-width: var(--wide); margin: 0 auto; padding: .6rem 1.5rem;
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem 1.15rem;
+  }
+  .bar-mark {
+    font-family: var(--mono); font-size: .74rem; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--accent); margin-right: auto;
+  }
+  .bar a {
+    font-family: var(--mono); font-size: .74rem; letter-spacing: .05em;
+    color: var(--muted); text-decoration: none; padding: .15rem 0;
+    border-bottom: 1px solid transparent;
+  }
+  .bar a:hover { color: var(--ink); border-bottom-color: var(--accent); }
+
+  header.masthead { padding: 4rem 0 2.5rem; }
+  .eyebrow {
+    font-family: var(--mono); font-size: .74rem; letter-spacing: .18em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 1rem;
+  }
+  h1 {
+    font-family: var(--serif); font-weight: 600;
+    font-size: clamp(2.4rem, 6vw, 3.9rem); line-height: 1.04;
+    letter-spacing: -.02em; text-wrap: balance; margin: 0 0 1rem;
+  }
+  .standfirst { font-size: 1.12rem; color: var(--muted); margin: 0 0 2rem; max-width: 58ch; }
+
+  .facts { display: flex; flex-wrap: wrap; gap: 0; border-top: 1px solid var(--line); }
+  .fact {
+    padding: .9rem 1.6rem .9rem 0; margin-right: 1.6rem;
+    border-right: 1px solid var(--line);
+  }
+  .fact:last-child { border-right: 0; }
+  .fact-n {
+    font-family: var(--mono); font-size: 1.5rem; font-variant-numeric: tabular-nums;
+    line-height: 1; display: block; margin-bottom: .3rem;
+  }
+  .fact-l {
+    font-family: var(--mono); font-size: .68rem; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--faint);
+  }
+
+  section { padding: 3rem 0; border-top: 1px solid var(--line); }
+  h2 {
+    font-family: var(--serif); font-weight: 600;
+    font-size: clamp(1.6rem, 3.2vw, 2.15rem); line-height: 1.15;
+    letter-spacing: -.015em; margin: 0 0 .5rem; text-wrap: balance;
+  }
+  h3 {
+    font-family: var(--sans); font-weight: 650; font-size: 1rem;
+    letter-spacing: -.005em; margin: 2rem 0 .6rem;
+  }
+  .sec-note { color: var(--muted); margin: 0 0 1.8rem; max-width: 62ch; }
+  p { margin: 0 0 1rem; }
+  .col p:last-child { margin-bottom: 0; }
+
+  /* ---- diagram rail ---- */
+  .rail {
+    overflow-x: auto; padding: 1.4rem; background: var(--surface);
+    border: 1px solid var(--line); border-radius: 4px;
+  }
+  .rail svg { display: block; min-width: 880px; height: auto; }
+
+  .sm-chip { fill: var(--surface-2); stroke: var(--line-strong); stroke-width: 1.25; }
+  .sm-chip.is-good { fill: var(--good-soft); stroke: var(--good); }
+  .sm-chip.is-bad  { fill: var(--bad-soft);  stroke: var(--bad); }
+  .sm-chip.is-live { fill: var(--accent-soft); stroke: var(--accent); }
+  .sm-name {
+    font-family: var(--mono); font-size: 12.5px; letter-spacing: .05em;
+    fill: var(--ink); text-anchor: middle; dominant-baseline: middle;
+  }
+  .sm-edge { fill: none; stroke: var(--line-strong); stroke-width: 1.4; marker-end: url(#arrow); }
+  .sm-edge.is-sys { stroke: var(--sys); stroke-dasharray: 5 4; marker-end: url(#arrow-sys); }
+  .sm-edge.is-bad { stroke: var(--bad); marker-end: url(#arrow-bad); }
+  .sm-tag {
+    font-family: var(--mono); font-size: 10.5px; fill: var(--muted);
+    text-anchor: middle; letter-spacing: .02em;
+  }
+  .sm-tag.is-sys { fill: var(--sys); }
+  .sm-entry { fill: var(--ink); }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: .5rem 1.4rem; margin-top: 1rem;
+    font-family: var(--mono); font-size: .72rem; color: var(--muted);
+  }
+  .legend span { display: inline-flex; align-items: center; gap: .45rem; }
+  .swatch { width: 22px; height: 3px; border-radius: 2px; display: inline-block; }
+
+  /* ---- journeys ---- */
+  .steps { list-style: none; margin: 0; padding: 0; }
+  .step {
+    display: grid; grid-template-columns: 2.4rem 1fr; gap: 0 1.1rem;
+    position: relative; padding-bottom: 1.5rem;
+  }
+  .step:last-child { padding-bottom: 0; }
+  .step::before {
+    content: ""; position: absolute; left: 1.19rem; top: 2.2rem; bottom: -.2rem;
+    width: 1px; background: var(--line);
+  }
+  .step:last-child::before { display: none; }
+  .step-n {
+    font-family: var(--mono); font-size: .72rem; font-variant-numeric: tabular-nums;
+    width: 2.4rem; height: 2.4rem; border-radius: 50%;
+    border: 1px solid var(--line-strong); background: var(--surface);
+    display: flex; align-items: center; justify-content: center; color: var(--muted);
+    position: relative; z-index: 1;
+  }
+  .step-b { padding-top: .35rem; }
+  .step-t { font-weight: 620; margin: 0 0 .25rem; }
+  .step-d { color: var(--muted); margin: 0; font-size: .95rem; }
+
+  /* ---- chips & refs ---- */
+  .fr {
+    font-family: var(--mono); font-size: .76em; letter-spacing: .02em;
+    color: var(--accent); white-space: nowrap;
+  }
+  code, .st {
+    font-family: var(--mono); font-size: .82em; letter-spacing: .02em;
+    background: var(--surface-2); padding: .1em .4em; border-radius: 3px;
+  }
+  .st.good { background: var(--good-soft); color: var(--good); }
+  .st.bad  { background: var(--bad-soft);  color: var(--bad); }
+  .st.sys  { background: var(--sys-soft);  color: var(--sys); }
+
+  /* ---- tables ---- */
+  .tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: .93rem; }
+  th, td { text-align: left; padding: .72rem .95rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th {
+    font-family: var(--mono); font-size: .68rem; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--faint); font-weight: 500;
+    background: var(--surface-2);
+  }
+  tr:last-child td { border-bottom: 0; }
+  td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  /* ---- coverage grid ---- */
+  .grid {
+    display: grid; gap: 1px; background: var(--line);
+    border: 1px solid var(--line); border-radius: 4px; overflow: hidden;
+    grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
+  }
+  .cell { background: var(--surface); padding: 1rem 1.1rem; }
+  .cell-k {
+    font-family: var(--mono); font-size: .68rem; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--faint); margin: 0 0 .5rem;
+  }
+  .cell-t { font-weight: 620; margin: 0 0 .55rem; font-size: .97rem; }
+  .cell-r { font-family: var(--mono); font-size: .74rem; color: var(--muted); margin: 0 0 .7rem; }
+  .meter { height: 4px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+  .meter i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+
+  /* ---- tag lists ---- */
+  .tags { display: flex; flex-wrap: wrap; gap: .45rem; margin: 0; padding: 0; list-style: none; }
+  .tags li {
+    font-family: var(--mono); font-size: .76rem; padding: .3rem .6rem;
+    border: 1px solid var(--line); border-radius: 3px; color: var(--muted);
+    background: var(--surface);
+  }
+
+  .two { display: grid; gap: 2.5rem; grid-template-columns: 1fr; }
+  @media (min-width: 860px) { .two { grid-template-columns: 1fr 1fr; gap: 3rem; } }
+
+  .callout {
+    border-left: 3px solid var(--accent); background: var(--surface);
+    padding: 1rem 1.2rem; border-radius: 0 4px 4px 0; margin: 1.5rem 0 0;
+  }
+  .callout p { margin: 0; font-size: .95rem; color: var(--muted); }
+  .callout strong { color: var(--ink); }
+
+  footer {
+    border-top: 1px solid var(--line); padding: 2.5rem 0 4rem;
+    font-family: var(--mono); font-size: .74rem; color: var(--faint);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  }
+</style>
+
+<nav class="bar">
+  <div class="bar-inner">
+    <span class="bar-mark">Puber · Flow Map</span>
+    <a href="#ride">Ride states</a>
+    <a href="#money">Money</a>
+    <a href="#rider">Rider</a>
+    <a href="#driver">Driver</a>
+    <a href="#recovery">Recovery</a>
+    <a href="#coverage">Coverage</a>
+    <a href="#open">Open</a>
+  </div>
+</nav>
+
+<div class="wrap">
+  <header class="masthead">
+    <p class="eyebrow">Product requirements · status map</p>
+    <h1>Every flow Puber knows how to run</h1>
+    <p class="standfirst">
+      A visual read of the PRD as it stands: the two state machines, both actor journeys,
+      every failure and recovery path, and what is deliberately not being built.
+    </p>
+    <div class="facts">
+      <div class="fact"><span class="fact-n">49</span><span class="fact-l">Requirements</span></div>
+      <div class="fact"><span class="fact-n">10</span><span class="fact-l">Non-functional</span></div>
+      <div class="fact"><span class="fact-n">7</span><span class="fact-l">Ride states</span></div>
+      <div class="fact"><span class="fact-n">6</span><span class="fact-l">Payment states</span></div>
+      <div class="fact"><span class="fact-n">1</span><span class="fact-l">Open question</span></div>
+    </div>
+  </header>
+
+  <section id="ride">
+    <h2>Ride state machine</h2>
+    <p class="sec-note">
+      Four states on the happy path and three terminals. Every terminal is reachable and every
+      one of them resolves the payment — there is no way for a ride to end and leave money in limbo.
+    </p>
+
+    <div class="rail">
+      <svg viewBox="0 0 900 360" role="img" aria-label="Ride state machine: REQUESTED to MATCHED to IN_PROGRESS to COMPLETED, with terminal states PAYMENT_FAILED, NO_DRIVER and CANCELLED">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--line-strong)"></path>
+          </marker>
+          <marker id="arrow-sys" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--sys)"></path>
+          </marker>
+          <marker id="arrow-bad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--bad)"></path>
+          </marker>
+        </defs>
+
+        <!-- re-match back edge -->
+        <path class="sm-edge is-sys" d="M 395,150 C 395,80 250,80 210,142"></path>
+        <text class="sm-tag is-sys" x="300" y="76">driver went silent · re-match · FR-13</text>
+
+        <!-- auto-complete arc -->
+        <path class="sm-edge is-sys" d="M 600,150 C 600,96 745,96 800,142"></path>
+        <text class="sm-tag is-sys" x="700" y="92">driver went silent · auto-complete · FR-14</text>
+
+        <!-- entry -->
+        <circle class="sm-entry" cx="42" cy="172" r="5"></circle>
+        <path class="sm-edge" d="M 52,172 L 132,172"></path>
+        <text class="sm-tag" x="92" y="162">request</text>
+
+        <!-- main row -->
+        <rect class="sm-chip is-live" x="140" y="150" width="140" height="44" rx="5"></rect>
+        <text class="sm-name" x="210" y="173">REQUESTED</text>
+
+        <rect class="sm-chip is-live" x="340" y="150" width="122" height="44" rx="5"></rect>
+        <text class="sm-name" x="401" y="173">MATCHED</text>
+
+        <rect class="sm-chip is-live" x="524" y="150" width="152" height="44" rx="5"></rect>
+        <text class="sm-name" x="600" y="173">IN_PROGRESS</text>
+
+        <rect class="sm-chip is-good" x="738" y="150" width="132" height="44" rx="5"></rect>
+        <text class="sm-name" x="804" y="173">COMPLETED</text>
+
+        <path class="sm-edge" d="M 280,172 L 332,172"></path>
+        <text class="sm-tag" x="306" y="162">accept</text>
+        <path class="sm-edge" d="M 462,172 L 516,172"></path>
+        <text class="sm-tag" x="489" y="162">start</text>
+        <path class="sm-edge" d="M 676,172 L 730,172"></path>
+        <text class="sm-tag" x="703" y="162">complete</text>
+
+        <!-- terminals -->
+        <rect class="sm-chip is-bad" x="46" y="286" width="176" height="44" rx="5"></rect>
+        <text class="sm-name" x="134" y="309">PAYMENT_FAILED</text>
+
+        <rect class="sm-chip is-bad" x="272" y="286" width="140" height="44" rx="5"></rect>
+        <text class="sm-name" x="342" y="309">NO_DRIVER</text>
+
+        <rect class="sm-chip is-bad" x="462" y="286" width="140" height="44" rx="5"></rect>
+        <text class="sm-name" x="532" y="309">CANCELLED</text>
+
+        <path class="sm-edge is-bad" d="M 176,194 C 160,240 146,250 138,278"></path>
+        <text class="sm-tag" x="96" y="246">auth declined</text>
+        <text class="sm-tag" x="96" y="260">FR-9</text>
+
+        <path class="sm-edge is-bad" d="M 224,194 C 260,240 310,250 336,278"></path>
+        <text class="sm-tag" x="286" y="238">gave up</text>
+        <text class="sm-tag" x="286" y="252">FR-12</text>
+
+        <path class="sm-edge is-bad" d="M 258,194 C 350,250 430,258 496,278"></path>
+        <path class="sm-edge is-bad" d="M 412,194 C 460,226 500,250 524,278"></path>
+        <text class="sm-tag" x="470" y="228">rider cancels · FR-16</text>
+      </svg>
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--accent)"></i> in flight</span>
+        <span><i class="swatch" style="background:var(--good)"></i> delivered</span>
+        <span><i class="swatch" style="background:var(--bad)"></i> terminal, no trip</span>
+        <span><i class="swatch" style="background:var(--sys)"></i> system-initiated recovery</span>
+      </div>
+    </div>
+
+    <div class="callout">
+      <p>
+        <strong>Recovery reuses existing states.</strong> Neither silent-driver path needed a new
+        state — a stalled <span class="st">MATCHED</span> ride returns to
+        <span class="st">REQUESTED</span>, and a stalled <span class="st">IN_PROGRESS</span> one
+        moves to <span class="st good">COMPLETED</span>. The audit trail records
+        <span class="st sys">SYSTEM</span> as the actor, so those stay distinguishable from
+        genuine transitions after the fact.
+      </p>
+    </div>
+  </section>
+
+  <section id="money">
+    <h2>Payments, and when money actually moves</h2>
+    <p class="sec-note">
+      Two phases: the fare is authorized as a hold when the ride is requested, and captured only
+      when a trip is delivered. Everything else releases the hold.
+    </p>
+
+    <div class="rail">
+      <svg viewBox="0 0 900 290" role="img" aria-label="Payment state machine: INITIATED to AUTHORIZED to CAPTURED to REFUNDED, with terminals FAILED and VOIDED">
+        <circle class="sm-entry" cx="42" cy="120" r="5"></circle>
+        <path class="sm-edge" d="M 52,120 L 108,120"></path>
+
+        <rect class="sm-chip" x="116" y="98" width="132" height="44" rx="5"></rect>
+        <text class="sm-name" x="182" y="121">INITIATED</text>
+
+        <rect class="sm-chip is-live" x="326" y="98" width="146" height="44" rx="5"></rect>
+        <text class="sm-name" x="399" y="121">AUTHORIZED</text>
+
+        <rect class="sm-chip is-good" x="550" y="98" width="132" height="44" rx="5"></rect>
+        <text class="sm-name" x="616" y="121">CAPTURED</text>
+
+        <rect class="sm-chip" x="754" y="98" width="132" height="44" rx="5"></rect>
+        <text class="sm-name" x="820" y="121">REFUNDED</text>
+
+        <path class="sm-edge" d="M 248,120 L 318,120"></path>
+        <text class="sm-tag" x="283" y="110">hold placed</text>
+        <text class="sm-tag" x="283" y="88">at request</text>
+
+        <path class="sm-edge" d="M 472,120 L 542,120"></path>
+        <text class="sm-tag" x="507" y="110">captured</text>
+        <text class="sm-tag" x="507" y="88">at completion</text>
+
+        <path class="sm-edge" d="M 682,120 L 746,120"></path>
+        <text class="sm-tag" x="714" y="110">internal</text>
+        <text class="sm-tag" x="714" y="88">FR-38</text>
+
+        <rect class="sm-chip is-bad" x="176" y="220" width="120" height="44" rx="5"></rect>
+        <text class="sm-name" x="236" y="243">FAILED</text>
+
+        <rect class="sm-chip is-bad" x="420" y="220" width="120" height="44" rx="5"></rect>
+        <text class="sm-name" x="480" y="243">VOIDED</text>
+
+        <path class="sm-edge is-bad" d="M 190,142 C 196,180 210,190 224,212"></path>
+        <text class="sm-tag" x="128" y="186">declined</text>
+
+        <path class="sm-edge is-bad" d="M 380,142 C 350,180 300,196 268,212"></path>
+        <text class="sm-tag" x="330" y="196">capture exhausted</text>
+
+        <path class="sm-edge is-bad" d="M 420,142 C 440,180 460,196 474,212"></path>
+        <text class="sm-tag" x="536" y="186">no trip delivered</text>
+        <text class="sm-tag" x="536" y="200">FR-35</text>
+      </svg>
+    </div>
+
+    <h3>Outcome by outcome</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>How the ride ended</th><th>Money</th><th>Payment lands in</th><th>Ref</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Authorization declined at request</td>
+            <td>Nothing taken; no driver ever dispatched</td>
+            <td><span class="st bad">FAILED</span></td>
+            <td class="num"><span class="fr">FR-9</span></td>
+          </tr>
+          <tr>
+            <td>Rider cancelled</td>
+            <td>Hold released</td>
+            <td><span class="st bad">VOIDED</span></td>
+            <td class="num"><span class="fr">FR-16</span></td>
+          </tr>
+          <tr>
+            <td>Matching gave up</td>
+            <td>Hold released</td>
+            <td><span class="st bad">VOIDED</span></td>
+            <td class="num"><span class="fr">FR-12</span></td>
+          </tr>
+          <tr>
+            <td>Driver went silent before pickup</td>
+            <td>Hold stays in place; ride is re-matched</td>
+            <td><span class="st">AUTHORIZED</span></td>
+            <td class="num"><span class="fr">FR-13</span></td>
+          </tr>
+          <tr>
+            <td>Trip completed by the driver</td>
+            <td>Hold captured</td>
+            <td><span class="st good">CAPTURED</span></td>
+            <td class="num"><span class="fr">FR-24</span></td>
+          </tr>
+          <tr>
+            <td>Trip auto-completed after silence</td>
+            <td>Hold captured at the locked fare</td>
+            <td><span class="st good">CAPTURED</span></td>
+            <td class="num"><span class="fr">FR-14</span></td>
+          </tr>
+          <tr>
+            <td>Capture retried and still failing</td>
+            <td>Trip happened, money not collected; not pursued</td>
+            <td><span class="st bad">FAILED</span></td>
+            <td class="num"><span class="fr">FR-36</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="rider">
+    <h2>The rider's session</h2>
+    <p class="sec-note">
+      From opening the app to reading history. Every step is a capability the backend exposes —
+      there is no screen, only the endpoint the screen would call.
+    </p>
+    <ol class="steps">
+      <li class="step">
+        <span class="step-n">01</span>
+        <div class="step-b">
+          <p class="step-t">Check for a ride already in flight <span class="fr">FR-4</span></p>
+          <p class="step-d">Looked up by rider identity, not ride id — losing the id is not a dead end. Returns at most one.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-n">02</span>
+        <div class="step-b">
+          <p class="step-t">Quote a trip <span class="fr">FR-1</span></p>
+          <p class="step-d">Fare, distance and ETA without creating anything. Indicative only — the price is re-derived at request. With nobody online it still returns fare and distance, just no ETA.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-n">03</span>
+        <div class="step-b">
+          <p class="step-t">Request the ride <span class="fr">FR-2</span> <span class="fr">FR-3</span></p>
+          <p class="step-d">Carries a payment-method token, since no account stores one. Fare locks here. A second simultaneous request is refused.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-n">04</span>
+        <div class="step-b">
+          <p class="step-t">The fare is authorized before anyone is dispatched <span class="fr">FR-9</span></p>
+          <p class="step-d">A declined card ends the ride at <span class="st bad">PAYMENT_FAILED</span> without a driver ever being offered it.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-n">05</span>
+        <div class="step-b">
+          <p class="step-t">Watch the driver approach <span class="fr">FR-5</span> <span class="fr">FR-6</span></p>
+          <p class="step-d">Who is coming, where they are now, and an ETA that moves as they do. This is the line in the vision made literal.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-n">06</span>
+        <div class="step-b">
+          <p class="step-t">Cancel, while it is still allowed <span class="fr">FR-16</span></p>
+          <p class="step-d">Only before the trip starts. Releases the driver, withdraws any outstanding offer, voids the hold. A mismatched identity is refused without revealing the ride exists.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-n">07</span>
+        <div class="step-b">
+          <p class="step-t">See what was charged <span class="fr">FR-7</span></p>
+          <p class="step-d">Final fare and payment outcome — captured, failed or refunded — so the payment machine has a visible consequence.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-n">08</span>
+        <div class="step-b">
+          <p class="step-t">Read history <span class="fr">FR-8</span></p>
+          <p class="step-d">Most recent first, bounded by a result limit.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <section id="driver">
+    <h2>The driver's session</h2>
+    <p class="sec-note">
+      A driver owns their own availability and can only ever act on the ride assigned to them.
+    </p>
+    <ol class="steps">
+      <li class="step">
+        <span class="step-n">01</span>
+        <div class="step-b">
+          <p class="step-t">Read the whole working state in one call <span class="fr">FR-21</span></p>
+          <p class="step-d">Declared status, whether the system can currently hear them, any offer awaiting an answer with its pickup, dropoff, fare and distance, plus the active ride if one is running.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-n">02</span>
+        <div class="step-b">
+          <p class="step-t">Go online <span class="fr">FR-20</span></p>
+          <p class="step-d">Both directions are explicit taps — the system never puts a driver online for them. Going offline is blocked mid-ride, and releases a pending offer rather than leaving it dangling.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-n">03</span>
+        <div class="step-b">
+          <p class="step-t">Report position on a heartbeat <span class="fr">FR-26</span></p>
+          <p class="step-d">Feeds matching, the rider's live view, and — mirrored to the columnar store — the distance and density analytics.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-n">04</span>
+        <div class="step-b">
+          <p class="step-t">Receive an offer, and everything else that matters <span class="fr">FR-44</span></p>
+          <p class="step-d">The push channel carries offers plus the events a driver must react to: the rider cancelled, the offer was withdrawn, the ride was auto-completed.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-n">05</span>
+        <div class="step-b">
+          <p class="step-t">Accept — or decline <span class="fr">FR-22</span> <span class="fr">FR-23</span></p>
+          <p class="step-d">Declining hands the ride straight to the next-nearest driver instead of making the rider wait out the timeout.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-n">06</span>
+        <div class="step-b">
+          <p class="step-t">Start the trip, then complete it <span class="fr">FR-24</span></p>
+          <p class="step-d">Each valid only from the preceding state and only on their own ride. Completing returns them to <span class="st">AVAILABLE</span>.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-n">07</span>
+        <div class="step-b">
+          <p class="step-t">Review completed rides <span class="fr">FR-25</span></p>
+          <p class="step-d">The driver-side counterpart to the rider's history.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <section id="recovery">
+    <h2>What happens when something goes wrong</h2>
+    <p class="sec-note">
+      Most of the recent work went here. Every failure has a defined owner, a defined resolution,
+      and no path that strands a rider or a ride.
+    </p>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Failure</th><th>Detected by</th><th>Resolution</th><th>Ref</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Driver ignores an offer</td>
+            <td>Offer timeout</td>
+            <td>Offer released to the next-nearest driver</td>
+            <td class="num"><span class="fr">FR-11</span></td>
+          </tr>
+          <tr>
+            <td>Nobody is available at all</td>
+            <td>Bounded overall window</td>
+            <td>Terminal <span class="st bad">NO_DRIVER</span>, retrying stops, hold voided</td>
+            <td class="num"><span class="fr">FR-12</span></td>
+          </tr>
+          <tr>
+            <td>Driver goes silent while idle</td>
+            <td>Heartbeat staleness</td>
+            <td>Not matchable until they report again; declared status untouched, so they recover on their own</td>
+            <td class="num"><span class="fr">FR-29</span></td>
+          </tr>
+          <tr>
+            <td>Driver goes silent holding a match</td>
+            <td>Heartbeat staleness</td>
+            <td>Ride returns to <span class="st">REQUESTED</span> and is re-matched; hold survives</td>
+            <td class="num"><span class="fr">FR-13</span></td>
+          </tr>
+          <tr>
+            <td>Driver goes silent mid-trip</td>
+            <td>Heartbeat staleness</td>
+            <td>Auto-completed and captured; recorded against <span class="st sys">SYSTEM</span></td>
+            <td class="num"><span class="fr">FR-14</span></td>
+          </tr>
+          <tr>
+            <td>Rider cancels as the driver accepts</td>
+            <td>Guarded transition</td>
+            <td>First commit wins, the other is rejected — never both</td>
+            <td class="num"><span class="fr">FR-17</span></td>
+          </tr>
+          <tr>
+            <td>Card declined at request</td>
+            <td>Authorization</td>
+            <td>Terminal <span class="st bad">PAYMENT_FAILED</span>, nobody dispatched</td>
+            <td class="num"><span class="fr">FR-9</span></td>
+          </tr>
+          <tr>
+            <td>Capture fails after the trip</td>
+            <td>Provider response</td>
+            <td>Retried with jitter, then terminal <span class="st bad">FAILED</span>; not pursued</td>
+            <td class="num"><span class="fr">FR-36</span></td>
+          </tr>
+          <tr>
+            <td>A webhook never arrives</td>
+            <td>Reconciliation task</td>
+            <td>State corrected from the provider</td>
+            <td class="num"><span class="fr">FR-39</span></td>
+          </tr>
+          <tr>
+            <td>An event is delivered twice</td>
+            <td>Dedupe on event id</td>
+            <td>Applied once; state machines refuse the replay</td>
+            <td class="num">NFR-4</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="coverage">
+    <h2>Where the requirements sit</h2>
+    <p class="sec-note">
+      Ten groups, forty-nine requirements. The bar shows each group's share.
+    </p>
+    <div class="grid">
+      <div class="cell">
+        <p class="cell-k">Group A</p>
+        <p class="cell-t">Rider requests &amp; reads</p>
+        <p class="cell-r">FR-1 – FR-8 · 8</p>
+        <div class="meter"><i style="width:100%"></i></div>
+      </div>
+      <div class="cell">
+        <p class="cell-k">Group B</p>
+        <p class="cell-t">Matching, fares &amp; ride state</p>
+        <p class="cell-r">FR-9 – FR-19 · 11</p>
+        <div class="meter"><i style="width:100%"></i></div>
+      </div>
+      <div class="cell">
+        <p class="cell-k">Group C</p>
+        <p class="cell-t">Driver session &amp; actions</p>
+        <p class="cell-r">FR-20 – FR-25 · 6</p>
+        <div class="meter"><i style="width:55%"></i></div>
+      </div>
+      <div class="cell">
+        <p class="cell-k">Group D</p>
+        <p class="cell-t">Driver location tracking</p>
+        <p class="cell-r">FR-26 – FR-29 · 4</p>
+        <div class="meter"><i style="width:36%"></i></div>
+      </div>
+      <div class="cell">
+        <p class="cell-k">Group E</p>
+        <p class="cell-t">Event backbone &amp; resilience</p>
+        <p class="cell-r">FR-30 – FR-32 · 3</p>
+        <div class="meter"><i style="width:27%"></i></div>
+      </div>
+      <div class="cell">
+        <p class="cell-k">Group F</p>
+        <p class="cell-t">Payments</p>
+        <p class="cell-r">FR-33 – FR-39 · 7</p>
+        <div class="meter"><i style="width:64%"></i></div>
+      </div>
+      <div class="cell">
+        <p class="cell-k">Group G</p>
+        <p class="cell-t">Audit &amp; analytics</p>
+        <p class="cell-r">FR-40 – FR-43 · 4</p>
+        <div class="meter"><i style="width:36%"></i></div>
+      </div>
+      <div class="cell">
+        <p class="cell-k">Group H</p>
+        <p class="cell-t">Real-time &amp; deployment</p>
+        <p class="cell-r">FR-44 – FR-46 · 3</p>
+        <div class="meter"><i style="width:27%"></i></div>
+      </div>
+      <div class="cell">
+        <p class="cell-k">Group I</p>
+        <p class="cell-t">Identity &amp; simulation</p>
+        <p class="cell-r">FR-47 – FR-48 · 2</p>
+        <div class="meter"><i style="width:18%"></i></div>
+      </div>
+      <div class="cell">
+        <p class="cell-k">Group J</p>
+        <p class="cell-t">Live operational dashboard</p>
+        <p class="cell-r">FR-49 · 1</p>
+        <div class="meter"><i style="width:9%"></i></div>
+      </div>
+    </div>
+
+    <div class="two" style="margin-top:2.5rem">
+      <div>
+        <h3>Delivered across five phases</h3>
+        <div class="tbl-wrap">
+          <table style="min-width:0">
+            <tbody>
+              <tr><td class="num">Wk 1–7</td><td>Core services, matching, persistence</td></tr>
+              <tr><td class="num">Wk 9–16</td><td>Event backbone, resilience, observability, dynamic surge</td></tr>
+              <tr><td class="num">Wk 17–20</td><td>Payments, both phases and both failure paths</td></tr>
+              <tr><td class="num">Wk 21–24</td><td>Audit, columnar migration, analytics</td></tr>
+              <tr><td class="num">Wk 25–32</td><td>Push channel, dashboard, local Kubernetes, stress test</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div>
+        <h3>Deliberately not built</h3>
+        <ul class="tags">
+          <li>authentication</li>
+          <li>rider accounts</li>
+          <li>debtor standing</li>
+          <li>rider refund requests</li>
+          <li>dispute review</li>
+          <li>collections</li>
+          <li>driver cancellation</li>
+          <li>real maps</li>
+          <li>turn-by-turn</li>
+          <li>ratings</li>
+          <li>driver onboarding</li>
+          <li>vehicle types</li>
+          <li>multi-city</li>
+          <li>ML pricing</li>
+          <li>cloud vendor</li>
+          <li>mobile apps</li>
+        </ul>
+        <div class="callout">
+          <p>
+            Each of these is recorded with its reasoning rather than just its verdict — the
+            debtor-standing decision in particular turns on the pre-authorization hold having
+            already removed the case that motivated it.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="open">
+    <h2>Still open, by design</h2>
+    <p class="sec-note">
+      One question sits in the PRD. The rest are mechanism decisions parked for the architecture
+      pass — deliberately left unfixed rather than guessed at.
+    </p>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Question</th><th>Why it is not answered here</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>How payments are excluded from the stress test</td>
+            <td>Simulator flag, stubbed path, or a separate suite — a mechanism, not a product choice</td>
+          </tr>
+          <tr>
+            <td>Transport for the rider's live driver position</td>
+            <td>The push channel is driver-only; rider polling versus a second channel is architecture</td>
+          </tr>
+          <tr>
+            <td>Three separate staleness windows</td>
+            <td>Cost of a false positive rises steeply — an idle driver self-heals, a live trip ended wrongly does not</td>
+          </tr>
+          <tr>
+            <td>The monotonic versus wall-clock boundary</td>
+            <td>Monotonic is process-local, so it cannot span the heartbeat's service boundary</td>
+          </tr>
+          <tr>
+            <td>How long matching waits before giving up</td>
+            <td>Tune alongside the retry interval and offer timeout as one set</td>
+          </tr>
+          <tr>
+            <td>Authorization hold lifetime</td>
+            <td>Needs the invariant: no terminal ride may hold an outstanding authorization</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    Generated from prd.md · status final · 49 functional and 10 non-functional requirements ·
+    next step is the architecture spine
+  </footer>
+</div>
+</html>

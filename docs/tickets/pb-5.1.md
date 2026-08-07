@@ -1,5 +1,7 @@
 # PB-5.1 — Documentation & V1 Milestone: READMEs, Architecture Stub, and Repo Hygiene
 
+> **⚠️ Superseded — historical reference only.** This ticket was written before the PRD existed and is **not authoritative**; do not reconcile against it. The current source of truth is `_bmad-output/planning-artifacts/prds/prd-puber-2026-08-02/prd.md` together with the architecture spine. Kept for the reasoning it records, not the scope it defines.
+
 | Field | Value |
 |--------|--------|
 | **ID** | PB-5.1 |
