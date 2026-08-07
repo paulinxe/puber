@@ -295,7 +295,7 @@
     <div class="facts">
       <div class="fact"><span class="fact-n">49</span><span class="fact-l">Requirements</span></div>
       <div class="fact"><span class="fact-n">10</span><span class="fact-l">Non-functional</span></div>
-      <div class="fact"><span class="fact-n">7</span><span class="fact-l">Ride states</span></div>
+      <div class="fact"><span class="fact-n">8</span><span class="fact-l">Ride states</span></div>
       <div class="fact"><span class="fact-n">6</span><span class="fact-l">Payment states</span></div>
       <div class="fact"><span class="fact-n">1</span><span class="fact-l">Open question</span></div>
     </div>
@@ -304,12 +304,12 @@
   <section id="ride">
     <h2>Ride state machine</h2>
     <p class="sec-note">
-      Four states on the happy path and three terminals. Every terminal is reachable and every
+      Five states on the happy path and three terminals. Every terminal is reachable and every
       one of them resolves the payment — there is no way for a ride to end and leave money in limbo.
     </p>
 
     <div class="rail">
-      <svg viewBox="0 0 900 360" role="img" aria-label="Ride state machine: REQUESTED to MATCHED to IN_PROGRESS to COMPLETED, with terminal states PAYMENT_FAILED, NO_DRIVER and CANCELLED">
+      <svg viewBox="0 0 1020 400" role="img" aria-label="Ride state machine: REQUESTED to WAITING_MATCH to MATCHED to IN_PROGRESS to COMPLETED, with terminal states PAYMENT_FAILED, NO_DRIVER and CANCELLED">
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="var(--line-strong)"></path>
@@ -322,60 +322,66 @@
           </marker>
         </defs>
 
-        <!-- re-match back edge -->
-        <path class="sm-edge is-sys" d="M 395,150 C 395,80 250,80 210,142"></path>
-        <text class="sm-tag is-sys" x="300" y="76">driver went silent · re-match · FR-13</text>
+        <!-- re-match back edge: MATCHED -> WAITING_MATCH (hold already in place) -->
+        <path class="sm-edge is-sys" d="M 512,150 C 512,66 380,66 352,142"></path>
+        <text class="sm-tag is-sys" x="432" y="58">driver went silent · re-match · FR-13</text>
 
-        <!-- auto-complete arc -->
-        <path class="sm-edge is-sys" d="M 600,150 C 600,96 745,96 800,142"></path>
-        <text class="sm-tag is-sys" x="700" y="92">driver went silent · auto-complete · FR-14</text>
+        <!-- auto-complete arc: IN_PROGRESS -> COMPLETED -->
+        <path class="sm-edge is-sys" d="M 700,150 C 700,96 866,96 900,142"></path>
+        <text class="sm-tag is-sys" x="800" y="90">driver went silent · auto-complete · FR-14</text>
 
         <!-- entry -->
-        <circle class="sm-entry" cx="42" cy="172" r="5"></circle>
-        <path class="sm-edge" d="M 52,172 L 132,172"></path>
-        <text class="sm-tag" x="92" y="162">request</text>
+        <circle class="sm-entry" cx="18" cy="172" r="5"></circle>
+        <path class="sm-edge" d="M 26,172 L 56,172"></path>
+        <text class="sm-tag" x="40" y="162">request</text>
 
         <!-- main row -->
-        <rect class="sm-chip is-live" x="140" y="150" width="140" height="44" rx="5"></rect>
-        <text class="sm-name" x="210" y="173">REQUESTED</text>
+        <rect class="sm-chip is-live" x="64" y="150" width="132" height="44" rx="5"></rect>
+        <text class="sm-name" x="130" y="173">REQUESTED</text>
 
-        <rect class="sm-chip is-live" x="340" y="150" width="122" height="44" rx="5"></rect>
-        <text class="sm-name" x="401" y="173">MATCHED</text>
+        <rect class="sm-chip is-live" x="272" y="150" width="168" height="44" rx="5"></rect>
+        <text class="sm-name" x="356" y="173">WAITING_MATCH</text>
 
-        <rect class="sm-chip is-live" x="524" y="150" width="152" height="44" rx="5"></rect>
-        <text class="sm-name" x="600" y="173">IN_PROGRESS</text>
+        <rect class="sm-chip is-live" x="496" y="150" width="118" height="44" rx="5"></rect>
+        <text class="sm-name" x="555" y="173">MATCHED</text>
 
-        <rect class="sm-chip is-good" x="738" y="150" width="132" height="44" rx="5"></rect>
-        <text class="sm-name" x="804" y="173">COMPLETED</text>
+        <rect class="sm-chip is-live" x="670" y="150" width="146" height="44" rx="5"></rect>
+        <text class="sm-name" x="743" y="173">IN_PROGRESS</text>
 
-        <path class="sm-edge" d="M 280,172 L 332,172"></path>
-        <text class="sm-tag" x="306" y="162">accept</text>
-        <path class="sm-edge" d="M 462,172 L 516,172"></path>
-        <text class="sm-tag" x="489" y="162">start</text>
-        <path class="sm-edge" d="M 676,172 L 730,172"></path>
-        <text class="sm-tag" x="703" y="162">complete</text>
+        <rect class="sm-chip is-good" x="872" y="150" width="130" height="44" rx="5"></rect>
+        <text class="sm-name" x="937" y="173">COMPLETED</text>
+
+        <path class="sm-edge" d="M 196,172 L 264,172"></path>
+        <text class="sm-tag" x="230" y="162">authorized</text>
+        <path class="sm-edge" d="M 440,172 L 488,172"></path>
+        <text class="sm-tag" x="464" y="162">accept</text>
+        <path class="sm-edge" d="M 614,172 L 662,172"></path>
+        <text class="sm-tag" x="638" y="162">start</text>
+        <path class="sm-edge" d="M 816,172 L 864,172"></path>
+        <text class="sm-tag" x="840" y="162">complete</text>
 
         <!-- terminals -->
-        <rect class="sm-chip is-bad" x="46" y="286" width="176" height="44" rx="5"></rect>
-        <text class="sm-name" x="134" y="309">PAYMENT_FAILED</text>
+        <rect class="sm-chip is-bad" x="40" y="300" width="176" height="44" rx="5"></rect>
+        <text class="sm-name" x="128" y="323">PAYMENT_FAILED</text>
 
-        <rect class="sm-chip is-bad" x="272" y="286" width="140" height="44" rx="5"></rect>
-        <text class="sm-name" x="342" y="309">NO_DRIVER</text>
+        <rect class="sm-chip is-bad" x="290" y="300" width="140" height="44" rx="5"></rect>
+        <text class="sm-name" x="360" y="323">NO_DRIVER</text>
 
-        <rect class="sm-chip is-bad" x="462" y="286" width="140" height="44" rx="5"></rect>
-        <text class="sm-name" x="532" y="309">CANCELLED</text>
+        <rect class="sm-chip is-bad" x="520" y="300" width="140" height="44" rx="5"></rect>
+        <text class="sm-name" x="590" y="323">CANCELLED</text>
 
-        <path class="sm-edge is-bad" d="M 176,194 C 160,240 146,250 138,278"></path>
-        <text class="sm-tag" x="96" y="246">auth declined</text>
-        <text class="sm-tag" x="96" y="260">FR-9</text>
+        <path class="sm-edge is-bad" d="M 112,194 C 104,240 100,266 108,292"></path>
+        <text class="sm-tag" x="52" y="244">auth declined</text>
+        <text class="sm-tag" x="52" y="258">FR-9</text>
 
-        <path class="sm-edge is-bad" d="M 224,194 C 260,240 310,250 336,278"></path>
-        <text class="sm-tag" x="286" y="238">gave up</text>
-        <text class="sm-tag" x="286" y="252">FR-12</text>
+        <path class="sm-edge is-bad" d="M 332,194 C 332,240 346,268 356,292"></path>
+        <text class="sm-tag" x="274" y="250">gave up</text>
+        <text class="sm-tag" x="274" y="264">FR-12</text>
 
-        <path class="sm-edge is-bad" d="M 258,194 C 350,250 430,258 496,278"></path>
-        <path class="sm-edge is-bad" d="M 412,194 C 460,226 500,250 524,278"></path>
-        <text class="sm-tag" x="470" y="228">rider cancels · FR-16</text>
+        <path class="sm-edge is-bad" d="M 182,194 C 300,258 452,276 548,292"></path>
+        <path class="sm-edge is-bad" d="M 402,194 C 452,242 508,272 562,292"></path>
+        <path class="sm-edge is-bad" d="M 555,194 C 566,232 578,264 588,292"></path>
+        <text class="sm-tag" x="712" y="258">rider cancels · FR-16</text>
       </svg>
       <div class="legend">
         <span><i class="swatch" style="background:var(--accent)"></i> in flight</span>
@@ -389,10 +395,19 @@
       <p>
         <strong>Recovery reuses existing states.</strong> Neither silent-driver path needed a new
         state — a stalled <span class="st">MATCHED</span> ride returns to
-        <span class="st">REQUESTED</span>, and a stalled <span class="st">IN_PROGRESS</span> one
-        moves to <span class="st good">COMPLETED</span>. The audit trail records
-        <span class="st sys">SYSTEM</span> as the actor, so those stay distinguishable from
-        genuine transitions after the fact.
+        <span class="st">WAITING_MATCH</span>, not <span class="st">REQUESTED</span>, because its
+        hold is already in place and must not be re-authorised; a stalled
+        <span class="st">IN_PROGRESS</span> one moves to <span class="st good">COMPLETED</span>.
+        The audit trail records <span class="st sys">SYSTEM</span> as the actor, so those stay
+        distinguishable from genuine transitions after the fact.
+      </p>
+      <p style="margin-top:.7rem">
+        <strong><span class="st">REQUESTED</span> is entered exactly once.</strong> It means
+        <em>awaiting authorisation</em> and nothing else — the ride is persisted the moment the
+        rider commits, then moves to <span class="st">WAITING_MATCH</span> once the hold lands.
+        Matching only ever reads <span class="st">WAITING_MATCH</span>, so no ride can be
+        dispatched before its funds are held, and nothing ever returns to
+        <span class="st">REQUESTED</span>.
       </p>
     </div>
   </section>
@@ -537,7 +552,7 @@
         <span class="step-n">04</span>
         <div class="step-b">
           <p class="step-t">The fare is authorized before anyone is dispatched <span class="fr">FR-9</span></p>
-          <p class="step-d">A declined card ends the ride at <span class="st bad">PAYMENT_FAILED</span> without a driver ever being offered it.</p>
+          <p class="step-d">Held asynchronously — the ride is persisted as <span class="st">REQUESTED</span> the instant the rider commits, and the id comes straight back; the hold follows, moving it to <span class="st">WAITING_MATCH</span>. A declined card ends the ride at <span class="st bad">PAYMENT_FAILED</span> without a driver ever being offered it.</p>
         </div>
       </li>
       <li class="step">
@@ -662,7 +677,7 @@
           <tr>
             <td>Driver goes silent holding a match</td>
             <td>Heartbeat staleness</td>
-            <td>Ride returns to <span class="st">REQUESTED</span> and is re-matched; hold survives</td>
+            <td>Ride returns to <span class="st">WAITING_MATCH</span> and is re-matched; hold survives</td>
             <td class="num"><span class="fr">FR-13</span></td>
           </tr>
           <tr>
@@ -863,7 +878,8 @@
 
   <footer>
     Generated from prd.md · status final · 49 functional and 10 non-functional requirements ·
-    next step is the architecture spine
+    amended 2026-08-07 by the architecture pass: <code>WAITING_MATCH</code> added between
+    <code>REQUESTED</code> and <code>MATCHED</code>
   </footer>
 </div>
 </html>
