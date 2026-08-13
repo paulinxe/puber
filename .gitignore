@@ -1,1 +1,6 @@
 .idea
+
+# BMad-generated agent runtimes — install bmad locally instead of cloning these
+.agents/
+.claude/skills/
+.opencode/
