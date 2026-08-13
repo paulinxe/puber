@@ -5,278 +5,157 @@
 <title>Puber — Architecture Map</title>
 <style>
   :root {
-    --paper:      #F3F5F8;
-    --surface:    #FFFFFF;
-    --surface-2:  #E9EDF2;
-    --ink:        #131A22;
-    --muted:      #5C6975;
-    --faint:      #8794A1;
-    --line:       #D3DAE2;
-    --line-strong:#9DA9B6;
-    --accent:     #C97615;
-    --accent-soft:#F5E6D0;
-    --good:       #17786B;
-    --good-soft:  #D9EBE7;
-    --bad:        #B4442F;
-    --bad-soft:   #F5DFD9;
-    --sys:        #6B5B95;
-    --sys-soft:   #E6E1F0;
-    --store:      #2F6690;
-    --store-soft: #DDE8F1;
-
+    --paper:#F3F5F8; --surface:#FFFFFF; --surface-2:#E9EDF2; --ink:#131A22;
+    --muted:#5C6975; --faint:#8794A1; --line:#D3DAE2; --line-strong:#9DA9B6;
+    --accent:#C97615; --accent-soft:#F5E6D0; --good:#17786B; --good-soft:#D9EBE7;
+    --bad:#B4442F; --bad-soft:#F5DFD9; --sys:#6B5B95; --sys-soft:#E6E1F0;
+    --store:#2F6690; --store-soft:#DDE8F1;
     --serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
     --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
-
-    --col: 66ch;
-    --wide: 76rem;
+    --wide: 78rem;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --paper:      #0E141B;
-      --surface:    #151E27;
-      --surface-2:  #1E2A35;
-      --ink:        #E4EAF0;
-      --muted:      #96A3B0;
-      --faint:      #6C7987;
-      --line:       #2A3745;
-      --line-strong:#4A5A6B;
-      --accent:     #E9A44A;
-      --accent-soft:#3A2C17;
-      --good:       #3FB5A2;
-      --good-soft:  #14302C;
-      --bad:        #E0745C;
-      --bad-soft:   #3A211B;
-      --sys:        #9C8CC4;
-      --sys-soft:   #262135;
-      --store:      #6FA8D4;
-      --store-soft: #17293A;
+      --paper:#0E141B; --surface:#151E27; --surface-2:#1E2A35; --ink:#E4EAF0;
+      --muted:#96A3B0; --faint:#6C7987; --line:#2A3745; --line-strong:#4A5A6B;
+      --accent:#E9A44A; --accent-soft:#3A2C17; --good:#3FB5A2; --good-soft:#14302C;
+      --bad:#E0745C; --bad-soft:#3A211B; --sys:#9C8CC4; --sys-soft:#262135;
+      --store:#6FA8D4; --store-soft:#17293A;
     }
   }
   :root[data-theme="dark"] {
-    --paper:      #0E141B;
-    --surface:    #151E27;
-    --surface-2:  #1E2A35;
-    --ink:        #E4EAF0;
-    --muted:      #96A3B0;
-    --faint:      #6C7987;
-    --line:       #2A3745;
-    --line-strong:#4A5A6B;
-    --accent:     #E9A44A;
-    --accent-soft:#3A2C17;
-    --good:       #3FB5A2;
-    --good-soft:  #14302C;
-    --bad:        #E0745C;
-    --bad-soft:   #3A211B;
-    --sys:        #9C8CC4;
-    --sys-soft:   #262135;
-    --store:      #6FA8D4;
-    --store-soft: #17293A;
+    --paper:#0E141B; --surface:#151E27; --surface-2:#1E2A35; --ink:#E4EAF0;
+    --muted:#96A3B0; --faint:#6C7987; --line:#2A3745; --line-strong:#4A5A6B;
+    --accent:#E9A44A; --accent-soft:#3A2C17; --good:#3FB5A2; --good-soft:#14302C;
+    --bad:#E0745C; --bad-soft:#3A211B; --sys:#9C8CC4; --sys-soft:#262135;
+    --store:#6FA8D4; --store-soft:#17293A;
   }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink); font-family:var(--sans);
+         font-size:16px; line-height:1.6; -webkit-font-smoothing:antialiased; }
+  a { color:inherit; }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:3px; border-radius:2px; }
+  .wrap { max-width:var(--wide); margin:0 auto; padding:0 1.5rem; }
 
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--paper);
-    color: var(--ink);
-    font-family: var(--sans);
-    font-size: 16px;
-    line-height: 1.6;
-    -webkit-font-smoothing: antialiased;
-  }
-  a { color: inherit; }
-  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+  nav.bar { position:sticky; top:0; z-index:20;
+    background:color-mix(in srgb, var(--paper) 88%, transparent);
+    backdrop-filter:blur(8px); border-bottom:1px solid var(--line); }
+  .bar-inner { max-width:var(--wide); margin:0 auto; padding:.6rem 1.5rem;
+    display:flex; flex-wrap:wrap; align-items:baseline; gap:.35rem 1.1rem; }
+  .bar-mark { font-family:var(--mono); font-size:.74rem; letter-spacing:.16em;
+    text-transform:uppercase; color:var(--accent); margin-right:auto; }
+  .bar a { font-family:var(--mono); font-size:.74rem; color:var(--muted);
+    text-decoration:none; border-bottom:1px solid transparent; padding:.15rem 0; }
+  .bar a:hover { color:var(--ink); border-bottom-color:var(--accent); }
 
-  .wrap { max-width: var(--wide); margin: 0 auto; padding: 0 1.5rem; }
-  .col { max-width: var(--col); }
+  header.masthead { padding:4rem 0 2.5rem; }
+  .eyebrow { font-family:var(--mono); font-size:.74rem; letter-spacing:.18em;
+    text-transform:uppercase; color:var(--accent); margin:0 0 1rem; }
+  h1 { font-family:var(--serif); font-weight:600; font-size:clamp(2.4rem,6vw,3.9rem);
+    line-height:1.04; letter-spacing:-.02em; text-wrap:balance; margin:0 0 1rem; }
+  .standfirst { font-size:1.12rem; color:var(--muted); margin:0 0 2rem; max-width:60ch; }
+  .facts { display:flex; flex-wrap:wrap; gap:0; border-top:1px solid var(--line); }
+  .fact { padding:.9rem 1.6rem .9rem 0; margin-right:1.6rem; border-right:1px solid var(--line); }
+  .fact:last-child { border-right:0; }
+  .fact-n { font-family:var(--mono); font-size:1.5rem; font-variant-numeric:tabular-nums;
+    line-height:1; display:block; margin-bottom:.3rem; }
+  .fact-l { font-family:var(--mono); font-size:.68rem; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--faint); }
 
-  nav.bar {
-    position: sticky; top: 0; z-index: 20;
-    background: color-mix(in srgb, var(--paper) 88%, transparent);
-    backdrop-filter: blur(8px);
-    border-bottom: 1px solid var(--line);
-  }
-  .bar-inner {
-    max-width: var(--wide); margin: 0 auto; padding: .6rem 1.5rem;
-    display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem 1.15rem;
-  }
-  .bar-mark {
-    font-family: var(--mono); font-size: .74rem; letter-spacing: .16em;
-    text-transform: uppercase; color: var(--accent); margin-right: auto;
-  }
-  .bar a {
-    font-family: var(--mono); font-size: .74rem; letter-spacing: .05em;
-    color: var(--muted); text-decoration: none; padding: .15rem 0;
-    border-bottom: 1px solid transparent;
-  }
-  .bar a:hover { color: var(--ink); border-bottom-color: var(--accent); }
+  section { padding:3rem 0; border-top:1px solid var(--line); }
+  h2 { font-family:var(--serif); font-weight:600; font-size:clamp(1.6rem,3.2vw,2.15rem);
+    line-height:1.15; letter-spacing:-.015em; margin:0 0 .5rem; text-wrap:balance; }
+  h3 { font-family:var(--sans); font-weight:650; font-size:1rem; margin:2.2rem 0 .6rem; }
+  .sec-note { color:var(--muted); margin:0 0 1.8rem; max-width:64ch; }
+  p { margin:0 0 1rem; }
 
-  header.masthead { padding: 4rem 0 2.5rem; }
-  .eyebrow {
-    font-family: var(--mono); font-size: .74rem; letter-spacing: .18em;
-    text-transform: uppercase; color: var(--accent); margin: 0 0 1rem;
-  }
-  h1 {
-    font-family: var(--serif); font-weight: 600;
-    font-size: clamp(2.4rem, 6vw, 3.9rem); line-height: 1.04;
-    letter-spacing: -.02em; text-wrap: balance; margin: 0 0 1rem;
-  }
-  .standfirst { font-size: 1.12rem; color: var(--muted); margin: 0 0 2rem; max-width: 60ch; }
+  .rail { overflow-x:auto; padding:1.4rem; background:var(--surface);
+    border:1px solid var(--line); border-radius:4px; }
+  .rail svg { display:block; min-width:720px; height:auto; }
+  .rail pre { margin:0; font-family:var(--mono); font-size:.82rem; line-height:1.75;
+    color:var(--ink); overflow-x:auto; }
 
-  .facts { display: flex; flex-wrap: wrap; gap: 0; border-top: 1px solid var(--line); }
-  .fact {
-    padding: .9rem 1.6rem .9rem 0; margin-right: 1.6rem;
-    border-right: 1px solid var(--line);
-  }
-  .fact:last-child { border-right: 0; }
-  .fact-n {
-    font-family: var(--mono); font-size: 1.5rem; font-variant-numeric: tabular-nums;
-    line-height: 1; display: block; margin-bottom: .3rem;
-  }
-  .fact-l {
-    font-family: var(--mono); font-size: .68rem; letter-spacing: .12em;
-    text-transform: uppercase; color: var(--faint);
-  }
+  .sm-chip { fill:var(--surface-2); stroke:var(--line-strong); stroke-width:1.25; }
+  .sm-chip.is-good { fill:var(--good-soft); stroke:var(--good); }
+  .sm-chip.is-bad { fill:var(--bad-soft); stroke:var(--bad); }
+  .sm-chip.is-live { fill:var(--accent-soft); stroke:var(--accent); }
+  .sm-chip.is-sys { fill:var(--sys-soft); stroke:var(--sys); }
+  .sm-name { font-family:var(--mono); font-size:12px; letter-spacing:.03em;
+    fill:var(--ink); text-anchor:middle; dominant-baseline:middle; }
+  .sm-name.sm-sm { font-size:11px; }
+  .sm-sub { font-family:var(--mono); font-size:9.5px; fill:var(--muted);
+    text-anchor:middle; dominant-baseline:middle; }
+  .sm-edge { fill:none; stroke:var(--line-strong); stroke-width:1.4; marker-end:url(#arrow); }
+  .sm-edge.is-sys { stroke:var(--sys); stroke-dasharray:5 4; marker-end:url(#arrow-sys); }
+  .sm-edge.is-bad { stroke:var(--bad); marker-end:url(#arrow-bad); }
+  .sm-edge.no-head { marker-end:none; }
+  .sm-tag { font-family:var(--mono); font-size:10.5px; fill:var(--muted); text-anchor:middle; }
+  .sm-tag.is-sys { fill:var(--sys); }
+  .sm-tag.is-warn { fill:var(--bad); }
+  .sm-entry { fill:var(--ink); }
 
-  section { padding: 3rem 0; border-top: 1px solid var(--line); }
-  h2 {
-    font-family: var(--serif); font-weight: 600;
-    font-size: clamp(1.6rem, 3.2vw, 2.15rem); line-height: 1.15;
-    letter-spacing: -.015em; margin: 0 0 .5rem; text-wrap: balance;
-  }
-  h3 {
-    font-family: var(--sans); font-weight: 650; font-size: 1rem;
-    letter-spacing: -.005em; margin: 2.2rem 0 .6rem;
-  }
-  .sec-note { color: var(--muted); margin: 0 0 1.8rem; max-width: 64ch; }
-  p { margin: 0 0 1rem; }
-  .col p:last-child { margin-bottom: 0; }
+  .legend { display:flex; flex-wrap:wrap; gap:.5rem 1.4rem; margin-top:1rem;
+    font-family:var(--mono); font-size:.72rem; color:var(--muted); }
+  .legend span { display:inline-flex; align-items:center; gap:.45rem; }
+  .swatch { width:22px; height:3px; border-radius:2px; display:inline-block; }
 
-  .rail {
-    overflow-x: auto; padding: 1.4rem; background: var(--surface);
-    border: 1px solid var(--line); border-radius: 4px;
-  }
-  .rail svg { display: block; min-width: 720px; height: auto; }
+  .steps { list-style:none; margin:0; padding:0; }
+  .step { display:grid; grid-template-columns:2.4rem 1fr; gap:0 1.1rem;
+    position:relative; padding-bottom:1.5rem; }
+  .step:last-child { padding-bottom:0; }
+  .step::before { content:""; position:absolute; left:1.19rem; top:2.2rem; bottom:-.2rem;
+    width:1px; background:var(--line); }
+  .step:last-child::before { display:none; }
+  .step-n { font-family:var(--mono); font-size:.72rem; font-variant-numeric:tabular-nums;
+    width:2.4rem; height:2.4rem; border-radius:50%; border:1px solid var(--line-strong);
+    background:var(--surface); display:flex; align-items:center; justify-content:center;
+    color:var(--muted); position:relative; z-index:1; }
+  .step-b { padding-top:.35rem; }
+  .step-t { font-weight:620; margin:0 0 .25rem; }
+  .step-d { color:var(--muted); margin:0; font-size:.95rem; }
 
-  .sm-chip { fill: var(--surface-2); stroke: var(--line-strong); stroke-width: 1.25; }
-  .sm-chip.is-good { fill: var(--good-soft); stroke: var(--good); }
-  .sm-chip.is-bad  { fill: var(--bad-soft);  stroke: var(--bad); }
-  .sm-chip.is-live { fill: var(--accent-soft); stroke: var(--accent); }
-  .sm-chip.is-store{ fill: var(--store-soft); stroke: var(--store); stroke-dasharray: 4 3; }
-  .sm-chip.is-sys  { fill: var(--sys-soft); stroke: var(--sys); }
-  .sm-name {
-    font-family: var(--mono); font-size: 12.5px; letter-spacing: .04em;
-    fill: var(--ink); text-anchor: middle; dominant-baseline: middle;
-  }
-  .sm-name.sm-sm { font-size: 11px; }
-  .sm-sub {
-    font-family: var(--mono); font-size: 9.5px; fill: var(--muted);
-    text-anchor: middle; dominant-baseline: middle;
-  }
-  .sm-edge { fill: none; stroke: var(--line-strong); stroke-width: 1.4; marker-end: url(#arrow); }
-  .sm-edge.is-sys { stroke: var(--sys); stroke-dasharray: 5 4; marker-end: url(#arrow-sys); }
-  .sm-edge.is-bad { stroke: var(--bad); marker-end: url(#arrow-bad); }
-  .sm-edge.no-head { marker-end: none; }
-  .sm-tag {
-    font-family: var(--mono); font-size: 10.5px; fill: var(--muted);
-    text-anchor: middle; letter-spacing: .02em;
-  }
-  .sm-tag.is-sys { fill: var(--sys); }
-  .sm-tag.is-warn { fill: var(--bad); }
-  .sm-entry { fill: var(--ink); }
+  .ad { font-family:var(--mono); font-size:.76em; color:var(--accent); white-space:nowrap; }
+  code, .st { font-family:var(--mono); font-size:.82em; background:var(--surface-2);
+    padding:.1em .4em; border-radius:3px; }
+  .st.good { background:var(--good-soft); color:var(--good); }
+  .st.bad { background:var(--bad-soft); color:var(--bad); }
+  .st.sys { background:var(--sys-soft); color:var(--sys); }
+  .st.store { background:var(--store-soft); color:var(--store); }
 
-  .legend {
-    display: flex; flex-wrap: wrap; gap: .5rem 1.4rem; margin-top: 1rem;
-    font-family: var(--mono); font-size: .72rem; color: var(--muted);
-  }
-  .legend span { display: inline-flex; align-items: center; gap: .45rem; }
-  .swatch { width: 22px; height: 3px; border-radius: 2px; display: inline-block; }
+  .tbl-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:4px; background:var(--surface); }
+  table { border-collapse:collapse; width:100%; min-width:640px; font-size:.93rem; }
+  th, td { text-align:left; padding:.72rem .95rem; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-family:var(--mono); font-size:.68rem; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--faint); font-weight:500; background:var(--surface-2); }
+  tr:last-child td { border-bottom:0; }
+  td.num { font-family:var(--mono); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  tr.grp td { background:var(--surface-2); font-family:var(--mono); font-size:.68rem;
+    letter-spacing:.12em; text-transform:uppercase; color:var(--faint); padding:.5rem .95rem; }
 
-  .steps { list-style: none; margin: 0; padding: 0; }
-  .step {
-    display: grid; grid-template-columns: 2.4rem 1fr; gap: 0 1.1rem;
-    position: relative; padding-bottom: 1.5rem;
-  }
-  .step:last-child { padding-bottom: 0; }
-  .step::before {
-    content: ""; position: absolute; left: 1.19rem; top: 2.2rem; bottom: -.2rem;
-    width: 1px; background: var(--line);
-  }
-  .step:last-child::before { display: none; }
-  .step-n {
-    font-family: var(--mono); font-size: .72rem; font-variant-numeric: tabular-nums;
-    width: 2.4rem; height: 2.4rem; border-radius: 50%;
-    border: 1px solid var(--line-strong); background: var(--surface);
-    display: flex; align-items: center; justify-content: center; color: var(--muted);
-    position: relative; z-index: 1;
-  }
-  .step-b { padding-top: .35rem; }
-  .step-t { font-weight: 620; margin: 0 0 .25rem; }
-  .step-d { color: var(--muted); margin: 0; font-size: .95rem; }
+  .callout { border-left:3px solid var(--accent); background:var(--surface);
+    padding:1rem 1.2rem; border-radius:0 4px 4px 0; margin:1.5rem 0 0; }
+  .callout p { margin:0; font-size:.95rem; color:var(--muted); }
+  .callout p + p { margin-top:.7rem; }
+  .callout strong { color:var(--ink); }
+  .callout.warn { border-left-color:var(--bad); }
+  .callout.good { border-left-color:var(--good); }
 
-  .ad {
-    font-family: var(--mono); font-size: .76em; letter-spacing: .02em;
-    color: var(--accent); white-space: nowrap;
-  }
-  code, .st {
-    font-family: var(--mono); font-size: .82em; letter-spacing: .02em;
-    background: var(--surface-2); padding: .1em .4em; border-radius: 3px;
-  }
-  .st.good { background: var(--good-soft); color: var(--good); }
-  .st.bad  { background: var(--bad-soft);  color: var(--bad); }
-  .st.sys  { background: var(--sys-soft);  color: var(--sys); }
-  .st.store{ background: var(--store-soft); color: var(--store); }
+  .two { display:grid; gap:2.5rem; grid-template-columns:1fr; }
+  @media (min-width:860px) { .two { grid-template-columns:1fr 1fr; gap:3rem; } }
 
-  .tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
-  table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: .93rem; }
-  th, td { text-align: left; padding: .72rem .95rem; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th {
-    font-family: var(--mono); font-size: .68rem; letter-spacing: .12em;
-    text-transform: uppercase; color: var(--faint); font-weight: 500;
-    background: var(--surface-2);
-  }
-  tr:last-child td { border-bottom: 0; }
-  td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
-  tr.grp td {
-    background: var(--surface-2); font-family: var(--mono); font-size: .68rem;
-    letter-spacing: .12em; text-transform: uppercase; color: var(--faint);
-    padding: .5rem .95rem;
-  }
+  .ladder { list-style:none; margin:0; padding:0; counter-reset:rung; }
+  .ladder li { border:1px solid var(--line); background:var(--surface); border-radius:4px;
+    padding:.8rem 1rem; margin-bottom:.6rem; display:grid;
+    grid-template-columns:1.7rem 1fr; gap:0 .9rem; font-size:.95rem; }
+  .ladder li::before { counter-increment:rung; content:counter(rung);
+    font-family:var(--mono); font-size:.72rem; color:var(--accent); padding-top:.18rem; }
+  .ladder b { grid-column:2; font-weight:620; }
+  .ladder span { grid-column:2; color:var(--muted); display:block; font-size:.9rem; margin-top:.15rem; }
 
-  .callout {
-    border-left: 3px solid var(--accent); background: var(--surface);
-    padding: 1rem 1.2rem; border-radius: 0 4px 4px 0; margin: 1.5rem 0 0;
-  }
-  .callout p { margin: 0; font-size: .95rem; color: var(--muted); }
-  .callout p + p { margin-top: .7rem; }
-  .callout strong { color: var(--ink); }
-  .callout.warn { border-left-color: var(--bad); }
-
-  .two { display: grid; gap: 2.5rem; grid-template-columns: 1fr; }
-  @media (min-width: 860px) { .two { grid-template-columns: 1fr 1fr; gap: 3rem; } }
-
-  .ladder { list-style: none; margin: 0; padding: 0; counter-reset: rung; }
-  .ladder li {
-    border: 1px solid var(--line); background: var(--surface);
-    border-radius: 4px; padding: .8rem 1rem; margin-bottom: .6rem;
-    display: grid; grid-template-columns: 1.7rem 1fr; gap: 0 .9rem; font-size: .95rem;
-  }
-  .ladder li::before {
-    counter-increment: rung; content: counter(rung);
-    font-family: var(--mono); font-size: .72rem; color: var(--accent);
-    padding-top: .18rem;
-  }
-  .ladder b { grid-column: 2; font-weight: 620; }
-  .ladder span { grid-column: 2; color: var(--muted); display: block; font-size: .9rem; margin-top: .15rem; }
-
-  footer {
-    border-top: 1px solid var(--line); padding: 2.5rem 0 4rem;
-    font-family: var(--mono); font-size: .74rem; color: var(--faint);
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
-  }
+  footer { border-top:1px solid var(--line); padding:2.5rem 0 4rem;
+    font-family:var(--mono); font-size:.74rem; color:var(--faint); }
+  @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } }
 </style>
 
 <nav class="bar">
@@ -284,67 +163,59 @@
     <span class="bar-mark">Puber · Architecture</span>
     <a href="#topology">Topology</a>
     <a href="#ownership">Ownership</a>
-    <a href="#ride">Ride states</a>
+    <a href="#ride">Lifecycle</a>
     <a href="#flows">Flows</a>
-    <a href="#structure">Code</a>
+    <a href="#code">Code</a>
     <a href="#events">Events</a>
     <a href="#stores">Stores</a>
     <a href="#api">API</a>
-    <a href="#redis">Redis</a>
+    <a href="#ops">Operations</a>
     <a href="#decisions">Decisions</a>
-    <a href="#open">Open</a>
+    <a href="#deferred">Deferred</a>
   </div>
 </nav>
 
 <div class="wrap">
   <header class="masthead">
-    <p class="eyebrow">Architecture spine · working draft</p>
-    <h1>What we have decided, and why</h1>
+    <p class="eyebrow">Architecture spine · companion</p>
+    <h1>What we decided, and what each decision prevents</h1>
     <p class="standfirst">
-      A live reference for the architecture pass. Every decision here is settled unless marked
-      otherwise — recorded with what it <em>prevents</em>, because the reason is the part that is
-      hard to reconstruct later.
+      The visual companion to <code>ARCHITECTURE-SPINE.md</code>. Every rule here exists to stop a
+      specific divergence — and the reason is the half that is hard to reconstruct months later,
+      so it is recorded alongside the rule rather than lost.
     </p>
     <div class="facts">
-      <div class="fact"><span class="fact-n">42</span><span class="fact-l">Decisions</span></div>
+      <div class="fact"><span class="fact-n">57</span><span class="fact-l">Decisions</span></div>
       <div class="fact"><span class="fact-n">5</span><span class="fact-l">Services</span></div>
       <div class="fact"><span class="fact-n">4</span><span class="fact-l">Datastores</span></div>
-      <div class="fact"><span class="fact-n">8</span><span class="fact-l">Ride states</span></div>
-      <div class="fact"><span class="fact-n">10</span><span class="fact-l">Still open</span></div>
+      <div class="fact"><span class="fact-n">9</span><span class="fact-l">Ride states</span></div>
+      <div class="fact"><span class="fact-n">10</span><span class="fact-l">Deferred</span></div>
     </div>
   </header>
 
   <section id="topology">
     <h2>Service topology</h2>
     <p class="sec-note">
-      Five services behind one gateway. The rule that shapes everything else:
+      Five services behind one gateway, and one rule shaping everything else:
       <strong>matching-service is never publicly routable.</strong> It holds all authoritative ride
-      and dispatch state, and reaching it only through the edge services is what makes the façade
-      layer mean something.
+      and dispatch state, and reaching it only through the edge is what makes the façade layer mean
+      something rather than being an optional hop.
     </p>
-
     <div class="rail">
-      <svg viewBox="0 0 900 540" role="img" aria-label="Service topology: client to HAProxy to rider-service and driver-service, both to matching-service, which publishes to Kafka, consumed by payment-service and audit-service">
+      <svg viewBox="0 0 900 540" role="img" aria-label="Topology: clients to HAProxy to rider-service and driver-service, both to matching-service over gRPC, which publishes to Kafka consumed by payment-service and audit-service">
         <defs>
-          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" fill="var(--line-strong)"></path>
-          </marker>
-          <marker id="arrow-sys" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" fill="var(--sys)"></path>
-          </marker>
-          <marker id="arrow-bad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" fill="var(--bad)"></path>
-          </marker>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--line-strong)"></path></marker>
+          <marker id="arrow-sys" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--sys)"></path></marker>
+          <marker id="arrow-bad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--bad)"></path></marker>
         </defs>
-
         <rect class="sm-chip" x="340" y="16" width="220" height="40" rx="5"></rect>
         <text class="sm-name sm-sm" x="450" y="36">Simulator · curl · browser</text>
-
         <path class="sm-edge" d="M 450,56 L 450,86"></path>
+        <text class="sm-tag" x="492" y="76">REST</text>
 
         <rect class="sm-chip is-live" x="330" y="90" width="240" height="46" rx="5"></rect>
         <text class="sm-name" x="450" y="106">HAProxy</text>
-        <text class="sm-sub" x="450" y="123">edge · TLS · maxconn · queue</text>
+        <text class="sm-sub" x="450" y="123">edge · maxconn · queue · shed</text>
 
         <path class="sm-edge" d="M 390,136 C 330,158 280,160 250,176"></path>
         <path class="sm-edge" d="M 510,136 C 570,158 620,160 650,176"></path>
@@ -355,36 +226,38 @@
 
         <rect class="sm-chip" x="570" y="180" width="190" height="50" rx="5"></rect>
         <text class="sm-name" x="665" y="198">driver-service</text>
-        <text class="sm-sub" x="665" y="216">identity + location</text>
+        <text class="sm-sub" x="665" y="216">identity · location · sockets</text>
 
         <path class="sm-edge" d="M 250,230 C 300,258 340,266 386,282"></path>
         <path class="sm-edge" d="M 650,230 C 600,258 560,266 514,282"></path>
+        <text class="sm-tag" x="300" y="268">gRPC</text>
+        <text class="sm-tag" x="600" y="268">gRPC</text>
 
         <rect class="sm-chip is-live" x="290" y="286" width="320" height="58" rx="5"></rect>
         <text class="sm-name" x="450" y="305">matching-service</text>
         <text class="sm-sub" x="450" y="323">rides · dispatch · fares — internal only</text>
 
-        <text class="sm-tag is-warn" x="763" y="272">gateway never</text>
-        <text class="sm-tag is-warn" x="763" y="286">routes here</text>
-        <path class="sm-edge is-bad no-head" d="M 700,278 C 660,286 640,300 614,308" stroke-dasharray="4 3"></path>
+        <text class="sm-tag is-warn" x="770" y="272">gateway never</text>
+        <text class="sm-tag is-warn" x="770" y="286">routes here</text>
+        <path class="sm-edge is-bad no-head" d="M 706,278 C 664,286 640,300 614,308" stroke-dasharray="4 3"></path>
 
         <path class="sm-edge" d="M 450,344 L 450,384"></path>
         <path class="sm-edge" d="M 700,230 C 700,300 700,340 700,384"></path>
         <text class="sm-tag" x="762" y="330">driver.locations</text>
 
         <rect class="sm-chip is-sys" x="60" y="388" width="780" height="38" rx="5"></rect>
-        <text class="sm-name" x="450" y="407">Kafka — event backbone (Month 3+)</text>
+        <text class="sm-name" x="450" y="407">Kafka — propagation only, never the request path</text>
 
         <path class="sm-edge" d="M 280,426 L 280,462"></path>
         <path class="sm-edge" d="M 620,426 L 620,462"></path>
 
         <rect class="sm-chip" x="180" y="466" width="200" height="50" rx="5"></rect>
         <text class="sm-name" x="280" y="484">payment-service</text>
-        <text class="sm-sub" x="280" y="502">Stripe · Month 5</text>
+        <text class="sm-sub" x="280" y="502">the only provider caller</text>
 
         <rect class="sm-chip" x="520" y="466" width="200" height="50" rx="5"></rect>
         <text class="sm-name" x="620" y="484">audit-service</text>
-        <text class="sm-sub" x="620" y="502">ClickHouse · Month 6</text>
+        <text class="sm-sub" x="620" y="502">audit + columnar analytics</text>
       </svg>
       <div class="legend">
         <span><i class="swatch" style="background:var(--accent)"></i> on the hot path</span>
@@ -392,13 +265,12 @@
         <span><i class="swatch" style="background:var(--bad)"></i> boundary rule</span>
       </div>
     </div>
-
     <div class="callout">
       <p>
-        <strong>Internal hops bypass the gateway.</strong> <code>rider-service → matching-service</code> and
-        <code>driver-service → matching-service</code> resolve through Docker DNS in Compose and through a
-        Kubernetes <code>Service</code> later — each of which load-balances on its own. HAProxy is
-        the edge and nothing else, so there is no second load-balancer component to run.
+        <strong>Kafka never removes the synchronous path.</strong> The façades own no data, so a
+        rider's request must reach matching-service to get back a ride id, a 409, or a read result —
+        fire-and-forget cannot deliver any of those. Events carry <em>propagation</em>; anything an
+        actor waits on stays a call. <span class="ad">AD-37</span>
       </p>
     </div>
   </section>
@@ -406,46 +278,19 @@
   <section id="ownership">
     <h2>Who owns what</h2>
     <p class="sec-note">
-      Database per service. The rule that decides where a table lives:
-      <strong>whatever is written together by a single action must share one transactional
-      owner.</strong> That is what removes the need for a saga anywhere in the core dispatch path.
+      Database per service. The rule deciding where a table lives:
+      <strong>whatever is written together by a single action shares one transactional owner.</strong>
+      That is what removes the need for a saga anywhere in the dispatch path.
     </p>
-
     <div class="tbl-wrap">
       <table>
-        <thead>
-          <tr><th>Service</th><th>Owns</th><th>Notes</th></tr>
-        </thead>
+        <thead><tr><th>Service</th><th>Owns</th><th>Notes</th></tr></thead>
         <tbody>
-          <tr>
-            <td><strong>rider-service</strong></td>
-            <td><em>nothing</em></td>
-            <td>Stateless façade. Every read and write proxies to matching-service.</td>
-          </tr>
-          <tr>
-            <td><strong>driver-service</strong></td>
-            <td><code>drivers</code> — id, name, current position</td>
-            <td>Identity and location only. Carries <strong>no</strong> dispatch status.</td>
-          </tr>
-          <tr>
-            <td><strong>matching-service</strong></td>
-            <td><code>rides</code>, <code>drivers</code> (dispatch), <code>fare_rules</code></td>
-            <td>
-              A second table also called <code>drivers</code> — different database, different
-              purpose, never joined across. Holds only
-              <code>driver_id · status · current_ride_id · updated_at</code>.
-            </td>
-          </tr>
-          <tr>
-            <td><strong>payment-service</strong></td>
-            <td><code>payment_intents</code>, <code>webhook_events</code></td>
-            <td>The only service that talks to Stripe.</td>
-          </tr>
-          <tr>
-            <td><strong>audit-service</strong></td>
-            <td><code>audit_events</code> + ClickHouse tables</td>
-            <td>Also ingests <code>driver.locations</code> into its own ClickHouse table for FR-43.</td>
-          </tr>
+          <tr><td><strong>rider-service</strong></td><td><em>nothing</em></td><td>Stateless façade. REST in, gRPC out.</td></tr>
+          <tr><td><strong>driver-service</strong></td><td><code>drivers</code> — identity, position</td><td>No dispatch status. Also holds driver WebSockets.</td></tr>
+          <tr><td><strong>matching-service</strong></td><td><code>rides</code>, <code>drivers</code> (dispatch), <code>fare_rules</code>, <strong>Redis</strong></td><td>A second table also named <code>drivers</code> — different database, different purpose, never joined across.</td></tr>
+          <tr><td><strong>payment-service</strong></td><td><code>payment_intents</code>, <code>webhook_events</code></td><td>The only service that talks to the provider.</td></tr>
+          <tr><td><strong>audit-service</strong></td><td><code>audit_events</code> + columnar tables</td><td>Pure consumer. Nothing depends on it.</td></tr>
         </tbody>
       </table>
     </div>
@@ -453,37 +298,20 @@
     <h3>Authoritative vs advisory</h3>
     <div class="tbl-wrap">
       <table>
-        <thead>
-          <tr><th>Fact</th><th>Authoritative</th><th>Advisory copy</th><th>Why safe</th></tr>
-        </thead>
+        <thead><tr><th>Fact</th><th>Authoritative</th><th>Advisory copy</th><th>Why safe</th></tr></thead>
         <tbody>
-          <tr>
-            <td>Is this driver free?</td>
-            <td>matching-service <code>drivers.status</code></td>
-            <td><code>drivers:geo</code> membership</td>
-            <td>Conditional <code>UPDATE … WHERE status='AVAILABLE'</code> decides; loser re-searches</td>
-          </tr>
-          <tr>
-            <td>Where is this driver?</td>
-            <td>nowhere durable — it is ephemeral</td>
-            <td><code>driver:{id}:position</code></td>
-            <td>Staleness only affects match <em>quality</em>, never correctness</td>
-          </tr>
-          <tr>
-            <td>Who is the driver?</td>
-            <td>driver-service <code>drivers</code></td>
-            <td>snapshot on the ride row</td>
-            <td>Snapshot is <em>more</em> correct — records who actually drove it</td>
-          </tr>
+          <tr><td>Is this driver free?</td><td>dispatch <code>drivers.status</code></td><td>geo-set membership</td><td>Conditional update decides; loser re-searches</td></tr>
+          <tr><td>Where is this driver?</td><td>nowhere durable — ephemeral</td><td>position key</td><td>Staleness affects match <em>quality</em>, never correctness</td></tr>
+          <tr><td>Who is the driver?</td><td>driver-service <code>drivers</code></td><td>snapshot on the ride</td><td>Snapshot is <em>more</em> correct — records who actually drove</td></tr>
         </tbody>
       </table>
     </div>
-
     <div class="callout">
       <p>
-        <strong>Never trust a cache for correctness — only for candidate selection.</strong> This one
-        sentence covers the driver-location cache, the geo set, and the identity snapshot. It is also
-        what makes Redis read-replicas safe to add later without changing any logic.
+        <strong>Never trust a cache for correctness — only for candidate selection.</strong> One
+        sentence covering the location cache, the geo set and the identity snapshot, and the reason
+        read replicas can be added later without touching a line of logic.
+        <span class="ad">AD-4</span>
       </p>
     </div>
   </section>
@@ -491,66 +319,63 @@
   <section id="ride">
     <h2>Ride lifecycle</h2>
     <p class="sec-note">
-      Five states on the happy path, three terminals. <code>REQUESTED</code> means
-      <em>awaiting authorisation</em> and nothing else — it is entered exactly once and never
-      returned to, so a ride that already holds funds can never fall back into re-authorising them.
+      Six states on the happy path, three terminals. <code>REQUESTED</code> means
+      <em>awaiting authorisation</em> and nothing else — entered exactly once, never returned to, so
+      a ride already holding funds can never fall back into re-authorising them.
     </p>
-
     <div class="rail">
-      <svg viewBox="0 0 1020 400" role="img" aria-label="Ride state machine: REQUESTED to WAITING_MATCH to MATCHED to IN_PROGRESS to COMPLETED, with terminals PAYMENT_FAILED, NO_DRIVER and CANCELLED">
-        <path class="sm-edge is-sys" d="M 512,150 C 512,66 380,66 352,142"></path>
-        <text class="sm-tag is-sys" x="432" y="58">driver silent · re-match · FR-13</text>
+      <svg viewBox="0 0 1150 400" role="img" aria-label="Ride states: REQUESTED, WAITING_MATCH, OFFERED, MATCHED, IN_PROGRESS, COMPLETED, with terminals PAYMENT_FAILED, NO_DRIVER, CANCELLED">
+        <path class="sm-edge is-sys" d="M 500,160 C 500,84 380,84 348,152"></path>
+        <text class="sm-tag is-sys" x="424" y="76">decline · timeout · FR-11 · FR-23</text>
+        <path class="sm-edge is-sys" d="M 672,160 C 672,40 372,40 336,152"></path>
+        <text class="sm-tag is-sys" x="504" y="32">driver silent before pickup · FR-13</text>
+        <path class="sm-edge is-sys" d="M 850,160 C 850,104 1000,104 1040,152"></path>
+        <text class="sm-tag is-sys" x="945" y="98">silent mid-trip · auto-complete · FR-14</text>
 
-        <path class="sm-edge is-sys" d="M 700,150 C 700,96 866,96 900,142"></path>
-        <text class="sm-tag is-sys" x="800" y="90">driver silent · auto-complete · FR-14</text>
+        <circle class="sm-entry" cx="18" cy="182" r="5"></circle>
+        <path class="sm-edge" d="M 26,182 L 48,182"></path>
 
-        <circle class="sm-entry" cx="18" cy="172" r="5"></circle>
-        <path class="sm-edge" d="M 26,172 L 56,172"></path>
-        <text class="sm-tag" x="40" y="162">request</text>
+        <rect class="sm-chip is-live" x="56" y="160" width="124" height="44" rx="5"></rect>
+        <text class="sm-name" x="118" y="183">REQUESTED</text>
+        <rect class="sm-chip is-live" x="256" y="160" width="160" height="44" rx="5"></rect>
+        <text class="sm-name" x="336" y="183">WAITING_MATCH</text>
+        <rect class="sm-chip is-live" x="472" y="160" width="112" height="44" rx="5"></rect>
+        <text class="sm-name" x="528" y="183">OFFERED</text>
+        <rect class="sm-chip is-live" x="640" y="160" width="112" height="44" rx="5"></rect>
+        <text class="sm-name" x="696" y="183">MATCHED</text>
+        <rect class="sm-chip is-live" x="808" y="160" width="140" height="44" rx="5"></rect>
+        <text class="sm-name" x="878" y="183">IN_PROGRESS</text>
+        <rect class="sm-chip is-good" x="1004" y="160" width="126" height="44" rx="5"></rect>
+        <text class="sm-name" x="1067" y="183">COMPLETED</text>
 
-        <rect class="sm-chip is-live" x="64" y="150" width="132" height="44" rx="5"></rect>
-        <text class="sm-name" x="130" y="173">REQUESTED</text>
+        <path class="sm-edge" d="M 180,182 L 248,182"></path>
+        <text class="sm-tag" x="214" y="172">authorised</text>
+        <path class="sm-edge" d="M 416,182 L 464,182"></path>
+        <text class="sm-tag" x="440" y="172">offered</text>
+        <path class="sm-edge" d="M 584,182 L 632,182"></path>
+        <text class="sm-tag" x="608" y="172">accept</text>
+        <path class="sm-edge" d="M 752,182 L 800,182"></path>
+        <text class="sm-tag" x="776" y="172">start</text>
+        <path class="sm-edge" d="M 948,182 L 996,182"></path>
+        <text class="sm-tag" x="972" y="172">complete</text>
 
-        <rect class="sm-chip is-live" x="272" y="150" width="168" height="44" rx="5"></rect>
-        <text class="sm-name" x="356" y="173">WAITING_MATCH</text>
+        <rect class="sm-chip is-bad" x="30" y="310" width="176" height="44" rx="5"></rect>
+        <text class="sm-name" x="118" y="333">PAYMENT_FAILED</text>
+        <rect class="sm-chip is-bad" x="266" y="310" width="140" height="44" rx="5"></rect>
+        <text class="sm-name" x="336" y="333">NO_DRIVER</text>
+        <rect class="sm-chip is-bad" x="560" y="310" width="140" height="44" rx="5"></rect>
+        <text class="sm-name" x="630" y="333">CANCELLED</text>
 
-        <rect class="sm-chip is-live" x="496" y="150" width="118" height="44" rx="5"></rect>
-        <text class="sm-name" x="555" y="173">MATCHED</text>
+        <path class="sm-edge is-bad" d="M 100,204 C 94,250 92,276 100,302"></path>
+        <text class="sm-tag" x="44" y="252">auth declined</text>
+        <path class="sm-edge is-bad" d="M 310,204 C 310,250 320,278 330,302"></path>
+        <text class="sm-tag" x="250" y="258">gave up</text>
 
-        <rect class="sm-chip is-live" x="670" y="150" width="146" height="44" rx="5"></rect>
-        <text class="sm-name" x="743" y="173">IN_PROGRESS</text>
-
-        <rect class="sm-chip is-good" x="872" y="150" width="130" height="44" rx="5"></rect>
-        <text class="sm-name" x="937" y="173">COMPLETED</text>
-
-        <path class="sm-edge" d="M 196,172 L 264,172"></path>
-        <text class="sm-tag" x="230" y="162">authorized</text>
-        <path class="sm-edge" d="M 440,172 L 488,172"></path>
-        <text class="sm-tag" x="464" y="162">accept</text>
-        <path class="sm-edge" d="M 614,172 L 662,172"></path>
-        <text class="sm-tag" x="638" y="162">start</text>
-        <path class="sm-edge" d="M 816,172 L 864,172"></path>
-        <text class="sm-tag" x="840" y="162">complete</text>
-
-        <rect class="sm-chip is-bad" x="40" y="300" width="176" height="44" rx="5"></rect>
-        <text class="sm-name" x="128" y="323">PAYMENT_FAILED</text>
-
-        <rect class="sm-chip is-bad" x="290" y="300" width="140" height="44" rx="5"></rect>
-        <text class="sm-name" x="360" y="323">NO_DRIVER</text>
-
-        <rect class="sm-chip is-bad" x="520" y="300" width="140" height="44" rx="5"></rect>
-        <text class="sm-name" x="590" y="323">CANCELLED</text>
-
-        <path class="sm-edge is-bad" d="M 112,194 C 104,240 100,266 108,292"></path>
-        <text class="sm-tag" x="52" y="244">auth declined</text>
-
-        <path class="sm-edge is-bad" d="M 332,194 C 332,240 346,268 356,292"></path>
-        <text class="sm-tag" x="274" y="252">gave up</text>
-
-        <path class="sm-edge is-bad" d="M 182,194 C 300,258 452,276 548,292"></path>
-        <path class="sm-edge is-bad" d="M 402,194 C 452,242 508,272 562,292"></path>
-        <path class="sm-edge is-bad" d="M 555,194 C 566,232 578,264 588,292"></path>
-        <text class="sm-tag" x="712" y="258">rider cancels · FR-16</text>
+        <path class="sm-edge is-bad" d="M 160,204 C 300,272 460,290 588,302"></path>
+        <path class="sm-edge is-bad" d="M 372,204 C 450,254 520,286 600,302"></path>
+        <path class="sm-edge is-bad" d="M 528,204 C 545,244 580,278 616,302"></path>
+        <path class="sm-edge is-bad" d="M 696,204 C 700,244 672,282 648,302"></path>
+        <text class="sm-tag" x="800" y="290">rider cancels · any state before the trip starts · FR-16</text>
       </svg>
       <div class="legend">
         <span><i class="swatch" style="background:var(--accent)"></i> in flight</span>
@@ -559,136 +384,91 @@
         <span><i class="swatch" style="background:var(--sys)"></i> system recovery</span>
       </div>
     </div>
-
     <div class="callout">
       <p>
-        <strong>Provenance is a field, not a state.</strong> An auto-completed ride ends in
-        <span class="st good">COMPLETED</span> like any other, with
-        <code>completed_by = DRIVER | SYSTEM</code> alongside it. A separate
-        <code>AUTO_COMPLETED</code> status would force every "completed rides" query — rider history,
-        driver history, analytics, the capture trigger, dashboard counts — to match two values, and
-        missing one gives a silent bug.
+        <strong><code>OFFERED</code> is a real state, and that simplified two other things.</strong>
+        With the ride able to distinguish "offer outstanding" from "driver accepted", the dispatch
+        enum collapses to <code>OFFLINE / AVAILABLE / BUSY</code>, and FR-6 becomes true as literally
+        written — the rider sees a driver only once one has actually committed.
+        <span class="ad">AD-13</span>
       </p>
       <p>
-        <strong>The ride state cannot tell an offer from an acceptance.</strong>
-        <span class="st">MATCHED</span> covers both "offered, awaiting an answer" and "accepted, driving
-        to pickup". That distinction lives in matching-service's dispatch enum
-        (<code>OFFERED</code> vs <code>ACCEPTED_RIDE</code>) — without it, the offer-timeout sweep has
-        nothing to filter on.
+        <strong>Provenance is a field, not a state.</strong> An auto-completed ride ends in
+        <span class="st good">COMPLETED</span> with <code>completed_by = SYSTEM</code>. A separate
+        terminal state would force every "completed rides" query to match two values, and missing one
+        silently drops those rides from a report — or from a capture. <span class="ad">AD-18</span>
       </p>
     </div>
   </section>
 
   <section id="flows">
     <h2>The two flows that shape everything</h2>
-    <p class="sec-note">
-      One is the highest-value path, the other the highest-volume one.
-    </p>
+    <p class="sec-note">One is the highest-value path; the other is the highest-volume one.</p>
 
     <h3>Requesting a ride</h3>
     <ol class="steps">
-      <li class="step">
-        <span class="step-n">01</span>
-        <div class="step-b">
-          <p class="step-t">Quote — no ride created</p>
-          <p class="step-d">Fare from <code>fare_rules</code> plus an ETA from the nearest matchable driver. Indicative only, so it can be served from a coarse per-cell cache if GEOSEARCH load bites.</p>
-        </div>
-      </li>
-      <li class="step">
-        <span class="step-n">02</span>
-        <div class="step-b">
-          <p class="step-t">Request — persisted immediately as <span class="st">REQUESTED</span></p>
-          <p class="step-d">The ride id comes straight back. A partial unique index enforces one active ride per rider; a concurrent second request fails on the constraint and becomes a 409.</p>
-        </div>
-      </li>
-      <li class="step">
-        <span class="step-n">03</span>
-        <div class="step-b">
-          <p class="step-t">Authorise — asynchronously</p>
-          <p class="step-d">The payment token passes through to payment-service as a typed value that cannot be logged. Nothing blocks on Stripe.</p>
-        </div>
-      </li>
-      <li class="step">
-        <span class="step-n">04</span>
-        <div class="step-b">
-          <p class="step-t">Hold lands → <span class="st">WAITING_MATCH</span></p>
-          <p class="step-d">Matching reads only this state, so an unfunded ride is <em>invisible</em> to dispatch rather than merely rejected by a guard. A decline goes to <span class="st bad">PAYMENT_FAILED</span> instead.</p>
-        </div>
-      </li>
-      <li class="step">
-        <span class="step-n">05</span>
-        <div class="step-b">
-          <p class="step-t">Match — one local transaction</p>
-          <p class="step-d">GEOSEARCH picks a candidate; the conditional update on the dispatch row decides. Ride and dispatch state are written together, in one database, with no cross-service coordination.</p>
-        </div>
-      </li>
+      <li class="step"><span class="step-n">01</span><div class="step-b">
+        <p class="step-t">Quote — nothing created</p>
+        <p class="step-d">Fare plus an ETA from the nearest matchable driver. Indicative by definition, so it can be served from a coarse cache if geo load ever bites.</p></div></li>
+      <li class="step"><span class="step-n">02</span><div class="step-b">
+        <p class="step-t">Request — persisted immediately as <span class="st">REQUESTED</span></p>
+        <p class="step-d">The id returns at once. A partial unique index enforces one active ride per rider; a concurrent second request fails the constraint and becomes a 409 rather than a race.</p></div></li>
+      <li class="step"><span class="step-n">03</span><div class="step-b">
+        <p class="step-t">Authorise — asynchronously</p>
+        <p class="step-d">The token passes through as a typed value that cannot be logged. Nothing blocks on the provider, so provider latency never sits in the request path.</p></div></li>
+      <li class="step"><span class="step-n">04</span><div class="step-b">
+        <p class="step-t">Hold lands → <span class="st">WAITING_MATCH</span></p>
+        <p class="step-d">Matching reads <em>only</em> this state, so an unfunded ride is invisible to dispatch rather than rejected by a guard someone must remember to write.</p></div></li>
+      <li class="step"><span class="step-n">05</span><div class="step-b">
+        <p class="step-t">Offer — one local transaction</p>
+        <p class="step-d">A geo search picks the candidate; the conditional update on the dispatch row decides. Ride and dispatch state are written together, in one database, with no cross-service coordination.</p></div></li>
     </ol>
 
-    <h3>The driver heartbeat — 10k writes/sec at stress scale</h3>
+    <h3>The driver heartbeat — the system's highest-volume write</h3>
     <ol class="steps">
-      <li class="step">
-        <span class="step-n">01</span>
-        <div class="step-b">
-          <p class="step-t">driver-service receives the heartbeat, stamps it</p>
-          <p class="step-d">Stamped at <em>produce</em> time. Stamping on consume would let Kafka lag mask staleness — a backed-up consumer makes every vanished driver look freshly heard, and it fails worst under load.</p>
-        </div>
-      </li>
-      <li class="step">
-        <span class="step-n">02</span>
-        <div class="step-b">
-          <p class="step-t">Published to <code>driver.locations</code></p>
-          <p class="step-d">Keyed by <code>driver_id</code>, so one driver's events stay ordered relative to each other across partitions.</p>
-        </div>
-      </li>
-      <li class="step">
-        <span class="step-n">03</span>
-        <div class="step-b">
-          <p class="step-t">matching-service writes Redis — two ops, one round trip</p>
-          <p class="step-d"><code>GEOADD drivers:geo</code> and the position hash. Zero Postgres writes: a <code>last_heartbeat_at</code> column would mean 10k updates/sec on a hot row.</p>
-        </div>
-      </li>
-      <li class="step">
-        <span class="step-n">04</span>
-        <div class="step-b">
-          <p class="step-t">audit-service consumes the same topic independently</p>
-          <p class="step-d">Into ClickHouse for the FR-43 analytics. Two consumer groups on one topic, neither aware of the other — the thing a delete-on-ack queue could not do.</p>
-        </div>
-      </li>
+      <li class="step"><span class="step-n">01</span><div class="step-b">
+        <p class="step-t">driver-service stamps it at <em>produce</em> time</p>
+        <p class="step-d">Stamping on consume would let consumer lag mask staleness — a backed-up consumer makes every vanished driver look freshly heard, and it fails worst under load.</p></div></li>
+      <li class="step"><span class="step-n">02</span><div class="step-b">
+        <p class="step-t">Published keyed by driver</p>
+        <p class="step-d">So one driver's events stay ordered relative to each other across partitions.</p></div></li>
+      <li class="step"><span class="step-n">03</span><div class="step-b">
+        <p class="step-t">matching-service writes Redis — two ops, one round trip</p>
+        <p class="step-d">Geo set plus position key. <strong>Zero Postgres writes</strong>: a heartbeat column would mean thousands of updates per second on a hot row.</p></div></li>
+      <li class="step"><span class="step-n">04</span><div class="step-b">
+        <p class="step-t">audit-service consumes the same topic independently</p>
+        <p class="step-d">Its own consumer group, unaware of the other. The thing a delete-on-acknowledge queue could not do — and the reason audit can be switched off without losing anything.</p></div></li>
     </ol>
   </section>
 
-  <section id="structure">
+  <section id="code">
     <h2>How the code is organised</h2>
     <p class="sec-note">
-      Layered packaging with the Strategy pattern for the pieces that vary — deliberately
-      <em>not</em> hexagonal. The general trend favours package-by-feature, but that argument
-      doesn't apply here: the feature decomposition already happened at the service boundary.
-      The package is called a service.
+      Layered packaging with Strategy for the parts that vary — deliberately not hexagonal. The
+      trend favours package-by-feature, but that argument does not apply here: the feature
+      decomposition already happened at the service boundary. The package is called a service.
     </p>
-
     <div class="two">
       <div>
         <h3 style="margin-top:0">Every service</h3>
         <div class="rail" style="padding:1rem 1.2rem">
-<pre style="margin:0; font-family:var(--mono); font-size:.82rem; line-height:1.75; color:var(--ink); overflow-x:auto">com.puber.{service}
+<pre>com.puber.&lt;role&gt;
   controller/   entrypoints
   service/      orchestration + logic
   repository/   JdbcTemplate, explicit SQL
   model/        records + state machines
   strategy/     the swappable bits
-    payment/  location/  events/
   config/</pre>
         </div>
         <p style="margin-top:.9rem; font-size:.9rem; color:var(--muted)">
-          <code>model/</code>, not <code>entity/</code> — the latter reads as JPA
-          <code>@Entity</code>, and there is no ORM here. A name that implies one invites
-          someone to reach for Hibernate.
+          <code>model/</code>, not <code>entity/</code> — the latter reads as JPA, and there is no
+          ORM. A name implying one invites someone to reach for Hibernate.
         </p>
       </div>
       <div>
         <h3 style="margin-top:0">matching-service only</h3>
         <div class="rail" style="padding:1rem 1.2rem">
-<pre style="margin:0; font-family:var(--mono); font-size:.82rem; line-height:1.75; color:var(--ink); overflow-x:auto">com.puber.matching
+<pre>com.puber.matching
   shared/     Location, haversine
   fare/       rules, calculation, surge
   ride/       model, state machine, lifecycle
@@ -700,37 +480,32 @@ shared ← fare ← ride ← dispatch ← quote</pre>
         </div>
         <p style="margin-top:.9rem; font-size:.9rem; color:var(--muted)">
           The only service carrying more than one domain, so the only one split by feature.
-          Flat inside each package, petclinic-style.
+          Flat inside each package.
         </p>
       </div>
     </div>
-
     <div class="callout">
       <p>
-        <strong>The invariant is dependency direction, not folder names.</strong>
-        <code>model/</code> imports nothing framework-flavoured; <code>service/</code> imports
-        <code>model/</code> and strategy <em>interfaces</em>, never a concrete implementation;
-        nothing imports <code>controller/</code>. The moment a service class imports
-        <code>StripePaymentProvider</code> instead of <code>PaymentProvider</code>, the stub stops
-        being swappable and <span class="ad">AD-27</span> quietly breaks.
+        <strong>The invariant is dependency direction, not folder names.</strong> The moment a
+        service class imports a concrete provider instead of its interface, the stub stops being
+        swappable and the stress-test exclusion quietly breaks.
+        <span class="ad">AD-8</span>
       </p>
       <p>
-        <strong>Two placements in matching-service exist to prevent cycles.</strong> The match
-        transaction writes both <code>rides</code> and <code>drivers</code>, so it lives in
-        <code>dispatch/</code> and calls down into <code>ride/</code>. Surge needs counts from
-        both, so its scheduler also lives in <code>dispatch/</code> and writes the multiplier
-        down into <code>fare/</code> — put it in <code>fare/</code> and the whole order collapses.
+        <strong>Two placements exist purely to prevent cycles.</strong> The match transaction writes
+        both tables, so it lives in <code>dispatch</code> and calls down into <code>ride</code>.
+        Surge needs counts from both, so its scheduler lives there too and writes down into
+        <code>fare</code> — put it in <code>fare</code> and the whole order collapses.
+        <span class="ad">AD-9</span>
       </p>
     </div>
-
     <div class="callout warn">
       <p>
-        <strong>One place a port must not go: Postgres.</strong> NFR-1's race-safety guarantee
-        <em>is</em> the database's behaviour — row locks, the partial unique index, conditional
-        updates. A fake repository has none of those semantics, so tests against it would pass
-        while the real system double-books drivers. Testcontainers against real Postgres instead.
-        A strategy where the implementation varies; direct access where the technology's
-        semantics are the thing being relied on.
+        <strong>One place a Strategy must not go: Postgres.</strong> The race-safety guarantee
+        <em>is</em> the database's behaviour — row locks, partial unique indexes, conditional
+        updates. A fake repository has none of it, so tests would pass while the real system
+        double-books drivers. Tests run against the real stack instead.
+        <span class="ad">AD-10</span> <span class="ad">AD-56</span>
       </p>
     </div>
   </section>
@@ -738,20 +513,20 @@ shared ← fare ← ride ← dispatch ← quote</pre>
   <section id="events">
     <h2>Events</h2>
     <p class="sec-note">
-      Domain code never publishes. It writes a row in the same transaction as the state change,
-      and a relay ships it. That makes publishing fire-and-forget <em>by construction</em> — so
-      the V1-HTTP → Kafka migration swaps one class and touches nothing else.
+      Domain code never publishes. It writes a row in the same transaction as the state change, and
+      a relay ships it — which makes publishing fire-and-forget <em>by construction</em> rather than
+      by convention.
     </p>
-
     <div class="rail" style="padding:1rem 1.2rem">
-<pre style="margin:0; font-family:var(--mono); font-size:.82rem; line-height:1.75; color:var(--ink); overflow-x:auto">event_outbox
-  id               bigint identity   ← ordering. one authority, no clocks
-  event_id         uuid              ← consumer dedupe (AD-24)
-  event_type       text              ← what happened      · ride.matched
+<pre>event_outbox
+  id               bigint identity   ← ordering from one authority, not a clock
+  event_id         uuid              ← consumer dedupe
+  event_type       text              ← what happened       · ride.matched
   entity_type      text              ← what it happened to · RIDE
-  entity_id        uuid              ← partition key (AD-23)
-  actor_type       text              ← who caused it (FR-40)
+  entity_id        uuid              ← partition key
+  actor_type       text              ← who caused it
   actor_id         uuid null
+  correlation_id   text              ← the trace survives the async hop
   schema_version   int
   payload          jsonb             ← the built event, frozen at commit
   occurred_at      timestamptz
@@ -765,91 +540,46 @@ index (next_attempt_at, id) WHERE dead_at IS NULL</pre>
 
     <h3>The relay loop</h3>
     <ol class="steps">
-      <li class="step">
-        <span class="step-n">01</span>
-        <div class="step-b">
-          <p class="step-t">Check the circuit breaker <em>before</em> touching the database</p>
-          <p class="step-d">Rows never fetched can't have their <code>tries</code> incremented — so "an outage must not burn retry budget" becomes structurally impossible rather than a rule to remember. Use <code>tryAcquirePermission()</code>, not <code>getState()</code>, or half-open probing is lost.</p>
-        </div>
-      </li>
-      <li class="step">
-        <span class="step-n">02</span>
-        <div class="step-b">
-          <p class="step-t">Claim a batch with <code>FOR UPDATE SKIP LOCKED</code></p>
-          <p class="step-d">Load-bearing, not decoration: replicas would otherwise claim the same rows and publish duplicates. Shrink the batch to one or two while half-open — probing with a hundred costs a hundred failures if the downstream is still broken.</p>
-        </div>
-      </li>
-      <li class="step">
-        <span class="step-n">03</span>
-        <div class="step-b">
-          <p class="step-t">Publish each, then resolve per row</p>
-          <p class="step-d">Success deletes the row; failure increments <code>tries</code> and pushes <code>next_attempt_at</code> out by exponential backoff. <strong>Per row, not per batch</strong> — otherwise one poison event rolls back its ninety-nine healthy neighbours and the stream stalls forever.</p>
-        </div>
-      </li>
-      <li class="step">
-        <span class="step-n">04</span>
-        <div class="step-b">
-          <p class="step-t">At the cap, stamp <code>dead_at</code> and stop</p>
-          <p class="step-d">No separate table — the partial index keeps dead rows out of every future claim. Revival is a manual <code>UPDATE</code>; the metric is what tells you to go look.</p>
-        </div>
-      </li>
+      <li class="step"><span class="step-n">01</span><div class="step-b">
+        <p class="step-t">Check the breaker <em>before</em> touching the database</p>
+        <p class="step-d">Rows never fetched cannot have their retry count incremented — so "an outage must not burn retry budget" becomes structurally impossible rather than a rule to remember.</p></div></li>
+      <li class="step"><span class="step-n">02</span><div class="step-b">
+        <p class="step-t">Claim a batch, skipping locked rows</p>
+        <p class="step-d">Load-bearing with replicas, which would otherwise claim the same rows and publish duplicates. Probe with a small batch while half-open.</p></div></li>
+      <li class="step"><span class="step-n">03</span><div class="step-b">
+        <p class="step-t">Publish each, resolve per row, commit once</p>
+        <p class="step-d"><strong>Per row, not per batch</strong> — otherwise one poison event rolls back its ninety-nine healthy neighbours and the stream stalls forever.</p></div></li>
+      <li class="step"><span class="step-n">04</span><div class="step-b">
+        <p class="step-t">At the cap, mark dead and stop claiming</p>
+        <p class="step-d">The partial index keeps dead rows out of every future claim. Revival is manual; the metric is what says to go look.</p></div></li>
     </ol>
 
-    <div class="callout">
+    <div class="callout warn">
       <p>
-        <strong>Backoff and the breaker solve different failures.</strong> Per-row backoff isolates
-        <em>one bad event</em> without touching healthy traffic. The breaker handles
-        <em>the downstream being gone</em>. Without the breaker, an outage makes every row burn
-        retries and inflate its backoff, so recovery is slow and lumpy — and breaker rejections
-        must never count as tries, or a two-minute blip mass-dead-letters the entire outbox.
+        <strong>Two combinations that would have broken the system, caught at review.</strong>
+        Dead rows stay in the table by design — so if the shed metric counted them, one poison event
+        would age the backlog forever and shed <em>every</em> ride request permanently. The age
+        metric counts only claimable rows. <span class="ad">AD-35</span>
       </p>
       <p>
-        <strong>The outbox is itself a bounded queue.</strong> Kafka down with Postgres up means
-        rows accumulate unchecked — the exact failure <span class="ad">AD-6</span> exists to
-        prevent, in a queue we created and then left unbounded. Past the bound, new ride requests
-        are shed with a 503. Trigger on <em>age</em>, not depth: a large backlog draining healthily
-        is fine, a small one that hasn't moved in ten minutes is broken.
+        And identity values are assigned at insert but become visible at <em>commit</em> — so a relay
+        tracking a high-water mark would skip a late-committing row <strong>forever</strong>,
+        reintroducing exactly the dual-write loss the outbox exists to prevent. The relay claims and
+        deletes; it never remembers a cursor. <span class="ad">AD-29</span>
       </p>
     </div>
 
-    <h3>The envelope, and what belongs in it</h3>
-    <p style="max-width:64ch; color:var(--muted)">
-      The envelope carries what transport and cross-cutting consumers need to route, deduplicate
-      and record. The body carries what the domain means. Anything infrastructure must read to do
-      its job gets promoted to a column, so it never parses the payload — which is why
-      <code>entity_id</code> is a column rather than dug out of JSON, and why <code>actor</code>
-      sits in the envelope: audit-service reads it uniformly for every event type.
-    </p>
+    <h3>Envelope rules</h3>
     <div class="tbl-wrap">
       <table>
-        <thead>
-          <tr><th>Rule</th><th>Why</th></tr>
-        </thead>
+        <thead><tr><th>Rule</th><th>Why</th></tr></thead>
         <tbody>
-          <tr>
-            <td>Payload is the <strong>built event</strong>, as JSONB</td>
-            <td>Building it at publish time reads state seconds later — a <code>ride.matched</code> could ship carrying <code>IN_PROGRESS</code>, describing a transition that never happened</td>
-          </tr>
-          <tr>
-            <td>Never native serialisation</td>
-            <td>Consumers are independently built with duplicated domain code; a serialised Java object would force the shared library the project rejected</td>
-          </tr>
-          <tr>
-            <td><strong>Fat</strong> events, but bounded to a contract</td>
-            <td>Thin events would make audit-service call back per event — a callback storm, and it would record state as of the callback rather than the transition</td>
-          </tr>
-          <tr>
-            <td>Evolve by <strong>addition only</strong></td>
-            <td>Same expand-only discipline as the Flyway migrations. Breaking changes get a new <code>event_type</code>, never a mutated one</td>
-          </tr>
-          <tr>
-            <td>Consumers <strong>ignore unknown fields</strong></td>
-            <td>Without it additive-only collapses. Spring Boot's ObjectMapper does this; a hand-built one in Kafka config does <em>not</em> — the unsafe path is the default exactly where it matters</td>
-          </tr>
-          <tr>
-            <td>Heartbeats <strong>never</strong> use the outbox</td>
-            <td>10k writes/sec through a Postgres table is the hot-row pattern we moved to Redis to escape. Location pings are telemetry, not state transitions</td>
-          </tr>
+          <tr><td>Payload is the <strong>built event</strong></td><td>Rendering it at publish time reads state seconds later — a <code>ride.matched</code> could ship carrying <code>IN_PROGRESS</code>, describing a transition that never happened</td></tr>
+          <tr><td>Never native serialisation</td><td>Consumers are independently built with duplicated domain code; a serialised object would force the shared library the project rejects</td></tr>
+          <tr><td><strong>Fat</strong> events, bounded to a contract</td><td>Thin ones would make audit call back per event — a storm, and it would record state as of the callback rather than the transition</td></tr>
+          <tr><td>Evolve by <strong>addition only</strong></td><td>Same expand-only discipline as the migrations. Breaking changes get a new type, never a mutated one</td></tr>
+          <tr><td>Consumers <strong>ignore unknown fields</strong></td><td>Without it additive-only collapses — and a hand-built JSON mapper fails on them by default, exactly where consumer configs build their own</td></tr>
+          <tr><td>Heartbeats <strong>never</strong> use the outbox</td><td>Thousands of writes per second through a Postgres table is the hot-row pattern Redis exists to escape. Pings are telemetry, not transitions</td></tr>
         </tbody>
       </table>
     </div>
@@ -859,39 +589,22 @@ index (next_attempt_at, id) WHERE dead_at IS NULL</pre>
     <h2>What each store is for — and is not</h2>
     <div class="tbl-wrap">
       <table>
-        <thead>
-          <tr><th>Store</th><th>Holds</th><th>Explicitly not</th></tr>
-        </thead>
+        <thead><tr><th>Store</th><th>Holds</th><th>Explicitly not</th></tr></thead>
         <tbody>
-          <tr>
-            <td><span class="st store">Postgres</span> <em>per service</em></td>
-            <td>Every authoritative fact. One instance per service, never shared.</td>
-            <td>Live driver positions — that write rate would sit on a hot row.</td>
-          </tr>
-          <tr>
-            <td><span class="st store">Redis</span></td>
-            <td>Latest driver position and the matchable geo index. Month 3+.</td>
-            <td>A source of truth for anything. Not durable, not history, not surge.</td>
-          </tr>
-          <tr>
-            <td><span class="st store">Kafka</span></td>
-            <td>The event backbone and the only durable record of the location stream.</td>
-            <td>A queue. Nothing is deleted on acknowledgement — retention is time-based.</td>
-          </tr>
-          <tr>
-            <td><span class="st store">ClickHouse</span></td>
-            <td>Audit history and the location-derived analytics of FR-43.</td>
-            <td>Anything on a request path. Analytical reads only.</td>
-          </tr>
+          <tr><td><span class="st store">Postgres</span> <em>per service</em></td><td>Every authoritative fact. One instance per service, never shared.</td><td>Live driver positions — that write rate belongs nowhere near a hot row.</td></tr>
+          <tr><td><span class="st store">Redis</span></td><td>Latest position, and the matchable geo index. Owned solely by matching-service.</td><td>A source of truth for anything. Not durable, not history, not surge.</td></tr>
+          <tr><td><span class="st store">Kafka</span></td><td>The backbone, and the only durable record of the location stream.</td><td>A queue. Nothing is deleted on acknowledgement — retention is time-based.</td></tr>
+          <tr><td><span class="st store">Columnar</span></td><td>Audit history and the location-derived analytics.</td><td>Anything on a request path. Analytical reads only.</td></tr>
         </tbody>
       </table>
     </div>
-
-    <div class="callout">
+    <div class="callout warn">
       <p>
-        <strong>There is no durable location history in Postgres.</strong> Location pings go
-        <code>Kafka → ClickHouse</code> and nowhere else. A row store would be carrying roughly
-        10k inserts/sec for data whose only consumer is aggregate analytics.
+        <strong>Absence is never evidence of staleness.</strong> Redis holds no persistence, so after
+        a restart every position key is gone while the drivers behind them are perfectly healthy.
+        A sweep may act only on a recorded timestamp older than its window — reading a missing key as
+        "stale" would auto-complete and <em>capture</em> every in-flight ride at once.
+        <span class="ad">AD-26</span>
       </p>
     </div>
   </section>
@@ -899,112 +612,80 @@ index (next_attempt_at, id) WHERE dead_at IS NULL</pre>
   <section id="api">
     <h2>API conventions</h2>
     <p class="sec-note">
-      Small rules, but the kind two independently-built services diverge on within a week of
-      each other.
+      Small rules, but exactly the kind five services built months apart diverge on. REST at the
+      edge, gRPC between services, and one error vocabulary mapped at the façade.
     </p>
     <div class="tbl-wrap">
       <table>
-        <thead>
-          <tr><th>Convention</th><th>Rule</th><th>Prevents</th></tr>
-        </thead>
+        <thead><tr><th>Situation</th><th>gRPC</th><th>Public HTTP</th></tr></thead>
         <tbody>
-          <tr>
-            <td>Split by volatility</td>
-            <td><code>GET /rides/{id}</code> for slow-changing detail; <code>GET /rides/{id}/driver-position</code> for position + ETA</td>
-            <td>One volatile field making the whole resource uncacheable</td>
-          </tr>
-          <tr>
-            <td>Conditional GET</td>
-            <td><code>ETag</code> + <code>If-None-Match</code> on ride detail — <code>304</code> on the common path</td>
-            <td>A TTL cache serving a stale ride status</td>
-          </tr>
-          <tr>
-            <td>Sub-resource addressing</td>
-            <td>Rider-scoped data hangs off the ride, never off the driver</td>
-            <td>Driver identifiers appearing in rider-facing URLs at all</td>
-          </tr>
-          <tr>
-            <td>404, never 403</td>
-            <td>Identity mismatch is indistinguishable from a ride that does not exist</td>
-            <td>A 403 confirming the resource exists</td>
-          </tr>
-          <tr>
-            <td>Internal ids stay internal</td>
-            <td>Ride detail returns the driver's <em>name</em>, not their UUID</td>
-            <td>Internal identifiers leaking across an actor boundary</td>
-          </tr>
+          <tr><td>Guarded transition rejected — wrong state</td><td class="num">FAILED_PRECONDITION</td><td class="num">409</td></tr>
+          <tr><td>One active ride already exists</td><td class="num">ALREADY_EXISTS</td><td class="num">409</td></tr>
+          <tr><td>Identity mismatch, or absent</td><td class="num">NOT_FOUND</td><td class="num">404 — never 403</td></tr>
+          <tr><td><strong>Lost a race; a retry may succeed</strong></td><td class="num">ABORTED</td><td class="num"><em>retried internally, never surfaced</em></td></tr>
+          <tr><td>Malformed</td><td class="num">INVALID_ARGUMENT</td><td class="num">400</td></tr>
+          <tr><td>Shed by a bound</td><td class="num">UNAVAILABLE</td><td class="num">503</td></tr>
         </tbody>
       </table>
     </div>
+    <div class="callout">
+      <p>
+        <strong>That <code>ABORTED</code> row is a real gain over plain REST.</strong> It separates
+        "this can never succeed" from "you lost a race, try again" — precisely the matching-worker
+        collision where two workers pick the same nearest driver. Over HTTP both would have collapsed
+        into an indistinguishable 409. <span class="ad">AD-38</span>
+      </p>
+    </div>
     <div class="callout warn">
       <p>
-        <strong>None of this is a security boundary.</strong> Identity is passed per-request and
-        trusted as-is (FR-47), so anyone can send a different rider identifier. These are correct
-        <em>shapes</em>, practised so the habit exists — the same framing as the payment-token
-        discipline. Size the effort accordingly.
+        <strong>None of this is a security boundary.</strong> Identity is passed per request and
+        trusted as-is, so anyone can send a different one. These are correct <em>shapes</em>,
+        practised so the habit exists — the same framing as the payment-token discipline. Size the
+        effort accordingly. <span class="ad">AD-39</span>
       </p>
     </div>
   </section>
 
-  <section id="redis">
-    <h2>Redis</h2>
+  <section id="ops">
+    <h2>Operations</h2>
     <p class="sec-note">
-      Arrives in Month 3 with the Kafka phase. Months 1–2 have none: thirty drivers is a linear
-      scan, and a geo index at that size is ceremony.
+      One local Kubernetes cluster is the final target — no cloud vendor at any point. Which makes
+      the resource budget real, and makes it worth knowing in advance what can be switched off.
     </p>
 
-    <div class="two">
-      <div>
-        <h3 style="margin-top:0">Configuration</h3>
-        <div class="tbl-wrap">
-          <table style="min-width:0">
-            <tbody>
-              <tr><td class="num">Topology</td><td>One instance. No cluster, no replicas.</td></tr>
-              <tr><td class="num">No cluster</td><td>Not "not yet" — it would not help. Cluster shards by key, and <code>drivers:geo</code> is one key.</td></tr>
-              <tr><td class="num">No replicas</td><td>This one <em>is</em> "not yet". Add when the stress run says so.</td></tr>
-              <tr><td class="num">Persistence</td><td>Off. Every value rebuilds within one heartbeat cycle, so durability buys nothing and costs fork pauses on the hottest path.</td></tr>
-              <tr><td class="num">Memory</td><td>≈5 MB at 20k drivers. <code>noeviction</code>, so growth is loud rather than silent.</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-      <div>
-        <h3 style="margin-top:0">Keys</h3>
-        <div class="tbl-wrap">
-          <table style="min-width:0">
-            <tbody>
-              <tr>
-                <td class="num">drivers:geo</td>
-                <td><strong>Matchable drivers only.</strong> At stress scale most drivers are busy, so a set holding everyone would return mostly-ineligible candidates.</td>
-              </tr>
-              <tr>
-                <td class="num">driver:{id}<br>:position</td>
-                <td><strong>Every driver</strong>, TTL'd. The rider needs the position of a driver <em>on their ride</em> — precisely one excluded from the matchable set.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p style="margin-top:.9rem; font-size:.9rem; color:var(--muted)">
-          Stale members are cleaned lazily: a GEOSEARCH hit whose position key has expired is
-          <code>ZREM</code>'d on the spot. An eager sweep is deferred until ghosts prove to matter.
-        </p>
-      </div>
+    <h3>What can be turned off</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Tier</th><th>Components</th><th>If it is off</th></tr></thead>
+        <tbody>
+          <tr><td class="num">1 — core</td><td>HAProxy, rider / driver / matching + their Postgres, Redis, Kafka</td><td>System is down</td></tr>
+          <tr><td class="num">2 — feature</td><td>payment-service + its Postgres</td><td>New rides stall before dispatch — admission control, not a crash</td></tr>
+          <tr><td class="num">3 — optional</td><td>audit-service, columnar store, Prometheus, Grafana, dashboard</td><td><strong>Nothing breaks</strong>, and nothing is lost</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout good">
+      <p>
+        <strong>A component can be turned off exactly when it sits behind an event boundary.</strong>
+        Anything on the synchronous request path cannot. Tier 3 loses no data because consumer
+        offsets survive and the backlog drains on return — the "consumption never deletes" property
+        doing real work. The only bound is Kafka's retention window.
+        <span class="ad">AD-48</span>
+      </p>
     </div>
 
-    <h3>When it saturates — in this order</h3>
+    <h3>When Redis saturates — in this order</h3>
     <ol class="ladder">
-      <li><b>Pipeline the matching sweep.</b><span>It already batches rides; batching the GEOSEARCHes removes the network round-trip that dominates throughput. Often several× for free.</span></li>
-      <li><b>Serve quote ETAs from a coarse cache.</b><span>Quotes are indicative by definition and already tolerate returning no ETA. This removes the largest and least valuable source of GEOSEARCH load.</span></li>
-      <li><b>Add read replicas.</b><span>Safe precisely because the geo set is advisory — a lagging replica's stale candidate is rejected by the authoritative conditional update.</span></li>
-      <li><b>Partition geo keys by cell.</b><span>The only thing that makes Redis Cluster useful here. Cells must be substantially larger than the search radius or boundary queries eat the gain.</span></li>
+      <li><b>Pipeline the matching sweep.</b><span>It already batches; batching the searches removes the round-trip that dominates throughput.</span></li>
+      <li><b>Serve quote ETAs from a coarse cache.</b><span>Quotes are indicative by definition and already tolerate returning no ETA — the largest and least valuable source of load.</span></li>
+      <li><b>Add read replicas.</b><span>Safe precisely because the geo set is advisory; a lagging replica's stale candidate is rejected by the authoritative update.</span></li>
+      <li><b>Partition geo keys by cell.</b><span>The only thing that makes clustering useful, since a single key cannot be sharded. Cells must be substantially larger than the search radius or boundary queries eat the gain.</span></li>
     </ol>
-
     <div class="callout">
       <p>
-        <strong>Do not pre-solve this.</strong> NFR-2 exists to surface exactly these bottlenecks, and
-        the single-hot-key limit is far more memorable discovered than designed around. Instrument
-        ops/sec, p99 latency and <code>INFO commandstats</code> from day one, and let the stress run
-        decide.
+        <strong>Do not pre-solve this.</strong> The stress test exists to surface exactly these
+        bottlenecks, and a single-hot-key limit is far more memorable discovered than designed
+        around. Instrument first; let the run decide.
       </p>
     </div>
   </section>
@@ -1012,107 +693,118 @@ index (next_attempt_at, id) WHERE dead_at IS NULL</pre>
   <section id="decisions">
     <h2>Decision log</h2>
     <p class="sec-note">
-      Each recorded with what it prevents. Numbering is stable — these become the spine's
-      <code>AD</code> identifiers.
+      All 56, each with what it prevents. Identifiers match
+      <code>ARCHITECTURE-SPINE.md</code> and are stable — downstream epics and stories cite them.
     </p>
     <div class="tbl-wrap">
       <table>
-        <thead>
-          <tr><th>ID</th><th>Decision</th><th>Prevents</th></tr>
-        </thead>
+        <thead><tr><th>ID</th><th>Decision</th><th>Prevents</th></tr></thead>
         <tbody>
           <tr class="grp"><td colspan="3">Foundations</td></tr>
-          <tr><td class="num"><span class="ad">AD-1</span></td><td>Database per service; no shared instance</td><td>Any service reaching into another's tables because SQL made it possible</td></tr>
-          <tr><td class="num"><span class="ad">AD-2</span></td><td>Whatever is co-written by one action shares one transactional owner</td><td>A saga or compensating action anywhere in the core dispatch path</td></tr>
-          <tr><td class="num"><span class="ad">AD-3</span></td><td>rider-service owns nothing; driver-service owns identity + location; matching-service owns rides + dispatch</td><td>Ride state and driver availability landing in different databases</td></tr>
-          <tr><td class="num"><span class="ad">AD-4</span></td><td>Caches are advisory; the owning row is authoritative</td><td>A stale cache read causing a double-booking rather than a retry</td></tr>
-
-          <tr class="grp"><td colspan="3">Edge and transport</td></tr>
-          <tr><td class="num"><span class="ad">AD-5</span></td><td>HAProxy at the edge; exposes only rider-service, driver-service, webhooks, audit queries</td><td>matching-service becoming publicly reachable and the façade becoming optional</td></tr>
-          <tr><td class="num"><span class="ad">AD-6</span></td><td>Queue bounds sized as one chain, from the scarcest resource outward</td><td>An edge limit that merely relocates the queue into a layer with no stats page</td></tr>
-          <tr><td class="num"><span class="ad">AD-7</span></td><td>Rider-scoped data addressed as sub-resources of the ride</td><td>Driver identifiers appearing in rider-facing URLs</td></tr>
-          <tr><td class="num"><span class="ad">AD-8</span></td><td>Identity mismatch returns 404, never 403</td><td>Confirming a ride exists to someone who should not know</td></tr>
-          <tr><td class="num"><span class="ad">AD-9</span></td><td>Internal identifiers do not cross actor boundaries</td><td>UUIDs leaking into responses that only need a name</td></tr>
-          <tr><td class="num"><span class="ad">AD-10</span></td><td>Ride reads split by volatility; ETag on the slow half</td><td>One fast-changing field making the entire resource uncacheable</td></tr>
-
-          <tr class="grp"><td colspan="3">Ride lifecycle</td></tr>
-          <tr><td class="num"><span class="ad">AD-11</span></td><td>Authorisation is asynchronous; <code>WAITING_MATCH</code> is a real state</td><td>Ride creation blocking on Stripe, and Stripe sitting in every request at stress scale</td></tr>
-          <tr><td class="num"><span class="ad">AD-12</span></td><td><code>REQUESTED</code> entered exactly once; recovery returns to <code>WAITING_MATCH</code></td><td>A ride with a live hold falling back into re-authorising it</td></tr>
-          <tr><td class="num"><span class="ad">AD-13</span></td><td>One-active-ride enforced by a partial unique index</td><td>The check-then-insert race, with no rider row available to lock</td></tr>
-          <tr><td class="num"><span class="ad">AD-14</span></td><td>Auto-completion recorded as <code>completed_by</code>, not a status</td><td>Every "completed rides" query having to match two values</td></tr>
-          <tr><td class="num"><span class="ad">AD-15</span></td><td>Dispatch enum distinguishes <code>OFFERED</code> from <code>ACCEPTED_RIDE</code></td><td>The offer-timeout sweep having nothing to filter on, since <code>MATCHED</code> covers both</td></tr>
-
-          <tr class="grp"><td colspan="3">Drivers and location</td></tr>
-          <tr><td class="num"><span class="ad">AD-16</span></td><td>Declared status and reachability are separate; staleness never writes status</td><td>A tunnel ending a driver's shift and requiring manual recovery</td></tr>
-          <tr><td class="num"><span class="ad">AD-17</span></td><td>Session expiry after 1 h idle does write <code>OFFLINE</code>, with an audit event</td><td>Monday's shift leaking into Wednesday and putting a driver online unasked</td></tr>
-          <tr><td class="num"><span class="ad">AD-18</span></td><td>Heartbeats stamped at produce time in driver-service</td><td>Consumer lag masking staleness and dispatching to drivers who vanished</td></tr>
-          <tr><td class="num"><span class="ad">AD-19</span></td><td>Driver display identity snapshotted onto the ride at match time</td><td>A cross-service call on every rider poll for a value that never changes</td></tr>
-          <tr><td class="num"><span class="ad">AD-20</span></td><td>Grid size is a scenario parameter, not a constant</td><td>A 5 km radius exceeding the whole grid and filtering nothing at stress scale</td></tr>
-          <tr><td class="num"><span class="ad">AD-21</span></td><td>Redis <code>GEOSEARCH</code>; geo set holds matchable drivers only</td><td>Over-fetching candidates when most drivers are busy</td></tr>
-          <tr><td class="num"><span class="ad">AD-22</span></td><td>Single Redis, no persistence, no cluster</td><td>Clustering a single hot key and paying fsync on the hottest path</td></tr>
-
-          <tr class="grp"><td colspan="3">Events</td></tr>
-          <tr><td class="num"><span class="ad">AD-23</span></td><td>Producers partition-key by entity id</td><td>One entity's events being processed out of order across partitions</td></tr>
-          <tr><td class="num"><span class="ad">AD-24</span></td><td>Every consumer is idempotent, deduped on event id</td><td>A redelivery advancing state twice — not just a payment concern</td></tr>
-          <tr><td class="num"><span class="ad">AD-25</span></td><td>New consumer groups start at <code>earliest</code></td><td>A late-joining consumer silently skipping available backfill</td></tr>
-
-          <tr class="grp"><td colspan="3">Payments</td></tr>
-          <tr><td class="num"><span class="ad">AD-26</span></td><td>Token passes through as a typed value whose <code>toString()</code> is masked</td><td>A token escaping into a log line or stack trace by accident</td></tr>
-          <tr><td class="num"><span class="ad">AD-27</span></td><td>One stub payment provider serves pre-Month-5, the stress test, and CI</td><td>A simulator flag that skips payments and exercises a different code path</td></tr>
+          <tr><td class="num"><span class="ad">AD-1</span></td><td>Database per service</td><td>A service reaching into another's tables because SQL made it possible</td></tr>
+          <tr><td class="num"><span class="ad">AD-2</span></td><td>Co-written data shares one transactional owner</td><td>A saga anywhere in the core dispatch path</td></tr>
+          <tr><td class="num"><span class="ad">AD-3</span></td><td>Explicit ownership, including Redis</td><td>Ride state and driver availability landing in different databases</td></tr>
+          <tr><td class="num"><span class="ad">AD-4</span></td><td>Caches advisory, owning row authoritative</td><td>A stale read causing a double-booking rather than a retry</td></tr>
+          <tr><td class="num"><span class="ad">AD-5</span></td><td>Gateway exposes edge services only</td><td>matching-service becoming reachable, making the façade optional</td></tr>
+          <tr><td class="num"><span class="ad">AD-6</span></td><td>Queue bounds as one chain, tightest where visible</td><td>An edge bound that merely relocates the queue somewhere unobservable</td></tr>
 
           <tr class="grp"><td colspan="3">Code structure</td></tr>
-          <tr><td class="num"><span class="ad">AD-28</span></td><td>Layered packaging + Strategy for varying behaviour; not hexagonal</td><td>Ceremony inside services that are already feature-scoped by their own boundary</td></tr>
-          <tr><td class="num"><span class="ad">AD-29</span></td><td>One-way dependency: <code>model → service → controller</code>; services import strategy interfaces only</td><td>A concrete provider import silently un-swapping the stub and breaking AD-27</td></tr>
-          <tr><td class="num"><span class="ad">AD-30</span></td><td>matching-service alone splits by feature, ordered <code>shared ← fare ← ride ← dispatch ← quote</code></td><td>Cyclic packages, and the split being copied into single-domain services</td></tr>
-          <tr><td class="num"><span class="ad">AD-31</span></td><td>State machines are explicit transition tables in <code>model/</code></td><td>Validity scattered across <code>if</code> checks, so a replay can advance state twice</td></tr>
-          <tr><td class="num"><span class="ad">AD-32</span></td><td>Strategy interfaces only where implementations vary — never in front of Postgres</td><td>Tests passing against a fake that lacks the locking semantics NFR-1 depends on</td></tr>
-          <tr><td class="num"><span class="ad">AD-33</span></td><td>All five services carry the <code>-service</code> suffix</td><td>Mixed <code>api</code>/<code>engine</code>/<code>service</code> implying three kinds of component</td></tr>
+          <tr><td class="num"><span class="ad">AD-7</span></td><td>Layered packaging + Strategy; <code>model</code> not <code>entity</code></td><td>Five services inventing five internal structures — and someone reaching for an ORM</td></tr>
+          <tr><td class="num"><span class="ad">AD-8</span></td><td>One-way dependency inside a service</td><td>A concrete import silently un-swapping a Strategy</td></tr>
+          <tr><td class="num"><span class="ad">AD-9</span></td><td>matching-service alone splits by feature, ordered</td><td>Cyclic packages, and the split copied where it is ceremony</td></tr>
+          <tr><td class="num"><span class="ad">AD-10</span></td><td>Strategy only where implementations vary — never over Postgres</td><td>Tests passing against a fake that lacks the locking semantics</td></tr>
+          <tr><td class="num"><span class="ad">AD-11</span></td><td>State machines as explicit transition tables</td><td>Validity scattered across conditionals, so a replay advances state twice</td></tr>
+          <tr><td class="num"><span class="ad">AD-12</span></td><td>Uniform <code>-service</code> naming</td><td>Mixed suffixes implying three kinds of component</td></tr>
+
+          <tr class="grp"><td colspan="3">Ride lifecycle and dispatch</td></tr>
+          <tr><td class="num"><span class="ad">AD-13</span></td><td>Ride state machine with <code>OFFERED</code>; <code>REQUESTED</code> entered once</td><td>One state meaning both "offered" and "accepted", leaving sweeps nothing to filter on</td></tr>
+          <tr><td class="num"><span class="ad">AD-14</span></td><td>One active ride via a partial unique index</td><td>The check-then-insert race, with no rider row to lock</td></tr>
+          <tr><td class="num"><span class="ad">AD-15</span></td><td>Guarded conditional updates, fixed lock ordering</td><td>Lost updates, double-booking, and deadlock between the two tables</td></tr>
+          <tr><td class="num"><span class="ad">AD-16</span></td><td><code>BUSY</code> spans the whole engagement</td><td>An available driver with an open offer receiving a second one</td></tr>
+          <tr><td class="num"><span class="ad">AD-17</span></td><td>Declined and expired drivers excluded from re-offer</td><td>Ping-ponging the same ride at the same driver until the window burns out</td></tr>
+          <tr><td class="num"><span class="ad">AD-18</span></td><td>Provenance is a field, not a state</td><td>Every "completed rides" query having to match two values</td></tr>
+          <tr><td class="num"><span class="ad">AD-19</span></td><td>Matching reads only <code>WAITING_MATCH</code></td><td>Dispatching a ride whose funds are not yet held</td></tr>
+          <tr><td class="num"><span class="ad">AD-20</span></td><td>Claim-loop worker pool, the single offerer</td><td>Two offer paths to keep consistent, and autoscaling that multiplies failing searches</td></tr>
+
+          <tr class="grp"><td colspan="3">Drivers and location</td></tr>
+          <tr><td class="num"><span class="ad">AD-21</span></td><td>Declared status and reachability are separate</td><td>A tunnel ending a shift and requiring manual recovery</td></tr>
+          <tr><td class="num"><span class="ad">AD-22</span></td><td>Session expiry after prolonged absence</td><td>Monday's shift leaking into Wednesday, putting a driver online unasked</td></tr>
+          <tr><td class="num"><span class="ad">AD-23</span></td><td>Heartbeats stamped at produce time</td><td>Consumer lag masking staleness, worst exactly under load</td></tr>
+          <tr><td class="num"><span class="ad">AD-24</span></td><td>Driver identity snapshotted onto the ride</td><td>A cross-service call on every poll for a value that never changes</td></tr>
+          <tr><td class="num"><span class="ad">AD-25</span></td><td>Grid size is a scenario parameter</td><td>A radius exceeding the whole grid, so it filters nothing at scale</td></tr>
+          <tr><td class="num"><span class="ad">AD-26</span></td><td>Geo set matchable-only; absence is not staleness</td><td>Over-fetching ineligible candidates — and capturing every ride after a restart</td></tr>
+          <tr><td class="num"><span class="ad">AD-27</span></td><td>Redis is a cache, configured as one</td><td>Clustering a single hot key, and fsync on the hottest path</td></tr>
 
           <tr class="grp"><td colspan="3">Events and messaging</td></tr>
-          <tr><td class="num"><span class="ad">AD-34</span></td><td>Transactional outbox — domain code writes a row, never publishes</td><td>The dual-write split: committed state with a lost event, or an event with no state</td></tr>
-          <tr><td class="num"><span class="ad">AD-35</span></td><td>Delete on publish; monotonic identity id orders the relay</td><td>Timestamp ordering, which backwards clocks and replica skew can invert</td></tr>
-          <tr><td class="num"><span class="ad">AD-36</span></td><td>Payload is the built event as JSONB, never the entity or a serialised object</td><td>An event describing state as of publish time rather than the transition</td></tr>
-          <tr><td class="num"><span class="ad">AD-37</span></td><td>Envelope carries what transport needs; body carries what the domain means</td><td>The relay parsing payloads, and so needing per-event-type domain knowledge</td></tr>
-          <tr><td class="num"><span class="ad">AD-38</span></td><td>Fat events, bounded to a deliberate contract</td><td>Consumers calling back per event, recording state as of the callback</td></tr>
-          <tr><td class="num"><span class="ad">AD-39</span></td><td>Additive-only evolution; breaking changes get a new <code>event_type</code></td><td>A mutated live contract silently breaking every existing consumer</td></tr>
-          <tr><td class="num"><span class="ad">AD-40</span></td><td>Per-row retry with backoff and <code>dead_at</code> at the cap</td><td>One poison event rolling back its batch and stalling the stream forever</td></tr>
-          <tr><td class="num"><span class="ad">AD-41</span></td><td>Breaker checked before claiming; its rejections never count as tries</td><td>A brief outage burning every retry budget and mass-dead-lettering the outbox</td></tr>
-          <tr><td class="num"><span class="ad">AD-42</span></td><td>Outbox is bounded; past the bound new requests are shed on backlog <em>age</em></td><td>An unbounded queue accumulating unpublished truth while Kafka is down</td></tr>
+          <tr><td class="num"><span class="ad">AD-28</span></td><td>Transactional outbox; heartbeats excluded</td><td>The dual-write split — committed state with a lost event, or the reverse</td></tr>
+          <tr><td class="num"><span class="ad">AD-29</span></td><td>Claim and delete; never a cursor</td><td>A high-water mark skipping late-committing rows forever</td></tr>
+          <tr><td class="num"><span class="ad">AD-30</span></td><td>Payload is the built event, as JSON</td><td>An event describing state as of publish time, not the transition</td></tr>
+          <tr><td class="num"><span class="ad">AD-31</span></td><td>Envelope routes; body means. Correlation id included</td><td>The relay parsing payloads, and traces dying at the async hop</td></tr>
+          <tr><td class="num"><span class="ad">AD-32</span></td><td>Fat events, bounded to a contract</td><td>Consumers calling back per event, recording state as of the callback</td></tr>
+          <tr><td class="num"><span class="ad">AD-33</span></td><td>Additive-only evolution; field numbers never reused</td><td>A mutated live contract silently breaking every consumer</td></tr>
+          <tr><td class="num"><span class="ad">AD-34</span></td><td>Per-row retry; breaker checked before claiming</td><td>One poison event stalling the stream; an outage mass-dead-lettering everything</td></tr>
+          <tr><td class="num"><span class="ad">AD-35</span></td><td>Outbox bounded; sheds on age of <em>claimable</em> rows</td><td>An unbounded queue — and one dead row shedding all traffic forever</td></tr>
+          <tr><td class="num"><span class="ad">AD-36</span></td><td>Partition by entity; consumers idempotent</td><td>Out-of-order processing, and a redelivery advancing state twice</td></tr>
+
+          <tr class="grp"><td colspan="3">Interfaces</td></tr>
+          <tr><td class="num"><span class="ad">AD-37</span></td><td>REST at the edge, gRPC between services</td><td>The assumption that events remove the synchronous path</td></tr>
+          <tr><td class="num"><span class="ad">AD-38</span></td><td>One error vocabulary, mapped at the façade</td><td>Five services answering the same rejection five ways; a 403 confirming existence</td></tr>
+          <tr><td class="num"><span class="ad">AD-39</span></td><td>Sub-resource addressing; internal ids stay internal</td><td>Driver identifiers in rider-facing URLs, giving something to enumerate</td></tr>
+          <tr><td class="num"><span class="ad">AD-40</span></td><td>Ride reads split by volatility, with conditional GET</td><td>One fast-changing field making the whole resource uncacheable</td></tr>
+
+          <tr class="grp"><td colspan="3">Payments</td></tr>
+          <tr><td class="num"><span class="ad">AD-41</span></td><td>No dispatch until funds held, asynchronously</td><td>Ride creation blocking on the provider, and the provider in every request path</td></tr>
+          <tr><td class="num"><span class="ad">AD-42</span></td><td>Tokens typed and transit-only</td><td>A token escaping into a log line or stack trace</td></tr>
+          <tr><td class="num"><span class="ad">AD-43</span></td><td>Two strategies at two layers; no-op confined to pre-payment phases</td><td>Auto-authorising during an outage, dispatching against funds nobody holds</td></tr>
+          <tr><td class="num"><span class="ad">AD-44</span></td><td>Terminal rides never leave an outstanding hold</td><td>A hold stranded when cancellation lands mid-authorisation</td></tr>
+          <tr><td class="num"><span class="ad">AD-50</span></td><td>Payment state machine</td><td>Four services reading payment outcomes with four vocabularies</td></tr>
+
+          <tr class="grp"><td colspan="3">Time, capacity and operations</td></tr>
+          <tr><td class="num"><span class="ad">AD-45</span></td><td>Bound outcomes, never a wait for external truth</td><td>A timeout manufacturing a hold storm against a rate-limited provider</td></tr>
+          <tr><td class="num"><span class="ad">AD-46</span></td><td>Time constants as one set with fixed ordering</td><td>Intervals that interact badly — including a salvage path unreachable in every case</td></tr>
+          <tr><td class="num"><span class="ad">AD-47</span></td><td>Capacity derived, not guessed</td><td>Oversized pools relocating queueing into the database</td></tr>
+          <tr><td class="num"><span class="ad">AD-48</span></td><td>Off exactly when behind an event boundary</td><td>Discovering under pressure which components are load-bearing</td></tr>
+          <tr><td class="num"><span class="ad">AD-49</span></td><td>Declarative deployment reconciled from git</td><td>Cluster state drifting from the repository with no signal</td></tr>
+          <tr><td class="num"><span class="ad">AD-51</span></td><td>Push is a third transport, fanned out and filtered locally</td><td>An offer reaching a replica that does not hold that driver's socket</td></tr>
+          <tr><td class="num"><span class="ad">AD-52</span></td><td>Contracts have one source, copied mechanically</td><td>"Field numbers never reused" being unenforceable across independent copies</td></tr>
+          <tr><td class="num"><span class="ad">AD-53</span></td><td>Partition-drop retention; columnar fed in parallel</td><td>An unbounded audit table, and one store derived from the other</td></tr>
+          <tr><td class="num"><span class="ad">AD-54</span></td><td>Observability identical from day one</td><td>Traces dying at a hop, and bounds nobody can tune because nobody measures them</td></tr>
+          <tr><td class="num"><span class="ad">AD-55</span></td><td>Consumer failure bounded and visible</td><td>A poison message blocking a partition, or being silently dropped</td></tr>
+          <tr><td class="num"><span class="ad">AD-56</span></td><td>Tests on the real stack, reset per class</td><td>Flaky concurrency tests indistinguishable from real races</td></tr>
+          <tr><td class="num"><span class="ad">AD-57</span></td><td>SOLID made testable — Liskov on strategies, segregation by consumer</td><td>An unfalsifiable review argument; a stub that resolves differently and voids the stress test</td></tr>
         </tbody>
       </table>
     </div>
   </section>
 
-  <section id="open">
-    <h2>Still open</h2>
+  <section id="deferred">
+    <h2>Deliberately deferred</h2>
     <p class="sec-note">
-      What remains to settle in this pass. Nothing here is blocked — they are the next
-      conversations.
+      The other half of the contract. Each is recorded with the reason it can wait — a deferral
+      without one is just an omission.
     </p>
     <div class="tbl-wrap">
       <table>
-        <thead>
-          <tr><th>Topic</th><th>Where it bites</th></tr>
-        </thead>
+        <thead><tr><th>Deferred</th><th>Why it can wait</th></tr></thead>
         <tbody>
-          <tr><td>API error response shape</td><td>Five services built months apart will diverge without it</td></tr>
-          <tr><td>gRPC vs REST for internal hops</td><td>Only internal calls; the edge stays HTTP either way</td></tr>
-          <tr><td>Nine-plus time constants, tuned as one set</td><td>Offer timeout, retry interval, <code>NO_DRIVER</code> window, unauthorised timeout, three staleness windows, session expiry, retry cap</td></tr>
-          <tr><td>Driver-poll interval vs offer timeout</td><td>Coupled: polling slower than the offer window burns the driver's accept time</td></tr>
-          <tr><td>Capacity sizing via Little's Law</td><td>Replica counts, pool sizes, partition counts, the outbox bound — method is fixed, numbers land at story time</td></tr>
-          <tr><td>Concrete queue bounds per layer</td><td>HAProxy, Tomcat, HikariCP, bulkheads, the outbox itself</td></tr>
-          <tr><td>Offer → accept → start → complete mechanics</td><td>The core dispatch transitions, not yet walked</td></tr>
-          <tr><td>Hold-leak invariant and its sweep</td><td>"No terminal ride has an outstanding <code>AUTHORIZED</code> payment"</td></tr>
-          <tr><td>ArgoCD for the Kubernetes phase</td><td>GitOps in-cluster; weigh against the laptop's resource budget</td></tr>
-          <tr><td>Session expiry and the rename, back through the PRD</td><td>Session expiry changes FR-29's stated guarantee; the <code>-service</code> rename touches the Goals list</td></tr>
+          <tr><td>Concrete capacity values</td><td>The derivation method is fixed; the numbers come from measurement, and guessing them now would be fiction</td></tr>
+          <tr><td>Per-cell geo partitioning</td><td>The last scaling lever, and only pays when cells are substantially larger than the search radius</td></tr>
+          <tr><td>Eager staleness sweep</td><td>Lazy removal suffices until lingering ghosts are shown to matter</td></tr>
+          <tr><td>Log-based change capture</td><td>Polling teaches the pattern; a log-based relay is an upgrade with its own infrastructure cost</td></tr>
+          <tr><td>Schema registry</td><td>Additive-only plus field numbering carries the discipline without another service to run</td></tr>
+          <tr><td>Automated image promotion</td><td>Solves a deploy frequency this project does not have</td></tr>
+          <tr><td>Encrypted secrets in git</td><td>Sandbox credentials created out-of-band, documented as outside reconciliation</td></tr>
+          <tr><td>Rider push channel</td><td>Position changes only on heartbeat, so polling is adequate; cheap once other channels exist</td></tr>
+          <tr><td>Per-cell surge</td><td>Computed globally; geographic granularity has no requirement behind it</td></tr>
+          <tr><td>Partial refunds, rider accounts, debtor standing</td><td>Product scope held by the PRD, foreclosed by nothing here</td></tr>
         </tbody>
       </table>
     </div>
   </section>
 
   <footer>
-    Working draft · regenerated as decisions land · distilled from
-    <code>.memlog.md</code> · companion to <code>prd.md</code> and <code>flows.html</code>
+    Companion to ARCHITECTURE-SPINE.md · 56 decisions · reviewed by rubric, currency and
+    adversarial lenses · identifiers stable for downstream citation
   </footer>
 </div>
 </html>

@@ -81,9 +81,7 @@
   a { color: inherit; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
 
-  /* ---- shell ---- */
   .wrap { max-width: var(--wide); margin: 0 auto; padding: 0 1.5rem; }
-  .col { max-width: var(--col); }
 
   nav.bar {
     position: sticky; top: 0; z-index: 20;
@@ -145,14 +143,12 @@
   }
   .sec-note { color: var(--muted); margin: 0 0 1.8rem; max-width: 62ch; }
   p { margin: 0 0 1rem; }
-  .col p:last-child { margin-bottom: 0; }
 
-  /* ---- diagram rail ---- */
   .rail {
     overflow-x: auto; padding: 1.4rem; background: var(--surface);
     border: 1px solid var(--line); border-radius: 4px;
   }
-  .rail svg { display: block; min-width: 880px; height: auto; }
+  .rail svg { display: block; min-width: 900px; height: auto; }
 
   .sm-chip { fill: var(--surface-2); stroke: var(--line-strong); stroke-width: 1.25; }
   .sm-chip.is-good { fill: var(--good-soft); stroke: var(--good); }
@@ -179,7 +175,6 @@
   .legend span { display: inline-flex; align-items: center; gap: .45rem; }
   .swatch { width: 22px; height: 3px; border-radius: 2px; display: inline-block; }
 
-  /* ---- journeys ---- */
   .steps { list-style: none; margin: 0; padding: 0; }
   .step {
     display: grid; grid-template-columns: 2.4rem 1fr; gap: 0 1.1rem;
@@ -202,7 +197,6 @@
   .step-t { font-weight: 620; margin: 0 0 .25rem; }
   .step-d { color: var(--muted); margin: 0; font-size: .95rem; }
 
-  /* ---- chips & refs ---- */
   .fr {
     font-family: var(--mono); font-size: .76em; letter-spacing: .02em;
     color: var(--accent); white-space: nowrap;
@@ -215,7 +209,6 @@
   .st.bad  { background: var(--bad-soft);  color: var(--bad); }
   .st.sys  { background: var(--sys-soft);  color: var(--sys); }
 
-  /* ---- tables ---- */
   .tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
   table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: .93rem; }
   th, td { text-align: left; padding: .72rem .95rem; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -227,7 +220,6 @@
   tr:last-child td { border-bottom: 0; }
   td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
-  /* ---- coverage grid ---- */
   .grid {
     display: grid; gap: 1px; background: var(--line);
     border: 1px solid var(--line); border-radius: 4px; overflow: hidden;
@@ -243,7 +235,6 @@
   .meter { height: 4px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
   .meter i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
 
-  /* ---- tag lists ---- */
   .tags { display: flex; flex-wrap: wrap; gap: .45rem; margin: 0; padding: 0; list-style: none; }
   .tags li {
     font-family: var(--mono); font-size: .76rem; padding: .3rem .6rem;
@@ -259,6 +250,7 @@
     padding: 1rem 1.2rem; border-radius: 0 4px 4px 0; margin: 1.5rem 0 0;
   }
   .callout p { margin: 0; font-size: .95rem; color: var(--muted); }
+  .callout p + p { margin-top: .7rem; }
   .callout strong { color: var(--ink); }
 
   footer {
@@ -280,7 +272,7 @@
     <a href="#driver">Driver</a>
     <a href="#recovery">Recovery</a>
     <a href="#coverage">Coverage</a>
-    <a href="#open">Open</a>
+    <a href="#settled">Settled</a>
   </div>
 </nav>
 
@@ -293,23 +285,23 @@
       every failure and recovery path, and what is deliberately not being built.
     </p>
     <div class="facts">
-      <div class="fact"><span class="fact-n">49</span><span class="fact-l">Requirements</span></div>
+      <div class="fact"><span class="fact-n">50</span><span class="fact-l">Requirements</span></div>
       <div class="fact"><span class="fact-n">10</span><span class="fact-l">Non-functional</span></div>
-      <div class="fact"><span class="fact-n">8</span><span class="fact-l">Ride states</span></div>
+      <div class="fact"><span class="fact-n">9</span><span class="fact-l">Ride states</span></div>
       <div class="fact"><span class="fact-n">6</span><span class="fact-l">Payment states</span></div>
-      <div class="fact"><span class="fact-n">1</span><span class="fact-l">Open question</span></div>
+      <div class="fact"><span class="fact-n">5</span><span class="fact-l">Services</span></div>
     </div>
   </header>
 
   <section id="ride">
     <h2>Ride state machine</h2>
     <p class="sec-note">
-      Five states on the happy path and three terminals. Every terminal is reachable and every
-      one of them resolves the payment — there is no way for a ride to end and leave money in limbo.
+      Six states on the happy path and three terminals. Every terminal resolves the payment —
+      there is no way for a ride to end and leave money in limbo.
     </p>
 
     <div class="rail">
-      <svg viewBox="0 0 1020 400" role="img" aria-label="Ride state machine: REQUESTED to WAITING_MATCH to MATCHED to IN_PROGRESS to COMPLETED, with terminal states PAYMENT_FAILED, NO_DRIVER and CANCELLED">
+      <svg viewBox="0 0 1200 400" role="img" aria-label="Ride state machine: REQUESTED to WAITING_MATCH to OFFERED to MATCHED to IN_PROGRESS to COMPLETED, with terminal states PAYMENT_FAILED, NO_DRIVER and CANCELLED">
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="var(--line-strong)"></path>
@@ -322,66 +314,75 @@
           </marker>
         </defs>
 
-        <!-- re-match back edge: MATCHED -> WAITING_MATCH (hold already in place) -->
-        <path class="sm-edge is-sys" d="M 512,150 C 512,66 380,66 352,142"></path>
-        <text class="sm-tag is-sys" x="432" y="58">driver went silent · re-match · FR-13</text>
+        <!-- back edge: MATCHED -> WAITING_MATCH (silent driver before pickup) -->
+        <path class="sm-edge is-sys" d="M 700,148 C 700,44 340,44 300,142"></path>
+        <text class="sm-tag is-sys" x="500" y="38">driver went silent before pickup · FR-13</text>
 
-        <!-- auto-complete arc: IN_PROGRESS -> COMPLETED -->
-        <path class="sm-edge is-sys" d="M 700,150 C 700,96 866,96 900,142"></path>
-        <text class="sm-tag is-sys" x="800" y="90">driver went silent · auto-complete · FR-14</text>
+        <!-- back edge: OFFERED -> WAITING_MATCH (decline or timeout) -->
+        <path class="sm-edge is-sys" d="M 520,148 C 520,92 400,92 356,142"></path>
+        <text class="sm-tag is-sys" x="440" y="86">declined or timed out · FR-11</text>
+
+        <!-- auto-complete arc -->
+        <path class="sm-edge is-sys" d="M 900,148 C 900,100 1060,100 1104,142"></path>
+        <text class="sm-tag is-sys" x="1002" y="96">silent mid-trip · auto-complete · FR-14</text>
 
         <!-- entry -->
-        <circle class="sm-entry" cx="18" cy="172" r="5"></circle>
-        <path class="sm-edge" d="M 26,172 L 56,172"></path>
-        <text class="sm-tag" x="40" y="162">request</text>
+        <circle class="sm-entry" cx="20" cy="170" r="5"></circle>
+        <path class="sm-edge" d="M 28,170 L 46,170"></path>
 
         <!-- main row -->
-        <rect class="sm-chip is-live" x="64" y="150" width="132" height="44" rx="5"></rect>
-        <text class="sm-name" x="130" y="173">REQUESTED</text>
+        <rect class="sm-chip is-live" x="54" y="148" width="138" height="44" rx="5"></rect>
+        <text class="sm-name" x="123" y="171">REQUESTED</text>
 
-        <rect class="sm-chip is-live" x="272" y="150" width="168" height="44" rx="5"></rect>
-        <text class="sm-name" x="356" y="173">WAITING_MATCH</text>
+        <rect class="sm-chip is-live" x="248" y="148" width="172" height="44" rx="5"></rect>
+        <text class="sm-name" x="334" y="171">WAITING_MATCH</text>
 
-        <rect class="sm-chip is-live" x="496" y="150" width="118" height="44" rx="5"></rect>
-        <text class="sm-name" x="555" y="173">MATCHED</text>
+        <rect class="sm-chip is-live" x="476" y="148" width="124" height="44" rx="5"></rect>
+        <text class="sm-name" x="538" y="171">OFFERED</text>
 
-        <rect class="sm-chip is-live" x="670" y="150" width="146" height="44" rx="5"></rect>
-        <text class="sm-name" x="743" y="173">IN_PROGRESS</text>
+        <rect class="sm-chip is-live" x="656" y="148" width="124" height="44" rx="5"></rect>
+        <text class="sm-name" x="718" y="171">MATCHED</text>
 
-        <rect class="sm-chip is-good" x="872" y="150" width="130" height="44" rx="5"></rect>
-        <text class="sm-name" x="937" y="173">COMPLETED</text>
+        <rect class="sm-chip is-live" x="836" y="148" width="152" height="44" rx="5"></rect>
+        <text class="sm-name" x="912" y="171">IN_PROGRESS</text>
 
-        <path class="sm-edge" d="M 196,172 L 264,172"></path>
-        <text class="sm-tag" x="230" y="162">authorized</text>
-        <path class="sm-edge" d="M 440,172 L 488,172"></path>
-        <text class="sm-tag" x="464" y="162">accept</text>
-        <path class="sm-edge" d="M 614,172 L 662,172"></path>
-        <text class="sm-tag" x="638" y="162">start</text>
-        <path class="sm-edge" d="M 816,172 L 864,172"></path>
-        <text class="sm-tag" x="840" y="162">complete</text>
+        <rect class="sm-chip is-good" x="1044" y="148" width="132" height="44" rx="5"></rect>
+        <text class="sm-name" x="1110" y="171">COMPLETED</text>
+
+        <path class="sm-edge" d="M 192,170 L 240,170"></path>
+        <text class="sm-tag" x="216" y="160">authorized</text>
+        <path class="sm-edge" d="M 420,170 L 468,170"></path>
+        <text class="sm-tag" x="444" y="160">offer</text>
+        <path class="sm-edge" d="M 600,170 L 648,170"></path>
+        <text class="sm-tag" x="624" y="160">accept</text>
+        <path class="sm-edge" d="M 780,170 L 828,170"></path>
+        <text class="sm-tag" x="804" y="160">start</text>
+        <path class="sm-edge" d="M 988,170 L 1036,170"></path>
+        <text class="sm-tag" x="1012" y="160">complete</text>
 
         <!-- terminals -->
-        <rect class="sm-chip is-bad" x="40" y="300" width="176" height="44" rx="5"></rect>
-        <text class="sm-name" x="128" y="323">PAYMENT_FAILED</text>
+        <rect class="sm-chip is-bad" x="34" y="288" width="176" height="44" rx="5"></rect>
+        <text class="sm-name" x="122" y="311">PAYMENT_FAILED</text>
 
-        <rect class="sm-chip is-bad" x="290" y="300" width="140" height="44" rx="5"></rect>
-        <text class="sm-name" x="360" y="323">NO_DRIVER</text>
+        <rect class="sm-chip is-bad" x="268" y="288" width="140" height="44" rx="5"></rect>
+        <text class="sm-name" x="338" y="311">NO_DRIVER</text>
 
-        <rect class="sm-chip is-bad" x="520" y="300" width="140" height="44" rx="5"></rect>
-        <text class="sm-name" x="590" y="323">CANCELLED</text>
+        <rect class="sm-chip is-bad" x="560" y="288" width="140" height="44" rx="5"></rect>
+        <text class="sm-name" x="630" y="311">CANCELLED</text>
 
-        <path class="sm-edge is-bad" d="M 112,194 C 104,240 100,266 108,292"></path>
-        <text class="sm-tag" x="52" y="244">auth declined</text>
-        <text class="sm-tag" x="52" y="258">FR-9</text>
+        <path class="sm-edge is-bad" d="M 100,192 C 92,236 96,258 110,280"></path>
+        <text class="sm-tag" x="44" y="242">auth declined</text>
+        <text class="sm-tag" x="44" y="256">FR-9</text>
 
-        <path class="sm-edge is-bad" d="M 332,194 C 332,240 346,268 356,292"></path>
-        <text class="sm-tag" x="274" y="250">gave up</text>
-        <text class="sm-tag" x="274" y="264">FR-12</text>
+        <path class="sm-edge is-bad" d="M 326,192 C 326,232 330,258 336,280"></path>
+        <text class="sm-tag" x="256" y="248">gave up</text>
+        <text class="sm-tag" x="256" y="262">FR-12</text>
 
-        <path class="sm-edge is-bad" d="M 182,194 C 300,258 452,276 548,292"></path>
-        <path class="sm-edge is-bad" d="M 402,194 C 452,242 508,272 562,292"></path>
-        <path class="sm-edge is-bad" d="M 555,194 C 566,232 578,264 588,292"></path>
-        <text class="sm-tag" x="712" y="258">rider cancels · FR-16</text>
+        <path class="sm-edge is-bad" d="M 162,192 C 268,250 424,272 584,280"></path>
+        <path class="sm-edge is-bad" d="M 392,192 C 452,234 540,266 608,280"></path>
+        <path class="sm-edge is-bad" d="M 540,192 C 560,222 592,256 632,280"></path>
+        <path class="sm-edge is-bad" d="M 700,192 C 696,224 676,254 660,280"></path>
+        <text class="sm-tag" x="816" y="272">rider cancels, any time before the trip starts · FR-16</text>
       </svg>
       <div class="legend">
         <span><i class="swatch" style="background:var(--accent)"></i> in flight</span>
@@ -393,21 +394,20 @@
 
     <div class="callout">
       <p>
-        <strong>Recovery reuses existing states.</strong> Neither silent-driver path needed a new
-        state — a stalled <span class="st">MATCHED</span> ride returns to
-        <span class="st">WAITING_MATCH</span>, not <span class="st">REQUESTED</span>, because its
-        hold is already in place and must not be re-authorised; a stalled
-        <span class="st">IN_PROGRESS</span> one moves to <span class="st good">COMPLETED</span>.
-        The audit trail records <span class="st sys">SYSTEM</span> as the actor, so those stay
-        distinguishable from genuine transitions after the fact.
+        <strong>Each state answers exactly one question.</strong>
+        <span class="st">REQUESTED</span> means <em>awaiting authorisation</em> — nothing else, entered
+        once, never returned to. <span class="st">WAITING_MATCH</span> means funds are held and the
+        ride is in the pool; it is the only state matching reads, so an unfunded ride is invisible
+        rather than merely rejected. <span class="st">OFFERED</span> means a driver is deciding.
+        <span class="st">MATCHED</span> means a driver has <em>accepted</em> and is on the way.
       </p>
-      <p style="margin-top:.7rem">
-        <strong><span class="st">REQUESTED</span> is entered exactly once.</strong> It means
-        <em>awaiting authorisation</em> and nothing else — the ride is persisted the moment the
-        rider commits, then moves to <span class="st">WAITING_MATCH</span> once the hold lands.
-        Matching only ever reads <span class="st">WAITING_MATCH</span>, so no ride can be
-        dispatched before its funds are held, and nothing ever returns to
-        <span class="st">REQUESTED</span>.
+      <p>
+        <strong>Every recovery path returns to <span class="st">WAITING_MATCH</span></strong> — never
+        to <span class="st">REQUESTED</span>, because the hold already exists and must not be taken
+        twice. A declined or expired offer and a driver who vanishes before pickup both land there.
+        Auto-completion reuses <span class="st good">COMPLETED</span>; how a ride was completed is
+        recorded alongside it rather than as a state of its own, so no report has to match two values
+        to find completed rides.
       </p>
     </div>
   </section>
@@ -415,7 +415,7 @@
   <section id="money">
     <h2>Payments, and when money actually moves</h2>
     <p class="sec-note">
-      Two phases: the fare is authorized as a hold when the ride is requested, and captured only
+      Two phases: the fare is authorised as a hold when the ride is requested, and captured only
       when a trip is delivered. Everything else releases the hold.
     </p>
 
@@ -446,7 +446,7 @@
 
         <path class="sm-edge" d="M 682,120 L 746,120"></path>
         <text class="sm-tag" x="714" y="110">internal</text>
-        <text class="sm-tag" x="714" y="88">FR-38</text>
+        <text class="sm-tag" x="714" y="88">FR-39</text>
 
         <rect class="sm-chip is-bad" x="176" y="220" width="120" height="44" rx="5"></rect>
         <text class="sm-name" x="236" y="243">FAILED</text>
@@ -462,7 +462,7 @@
 
         <path class="sm-edge is-bad" d="M 420,142 C 440,180 460,196 474,212"></path>
         <text class="sm-tag" x="536" y="186">no trip delivered</text>
-        <text class="sm-tag" x="536" y="200">FR-35</text>
+        <text class="sm-tag" x="536" y="200">FR-36</text>
       </svg>
     </div>
 
@@ -474,14 +474,14 @@
         </thead>
         <tbody>
           <tr>
-            <td>Authorization declined at request</td>
+            <td>Authorisation declined at request</td>
             <td>Nothing taken; no driver ever dispatched</td>
             <td><span class="st bad">FAILED</span></td>
             <td class="num"><span class="fr">FR-9</span></td>
           </tr>
           <tr>
             <td>Rider cancelled</td>
-            <td>Hold released</td>
+            <td>Hold released — including one that lands after the cancellation</td>
             <td><span class="st bad">VOIDED</span></td>
             <td class="num"><span class="fr">FR-16</span></td>
           </tr>
@@ -490,6 +490,12 @@
             <td>Hold released</td>
             <td><span class="st bad">VOIDED</span></td>
             <td class="num"><span class="fr">FR-12</span></td>
+          </tr>
+          <tr>
+            <td>Offer declined or timed out</td>
+            <td>Hold stays in place; ride returns to the pool</td>
+            <td><span class="st">AUTHORIZED</span></td>
+            <td class="num"><span class="fr">FR-11</span></td>
           </tr>
           <tr>
             <td>Driver went silent before pickup</td>
@@ -513,7 +519,7 @@
             <td>Capture retried and still failing</td>
             <td>Trip happened, money not collected; not pursued</td>
             <td><span class="st bad">FAILED</span></td>
-            <td class="num"><span class="fr">FR-36</span></td>
+            <td class="num"><span class="fr">FR-37</span></td>
           </tr>
         </tbody>
       </table>
@@ -545,28 +551,28 @@
         <span class="step-n">03</span>
         <div class="step-b">
           <p class="step-t">Request the ride <span class="fr">FR-2</span> <span class="fr">FR-3</span></p>
-          <p class="step-d">Carries a payment-method token, since no account stores one. Fare locks here. A second simultaneous request is refused.</p>
+          <p class="step-d">Carries a payment-method token, since no account stores one. Fare locks here. A second simultaneous request is refused — every non-terminal state counts as active.</p>
         </div>
       </li>
       <li class="step">
         <span class="step-n">04</span>
         <div class="step-b">
-          <p class="step-t">The fare is authorized before anyone is dispatched <span class="fr">FR-9</span></p>
-          <p class="step-d">Held asynchronously — the ride is persisted as <span class="st">REQUESTED</span> the instant the rider commits, and the id comes straight back; the hold follows, moving it to <span class="st">WAITING_MATCH</span>. A declined card ends the ride at <span class="st bad">PAYMENT_FAILED</span> without a driver ever being offered it.</p>
+          <p class="step-t">The fare is authorised before anyone is dispatched <span class="fr">FR-9</span></p>
+          <p class="step-d">Held in the background — the ride is persisted as <span class="st">REQUESTED</span> the instant the rider commits and the id comes straight back; the hold follows, moving it to <span class="st">WAITING_MATCH</span>. A declined card ends the ride at <span class="st bad">PAYMENT_FAILED</span> without a driver ever being offered it.</p>
         </div>
       </li>
       <li class="step">
         <span class="step-n">05</span>
         <div class="step-b">
           <p class="step-t">Watch the driver approach <span class="fr">FR-5</span> <span class="fr">FR-6</span></p>
-          <p class="step-d">Who is coming, where they are now, and an ETA that moves as they do. This is the line in the vision made literal.</p>
+          <p class="step-d">Once a driver has accepted: who is coming, where they are now, and an ETA that moves as they do. This is the line in the vision made literal.</p>
         </div>
       </li>
       <li class="step">
         <span class="step-n">06</span>
         <div class="step-b">
-          <p class="step-t">Cancel, while it is still allowed <span class="fr">FR-16</span></p>
-          <p class="step-d">Only before the trip starts. Releases the driver, withdraws any outstanding offer, voids the hold. A mismatched identity is refused without revealing the ride exists.</p>
+          <p class="step-t">Cancel, any time before the trip starts <span class="fr">FR-16</span></p>
+          <p class="step-d">Releases any assigned driver, withdraws any outstanding offer, voids the hold. A mismatched identity is refused without revealing the ride exists.</p>
         </div>
       </li>
       <li class="step">
@@ -603,20 +609,20 @@
         <span class="step-n">02</span>
         <div class="step-b">
           <p class="step-t">Go online <span class="fr">FR-20</span></p>
-          <p class="step-d">Both directions are explicit taps — the system never puts a driver online for them. Going offline is blocked mid-ride, and releases a pending offer rather than leaving it dangling.</p>
+          <p class="step-d">An explicit tap — the system never puts a driver online for them. Going offline depends on the <em>ride</em>, not on being engaged: with an offer outstanding it is released and they go offline; once accepted, it is refused until they finish.</p>
         </div>
       </li>
       <li class="step">
         <span class="step-n">03</span>
         <div class="step-b">
           <p class="step-t">Report position on a heartbeat <span class="fr">FR-26</span></p>
-          <p class="step-d">Feeds matching, the rider's live view, and — mirrored to the columnar store — the distance and density analytics.</p>
+          <p class="step-d">Feeds matching, the rider's live view, and — mirrored to the columnar store — the distance and density analytics. Silence never changes their declared status <span class="fr">FR-29</span>.</p>
         </div>
       </li>
       <li class="step">
         <span class="step-n">04</span>
         <div class="step-b">
-          <p class="step-t">Receive an offer, and everything else that matters <span class="fr">FR-44</span></p>
+          <p class="step-t">Receive an offer, and everything else that matters <span class="fr">FR-45</span></p>
           <p class="step-d">The push channel carries offers plus the events a driver must react to: the rider cancelled, the offer was withdrawn, the ride was auto-completed.</p>
         </div>
       </li>
@@ -624,7 +630,7 @@
         <span class="step-n">05</span>
         <div class="step-b">
           <p class="step-t">Accept — or decline <span class="fr">FR-22</span> <span class="fr">FR-23</span></p>
-          <p class="step-d">Declining hands the ride straight to the next-nearest driver instead of making the rider wait out the timeout.</p>
+          <p class="step-d">Declining returns the ride to the pool immediately instead of making the rider wait out the timeout — and the same driver will not be offered that ride again.</p>
         </div>
       </li>
       <li class="step">
@@ -641,14 +647,21 @@
           <p class="step-d">The driver-side counterpart to the rider's history.</p>
         </div>
       </li>
+      <li class="step">
+        <span class="step-n">08</span>
+        <div class="step-b">
+          <p class="step-t">The shift ends — by choice, or eventually by absence <span class="fr">FR-30</span></p>
+          <p class="step-d">Going offline is theirs to do. But an idle driver unreachable far longer than any staleness window is set offline by the system, so someone who ended Monday by switching their phone off is not still working on Wednesday.</p>
+        </div>
+      </li>
     </ol>
   </section>
 
   <section id="recovery">
     <h2>What happens when something goes wrong</h2>
     <p class="sec-note">
-      Most of the recent work went here. Every failure has a defined owner, a defined resolution,
-      and no path that strands a rider or a ride.
+      Every failure has a defined owner, a defined resolution, and no path that strands a rider or
+      a ride. Two are deliberately left to a human rather than automated.
     </p>
     <div class="tbl-wrap">
       <table>
@@ -657,9 +670,9 @@
         </thead>
         <tbody>
           <tr>
-            <td>Driver ignores an offer</td>
-            <td>Offer timeout</td>
-            <td>Offer released to the next-nearest driver</td>
+            <td>Driver ignores or declines an offer</td>
+            <td>Offer timeout, or the decline itself</td>
+            <td>Ride returns to <span class="st">WAITING_MATCH</span>; that driver is excluded from re-offers</td>
             <td class="num"><span class="fr">FR-11</span></td>
           </tr>
           <tr>
@@ -675,6 +688,12 @@
             <td class="num"><span class="fr">FR-29</span></td>
           </tr>
           <tr>
+            <td>Driver silent for hours, not minutes</td>
+            <td>Session-expiry window</td>
+            <td>Set <span class="st">OFFLINE</span> as a system action; must go online again. Idle drivers only</td>
+            <td class="num"><span class="fr">FR-30</span></td>
+          </tr>
+          <tr>
             <td>Driver goes silent holding a match</td>
             <td>Heartbeat staleness</td>
             <td>Ride returns to <span class="st">WAITING_MATCH</span> and is re-matched; hold survives</td>
@@ -683,7 +702,7 @@
           <tr>
             <td>Driver goes silent mid-trip</td>
             <td>Heartbeat staleness</td>
-            <td>Auto-completed and captured; recorded against <span class="st sys">SYSTEM</span></td>
+            <td>Auto-completed and captured; recorded against <span class="st sys">SYSTEM</span> on the ride and in audit</td>
             <td class="num"><span class="fr">FR-14</span></td>
           </tr>
           <tr>
@@ -694,7 +713,7 @@
           </tr>
           <tr>
             <td>Card declined at request</td>
-            <td>Authorization</td>
+            <td>Authorisation</td>
             <td>Terminal <span class="st bad">PAYMENT_FAILED</span>, nobody dispatched</td>
             <td class="num"><span class="fr">FR-9</span></td>
           </tr>
@@ -702,13 +721,19 @@
             <td>Capture fails after the trip</td>
             <td>Provider response</td>
             <td>Retried with jitter, then terminal <span class="st bad">FAILED</span>; not pursued</td>
-            <td class="num"><span class="fr">FR-36</span></td>
+            <td class="num"><span class="fr">FR-37</span></td>
           </tr>
           <tr>
             <td>A webhook never arrives</td>
             <td>Reconciliation task</td>
             <td>State corrected from the provider</td>
-            <td class="num"><span class="fr">FR-39</span></td>
+            <td class="num"><span class="fr">FR-40</span></td>
+          </tr>
+          <tr>
+            <td>A hold outlives any plausible ride</td>
+            <td>Reconciliation task</td>
+            <td>Flagged and alerted, <em>not</em> voided automatically — it may belong to a genuinely long trip</td>
+            <td class="num"><span class="fr">FR-40</span></td>
           </tr>
           <tr>
             <td>An event is delivered twice</td>
@@ -719,19 +744,35 @@
         </tbody>
       </table>
     </div>
+
+    <div class="callout">
+      <p>
+        <strong>Where the system deliberately does nothing.</strong> A ride waiting on authorisation
+        has no timeout at all. Timing it out would free the rider to request again and place a second
+        hold while the first is outstanding — during a provider outage that manufactures a hold storm
+        against the one dependency the system cannot control. Instead the one-active-ride rule becomes
+        natural admission control: a rider with a stuck ride cannot generate more.
+      </p>
+      <p>
+        The principle behind both this and the stranded-hold row: <strong>bound the windows where the
+        system can determine an outcome; never bound a wait for external truth it will eventually
+        receive.</strong> "We looked and found nobody" is an answer the system holds. "We do not know
+        yet" is not, and inventing one there is what causes the damage.
+      </p>
+    </div>
   </section>
 
   <section id="coverage">
     <h2>Where the requirements sit</h2>
     <p class="sec-note">
-      Ten groups, forty-nine requirements. The bar shows each group's share.
+      Ten groups, fifty requirements. The bar shows each group's share.
     </p>
     <div class="grid">
       <div class="cell">
         <p class="cell-k">Group A</p>
         <p class="cell-t">Rider requests &amp; reads</p>
         <p class="cell-r">FR-1 – FR-8 · 8</p>
-        <div class="meter"><i style="width:100%"></i></div>
+        <div class="meter"><i style="width:73%"></i></div>
       </div>
       <div class="cell">
         <p class="cell-k">Group B</p>
@@ -747,44 +788,44 @@
       </div>
       <div class="cell">
         <p class="cell-k">Group D</p>
-        <p class="cell-t">Driver location tracking</p>
-        <p class="cell-r">FR-26 – FR-29 · 4</p>
-        <div class="meter"><i style="width:36%"></i></div>
+        <p class="cell-t">Driver location &amp; presence</p>
+        <p class="cell-r">FR-26 – FR-30 · 5</p>
+        <div class="meter"><i style="width:45%"></i></div>
       </div>
       <div class="cell">
         <p class="cell-k">Group E</p>
         <p class="cell-t">Event backbone &amp; resilience</p>
-        <p class="cell-r">FR-30 – FR-32 · 3</p>
+        <p class="cell-r">FR-31 – FR-33 · 3</p>
         <div class="meter"><i style="width:27%"></i></div>
       </div>
       <div class="cell">
         <p class="cell-k">Group F</p>
         <p class="cell-t">Payments</p>
-        <p class="cell-r">FR-33 – FR-39 · 7</p>
+        <p class="cell-r">FR-34 – FR-40 · 7</p>
         <div class="meter"><i style="width:64%"></i></div>
       </div>
       <div class="cell">
         <p class="cell-k">Group G</p>
         <p class="cell-t">Audit &amp; analytics</p>
-        <p class="cell-r">FR-40 – FR-43 · 4</p>
+        <p class="cell-r">FR-41 – FR-44 · 4</p>
         <div class="meter"><i style="width:36%"></i></div>
       </div>
       <div class="cell">
         <p class="cell-k">Group H</p>
         <p class="cell-t">Real-time &amp; deployment</p>
-        <p class="cell-r">FR-44 – FR-46 · 3</p>
+        <p class="cell-r">FR-45 – FR-47 · 3</p>
         <div class="meter"><i style="width:27%"></i></div>
       </div>
       <div class="cell">
         <p class="cell-k">Group I</p>
         <p class="cell-t">Identity &amp; simulation</p>
-        <p class="cell-r">FR-47 – FR-48 · 2</p>
+        <p class="cell-r">FR-48 – FR-49 · 2</p>
         <div class="meter"><i style="width:18%"></i></div>
       </div>
       <div class="cell">
         <p class="cell-k">Group J</p>
         <p class="cell-t">Live operational dashboard</p>
-        <p class="cell-r">FR-49 · 1</p>
+        <p class="cell-r">FR-50 · 1</p>
         <div class="meter"><i style="width:9%"></i></div>
       </div>
     </div>
@@ -803,6 +844,14 @@
             </tbody>
           </table>
         </div>
+        <h3>The five services</h3>
+        <ul class="tags">
+          <li>rider-service</li>
+          <li>driver-service</li>
+          <li>matching-service</li>
+          <li>payment-service</li>
+          <li>audit-service</li>
+        </ul>
       </div>
       <div>
         <h3>Deliberately not built</h3>
@@ -827,7 +876,7 @@
         <div class="callout">
           <p>
             Each of these is recorded with its reasoning rather than just its verdict — the
-            debtor-standing decision in particular turns on the pre-authorization hold having
+            debtor-standing decision in particular turns on the pre-authorisation hold having
             already removed the case that motivated it.
           </p>
         </div>
@@ -835,51 +884,59 @@
     </div>
   </section>
 
-  <section id="open">
-    <h2>Still open, by design</h2>
+  <section id="settled">
+    <h2>Settled by the architecture pass</h2>
     <p class="sec-note">
-      One question sits in the PRD. The rest are mechanism decisions parked for the architecture
-      pass — deliberately left unfixed rather than guessed at.
+      Every mechanism question this document used to list as open has been answered. Nothing
+      product-level is outstanding.
     </p>
     <div class="tbl-wrap">
       <table>
         <thead>
-          <tr><th>Question</th><th>Why it is not answered here</th></tr>
+          <tr><th>Question</th><th>Answer</th></tr>
         </thead>
         <tbody>
           <tr>
             <td>How payments are excluded from the stress test</td>
-            <td>Simulator flag, stubbed path, or a separate suite — a mechanism, not a product choice</td>
+            <td>Swap the provider, keep the path — the payment service and its state machine still run; only the outbound call is replaced. Skipping the path would stress-test code that does not exist in production</td>
           </tr>
           <tr>
             <td>Transport for the rider's live driver position</td>
-            <td>The push channel is driver-only; rider polling versus a second channel is architecture</td>
+            <td>Polling. The position only changes when a heartbeat lands, so pushing more often carries no new information</td>
           </tr>
           <tr>
-            <td>Three separate staleness windows</td>
-            <td>Cost of a false positive rises steeply — an idle driver self-heals, a live trip ended wrongly does not</td>
-          </tr>
-          <tr>
-            <td>The monotonic versus wall-clock boundary</td>
-            <td>Monotonic is process-local, so it cannot span the heartbeat's service boundary</td>
+            <td>The three staleness windows</td>
+            <td>Sized as one ordered set with every other time constant. The ordering is what must survive retuning: idle &lt; matched &lt; in-progress &lt; session expiry</td>
           </tr>
           <tr>
             <td>How long matching waits before giving up</td>
-            <td>Tune alongside the retry interval and offer timeout as one set</td>
+            <td>Fixed in the same set, at roughly six offer attempts' worth of time</td>
           </tr>
           <tr>
-            <td>Authorization hold lifetime</td>
-            <td>Needs the invariant: no terminal ride may hold an outstanding authorization</td>
+            <td>The hold-leak invariant</td>
+            <td>Asserted in tests and alerted on, never swept automatically. The one real race — cancelling while authorisation is in flight — is handled by a flag on the payment</td>
+          </tr>
+          <tr>
+            <td>Whether a ride awaiting authorisation should time out</td>
+            <td>No. See the recovery callout above</td>
           </tr>
         </tbody>
       </table>
     </div>
+    <div class="callout">
+      <p>
+        <strong>What is still open sits below this altitude:</strong> retry caps, batch sizes,
+        pool and replica counts, partition counts. The sizing <em>method</em> is settled — arrival
+        rate × service time, drain must exceed arrival with headroom — and the stress test exists
+        to produce the numbers.
+      </p>
+    </div>
   </section>
 
   <footer>
-    Generated from prd.md · status final · 49 functional and 10 non-functional requirements ·
-    amended 2026-08-07 by the architecture pass: <code>WAITING_MATCH</code> added between
-    <code>REQUESTED</code> and <code>MATCHED</code>
+    Generated from prd.md · status final · 50 functional and 10 non-functional requirements ·
+    regenerated 2026-08-13 after syncing with the architecture pass: <code>OFFERED</code> added,
+    session expiry added, services renamed
   </footer>
 </div>
 </html>

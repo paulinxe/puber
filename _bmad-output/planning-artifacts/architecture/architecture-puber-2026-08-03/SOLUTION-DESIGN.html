@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Puber — Solution Design</title>
+<style>
+  :root {
+    --paper:#F7F6F3; --surface:#FFFFFF; --surface-2:#EDEBE6; --ink:#1A1A18;
+    --muted:#5A5A54; --faint:#8A8A82; --line:#DCD9D2; --line-strong:#A8A49B;
+    --accent:#9C4221; --accent-soft:#F5E4DC; --good:#2C6E49; --good-soft:#DDEBE2;
+    --bad:#A03028; --bad-soft:#F5DEDC;
+    --serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --col: 68ch;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:#14140F; --surface:#1C1C17; --surface-2:#26261F; --ink:#EAE7DF;
+      --muted:#A3A096; --faint:#75736A; --line:#33322B; --line-strong:#565349;
+      --accent:#E08155; --accent-soft:#3A241B; --good:#5FB98B; --good-soft:#182E22;
+      --bad:#E0736A; --bad-soft:#38201E;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#14140F; --surface:#1C1C17; --surface-2:#26261F; --ink:#EAE7DF;
+    --muted:#A3A096; --faint:#75736A; --line:#33322B; --line-strong:#565349;
+    --accent:#E08155; --accent-soft:#3A241B; --good:#5FB98B; --good-soft:#182E22;
+    --bad:#E0736A; --bad-soft:#38201E;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink); font-family:var(--serif);
+         font-size:18px; line-height:1.68; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:var(--col); margin:0 auto; padding:0 1.5rem; }
+  .wide { max-width:72rem; margin:0 auto; padding:0 1.5rem; }
+  a { color:inherit; }
+
+  header.masthead { padding:5rem 0 3rem; }
+  .eyebrow { font-family:var(--mono); font-size:.72rem; letter-spacing:.2em;
+    text-transform:uppercase; color:var(--accent); margin:0 0 1.2rem; }
+  h1 { font-weight:600; font-size:clamp(2.5rem,6vw,4rem); line-height:1.02;
+    letter-spacing:-.022em; text-wrap:balance; margin:0 0 1.2rem; }
+  .standfirst { font-size:1.24rem; color:var(--muted); margin:0 0 2rem; line-height:1.55; }
+  .byline { font-family:var(--mono); font-size:.74rem; color:var(--faint);
+    border-top:1px solid var(--line); padding-top:1rem; letter-spacing:.04em; }
+
+  section { padding:2.6rem 0; }
+  section + section { border-top:1px solid var(--line); }
+  h2 { font-weight:600; font-size:clamp(1.6rem,3.4vw,2.2rem); line-height:1.15;
+    letter-spacing:-.018em; margin:0 0 1.4rem; text-wrap:balance; }
+  h3 { font-family:var(--sans); font-weight:650; font-size:1.02rem;
+    margin:2.4rem 0 .7rem; letter-spacing:-.005em; }
+  p { margin:0 0 1.15rem; }
+  strong { font-weight:640; }
+  em { font-style:italic; }
+  ul, ol { margin:0 0 1.15rem; padding-left:1.3rem; }
+  li { margin-bottom:.5rem; }
+
+  code { font-family:var(--mono); font-size:.8em; background:var(--surface-2);
+    padding:.12em .4em; border-radius:3px; }
+  .lede { font-size:1.1rem; color:var(--muted); font-style:italic;
+    border-left:2px solid var(--accent); padding-left:1.1rem; margin:0 0 1.6rem; }
+
+  .pull { font-family:var(--sans); font-size:1.06rem; font-weight:560; line-height:1.5;
+    background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--accent);
+    padding:1.1rem 1.3rem; border-radius:0 4px 4px 0; margin:1.8rem 0; color:var(--ink); }
+  .pull.bad { border-left-color:var(--bad); }
+  .pull.good { border-left-color:var(--good); }
+  .pull p { margin:0; }
+  .pull p + p { margin-top:.7rem; font-weight:440; color:var(--muted); font-size:.98rem; }
+
+  .tbl-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:4px;
+    background:var(--surface); margin:1.6rem 0; }
+  table { border-collapse:collapse; width:100%; min-width:34rem;
+    font-family:var(--sans); font-size:.92rem; }
+  th, td { text-align:left; padding:.7rem .9rem; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-family:var(--mono); font-size:.66rem; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--faint); font-weight:500; background:var(--surface-2); }
+  tr:last-child td { border-bottom:0; }
+
+  pre { font-family:var(--mono); font-size:.78rem; line-height:1.7; background:var(--surface);
+    border:1px solid var(--line); border-radius:4px; padding:1.1rem 1.2rem;
+    overflow-x:auto; margin:1.6rem 0; }
+
+  .toc { background:var(--surface); border:1px solid var(--line); border-radius:4px;
+    padding:1.3rem 1.5rem; margin:2rem 0 0; font-family:var(--sans); font-size:.94rem; }
+  .toc p { font-family:var(--mono); font-size:.66rem; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--faint); margin:0 0 .8rem; }
+  .toc ol { margin:0; padding-left:1.2rem; }
+  .toc li { margin-bottom:.35rem; color:var(--muted); }
+  .toc a { text-decoration:none; border-bottom:1px solid transparent; }
+  .toc a:hover { border-bottom-color:var(--accent); }
+
+  footer { border-top:1px solid var(--line); padding:2.5rem 0 4rem;
+    font-family:var(--mono); font-size:.72rem; color:var(--faint); }
+  @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <p class="eyebrow">Solution design</p>
+    <h1>Puber: a ride-hailing backend, and the reasoning behind it</h1>
+    <p class="standfirst">
+      Five services, one local cluster, and a set of decisions that mostly come down to a single
+      question: where do you put a boundary so that the thing on either side of it can be built
+      without asking permission?
+    </p>
+    <p class="byline">Companion to ARCHITECTURE-SPINE.md · 56 decisions · reviewed adversarially before adoption</p>
+
+    <div class="toc">
+      <p>Contents</p>
+      <ol>
+        <li><a href="#shape">What the system is, and the constraint that shapes it</a></li>
+        <li><a href="#boundaries">Drawing the boundaries — and why there is no saga</a></li>
+        <li><a href="#dispatch">The dispatch core</a></li>
+        <li><a href="#money">Money without a distributed transaction</a></li>
+        <li><a href="#transports">Two transports, one rule</a></li>
+        <li><a href="#outbox">Publishing without losing anything</a></li>
+        <li><a href="#time">Time, staleness, and refusing to invent answers</a></li>
+        <li><a href="#failure">What breaks first, and what happens then</a></li>
+        <li><a href="#wrong">What I got wrong</a></li>
+        <li><a href="#limits">The limits of this design</a></li>
+      </ol>
+    </div>
+  </header>
+</div>
+
+<div class="wrap">
+
+<section id="shape">
+  <h2>What the system is, and the constraint that shapes it</h2>
+  <p>
+    Puber is a ride-hailing backend: riders request rides, drivers get offered them, trips run,
+    money moves. It exists to practise production patterns against a domain you can picture rather
+    than an abstract one — and it deliberately controls every input. No maps API, no SMS provider,
+    no real payment rail. Every rider is a generated identifier, every location a generated
+    coordinate.
+  </p>
+  <p>
+    That sounds like a simplification, and in one sense it is. But it has a sharper effect than
+    convenience: <strong>it removes every excuse.</strong> When a driver is double-booked, there is
+    no third-party latency to blame. The concurrency is real, the state machines are real, and the
+    failure modes are the ones you built.
+  </p>
+  <p>
+    The constraint that shapes the most decisions is scale ambition without scale reality. The
+    system must be <em>correct</em> at roughly thirty drivers, and must <em>survive</em> a
+    stress run at twenty thousand drivers and two hundred thousand riders. Those two targets pull in
+    opposite directions constantly, and most of the interesting decisions are about which one wins
+    where.
+  </p>
+  <div class="pull">
+    <p>The rule that emerged: correctness is designed for now, capacity is designed for later.</p>
+    <p>
+      Every guard, every conditional update, every state machine is built for correctness from day
+      one, because those are expensive to retrofit. Every pool size, replica count and partition
+      number is deliberately left unset, because guessing them produces fiction and the stress run
+      exists to produce facts.
+    </p>
+  </div>
+</section>
+
+<section id="boundaries">
+  <h2>Drawing the boundaries — and why there is no saga</h2>
+  <p>
+    The first real decision was giving each service its own database. That is conventional advice,
+    but it immediately created a problem that took a while to see clearly.
+  </p>
+  <p>
+    The obvious split is by actor: a rider service owning riders, a driver service owning drivers, a
+    matching service coordinating between them. It reads well on a diagram. But then consider what
+    happens when a driver accepts a ride. Two facts change together — the ride becomes assigned, and
+    the driver becomes unavailable. If those live in different databases, that single action needs a
+    distributed transaction, or a saga with compensating actions, or an accepted window of
+    inconsistency.
+  </p>
+  <p>
+    Uber hit exactly this. Their old fulfilment platform had one service owning trips and another
+    owning driver sessions, coordinated by a saga — and their own write-up is blunt about the cost:
+    coordination handled "in an arbitrary RPC-based mechanism", the system "internally inconsistent"
+    between the steps of a logical transaction, and debugging across entities becoming
+    progressively harder. Their fix, after a two-year rewrite, was not a better saga. It was to
+    <em>unify the transactional boundary</em> so the two entities could be written atomically.
+  </p>
+  <div class="pull">
+    <p>Whatever is written together by a single action must share one transactional owner.</p>
+    <p>
+      Not "prefer to" — must. If a design needs two services to commit together, the boundary is
+      drawn in the wrong place, and the answer is to move the boundary rather than to add machinery
+      that survives it being wrong.
+    </p>
+  </div>
+  <p>
+    Applying that inverts the obvious split. <code>matching-service</code> owns rides
+    <em>and</em> the dispatch state of drivers — their availability and current assignment — because
+    those are what change together. <code>driver-service</code> keeps identity and position, which
+    nothing else co-writes. <code>rider-service</code> owns no data at all; with no rider accounts in
+    scope, it is a façade translating the public API into internal calls.
+  </p>
+  <p>
+    So there are two tables called <code>drivers</code>, in two databases, owned by two services.
+    That looks wrong until you notice they hold disjoint facts and are never joined. One is
+    <em>who a driver is</em>; the other is <em>what a driver is doing</em>. Different questions,
+    different owners, different lifetimes.
+  </p>
+  <p>
+    The payoff is that the hottest, most concurrency-sensitive operation in the system — assigning a
+    driver to a ride — is a single local transaction over two tables in one database. No
+    coordination, no compensation, no partial state. Postgres does the hard part.
+  </p>
+</section>
+
+<section id="dispatch">
+  <h2>The dispatch core</h2>
+  <p>
+    A ride moves through six states, and the one that took longest to get right was recognising that
+    an <em>offer</em> is not a <em>match</em>.
+  </p>
+  <pre>REQUESTED → WAITING_MATCH → OFFERED → MATCHED → IN_PROGRESS → COMPLETED
+                   ↑______________|  declined, or the offer expired
+                   ↑_________________________|  driver went silent before pickup</pre>
+  <p>
+    The first draft collapsed <code>OFFERED</code> and <code>MATCHED</code> into one state, on the
+    reasoning that the ride "has a driver" in both. That is wrong in a way that only shows up later:
+    the sweep responsible for expiring unanswered offers then has no way to tell which rides have an
+    outstanding offer and which have an accepted one. It would either expire rides a driver had
+    already committed to, or never expire anything.
+  </p>
+  <p>
+    Splitting them fixed three things at once. The expiry sweep gets a clean predicate. The driver's
+    own status collapses to three values, because the ride now carries the distinction. And the
+    rider-facing rule — <em>show me who is coming</em> — becomes true as written, since a rider
+    should not see a driver who has not yet agreed and might decline.
+  </p>
+
+  <h3>The race that actually matters</h3>
+  <p>
+    A rider can cancel while a driver is accepting. Both are legal, and they arrive at the same
+    moment. If both succeed you get a cancelled ride with a driver who believes they are on it —
+    and nothing to reconcile it, because the ride is terminal and no sweep looks at terminal rides.
+  </p>
+  <p>
+    The mechanism that prevents it is not a lock, a queue or a coordinator. It is that both
+    operations write the <em>same row</em> with a guard on its current state:
+  </p>
+  <pre>UPDATE rides SET status = ? WHERE id = ? AND status = ? AND driver_id = ?</pre>
+  <p>
+    The second transaction blocks on the first's row lock, then re-evaluates its predicate against
+    the committed row, finds the state it expected is gone, and matches zero rows. Zero rows means
+    rejected — never "retry until it works", never "assume success".
+  </p>
+  <div class="pull">
+    <p>Every state transition in the system is a conditional update carrying its expected prior state.</p>
+    <p>
+      This is why there is no interface in front of the database. The correctness guarantee <em>is</em>
+      Postgres's behaviour — row locks, predicate re-evaluation, partial unique indexes. A mock
+      repository has none of it, so tests against one would pass while the real system double-books
+      drivers. Tests run against the real thing.
+    </p>
+  </div>
+  <p>
+    The same principle handles the rule that a rider may only have one ride in flight. The naive
+    version reads then writes, and races with itself. The version that works is a partial unique
+    index over the active states — the database refuses the second insert, and the API turns that
+    refusal into a 409. The invariant lives in the schema, where it cannot be forgotten, rather than
+    in a service method that every future caller must remember to invoke.
+  </p>
+</section>
+
+<section id="money">
+  <h2>Money without a distributed transaction</h2>
+  <p>
+    No driver is dispatched until the fare is authorised. That sounds like it demands the very
+    coordination the boundary rule was meant to avoid: the ride lives in one service, the payment in
+    another, and one gates the other.
+  </p>
+  <p>
+    It does not, because of how the gate is expressed. The ride is persisted as
+    <code>REQUESTED</code> — a state meaning <em>awaiting authorisation</em> and nothing else — and
+    the rider gets their id back immediately. Authorisation proceeds independently. When the hold
+    lands, the ride moves to <code>WAITING_MATCH</code>; if it is declined, it moves to a terminal
+    failure state.
+  </p>
+  <p>
+    And matching reads <em>only</em> <code>WAITING_MATCH</code>. That is the whole gate. An unfunded
+    ride is not rejected by a guard someone must remember to write — it is <strong>invisible</strong>
+    to the code that would dispatch it.
+  </p>
+  <div class="pull good">
+    <p>Making the wrong thing unreachable beats checking for it.</p>
+    <p>
+      A guard is a thing a future developer can forget, misplace, or refactor away. A query that
+      simply never returns the wrong rows cannot be forgotten, because there is nothing to forget.
+    </p>
+  </div>
+  <p>
+    The two state machines then advance independently, neither waiting on the other. A late
+    authorisation result is applied against whatever state the ride is <em>now</em> in, not the state
+    it was in when the call was made. That distinction is what makes it not a distributed
+    transaction: nothing is rolled back, because nothing was ever tentatively committed.
+  </p>
+
+  <h3>The one genuine race, and why it needed no sweep</h3>
+  <p>
+    A rider can cancel in the sub-second window while authorisation is still in flight. The
+    cancellation event reaches the payment service perfectly well — it just arrives <em>too early</em>,
+    when there is no hold to release yet. Handle it naively and it no-ops, and the hold lands
+    seconds later against a dead ride.
+  </p>
+  <p>
+    The instinct is a reconciliation sweep: periodically find holds that look stranded and void them.
+    That instinct is wrong, and the reason generalises. A hold that <em>looks</em> stale might belong
+    to a genuinely long trip. Void it and the trip completes with nothing left to capture. The sweep
+    would be inventing an answer it does not have.
+  </p>
+  <p>
+    The mechanism instead is to remember the intent: a cancellation arriving before the
+    authorisation resolves sets a flag, and the authorisation voids on arrival rather than settling.
+    Local to one service, no cross-service query, no timing guess. What remains is asserted in tests
+    and watched by an alert — a human decides, because only a human has the missing context.
+  </p>
+</section>
+
+<section id="transports">
+  <h2>Two transports, one rule</h2>
+  <p>
+    There is a tempting story where Kafka arrives and services stop calling each other. It is a
+    story the original project notes told, and it is wrong here — for a reason worth stating
+    precisely, because it caught me out.
+  </p>
+  <p>
+    <code>rider-service</code> owns no data. So when a rider requests a ride, that request
+    <em>must</em> reach <code>matching-service</code> synchronously: it needs a ride id back. A
+    fire-and-forget event cannot return an identifier, a 409 for an illegal transition, or a 404 for
+    a mismatched identity. Every actor-initiated command and every read stays a call, permanently.
+  </p>
+  <div class="pull">
+    <p>Kafka carries propagation. Anything an actor waits on stays synchronous.</p>
+  </div>
+  <p>
+    So the event backbone carries what genuinely fans out — audit capture, payment triggers,
+    location streams, push notifications — and roughly fifteen thousand synchronous requests per
+    second continue to flow through the internal API for the life of the project.
+  </p>
+  <p>
+    Those internal hops use gRPC rather than REST. On engineering grounds alone that is arguable:
+    the bottleneck is Redis, not serialisation, and losing the ability to <code>curl</code> an
+    internal endpoint costs something real when debugging five services. It was chosen anyway,
+    deliberately, because the project's purpose is demonstrable experience and this is a gap worth
+    closing. The public edge stays REST, so the façades become protocol translators.
+  </p>
+  <p>
+    One benefit turned out to be more than cosmetic. gRPC has a status code, <code>ABORTED</code>,
+    meaning specifically <em>you lost a race, a retry may succeed</em> — distinct from
+    <code>FAILED_PRECONDITION</code>, meaning <em>this can never succeed</em>. Two matching workers
+    picking the same nearest driver is the first case; a rider cancelling a trip already underway is
+    the second. Over plain HTTP both collapse into an indistinguishable 409, and the caller cannot
+    tell whether retrying is sensible or futile.
+  </p>
+</section>
+
+<section id="outbox">
+  <h2>Publishing without losing anything</h2>
+  <p>
+    If a service commits a state change and then publishes an event, those are two operations that
+    can disagree. Commit succeeds, publish fails: the event is lost and downstream never learns.
+    Publish succeeds, transaction rolls back: downstream acts on something that never happened.
+  </p>
+  <p>
+    The transactional outbox removes the gap. Domain code never publishes — it writes a row to an
+    outbox table <em>in the same transaction</em> as the state change. A separate relay reads that
+    table and ships the events. Either both happen or neither does, because it is one commit.
+  </p>
+  <p>
+    It also produced an unexpected simplification. Publishing becomes fire-and-forget
+    <strong>by construction</strong>, so the migration from direct HTTP calls to Kafka stops being an
+    architectural change and becomes a swap of the relay's dispatch class. Nothing in the domain
+    knows or cares which transport is in play.
+  </p>
+
+  <h3>Two traps in the details</h3>
+  <p>
+    The outbox looks simple and hides two things that would each have caused a serious outage. I
+    found neither of them myself.
+  </p>
+  <p>
+    <strong>The first is ordering.</strong> Rows carry a monotonically increasing identifier, so the
+    natural relay reads "everything since the last id I saw". But sequence values are assigned when
+    a row is <em>inserted</em> and become visible when its transaction <em>commits</em> — and those
+    can happen in opposite orders. A transaction holding id 100 can commit after one holding 101. A
+    relay tracking a high-water mark would step past 101, never see 100, and lose that event
+    <em>permanently</em> — reintroducing the exact loss the outbox exists to prevent. The relay must
+    therefore claim-and-delete rather than remember a position, so a late arrival is simply picked up
+    next pass.
+  </p>
+  <p>
+    <strong>The second is a combination.</strong> Rows that fail repeatedly are marked dead and left
+    in the table for inspection. Separately, the system sheds new requests when the outbox backlog
+    grows too <em>old</em>, because a backlog that is not draining means events are not reaching
+    anyone. Individually both are sound. Together, if the age metric counts dead rows, one poison
+    message ages the backlog forever and <strong>every ride request sheds, permanently.</strong> A
+    single bad event becomes a total outage.
+  </p>
+  <div class="pull bad">
+    <p>Neither failure is visible in the component that causes it. Both live in the seam between two correct decisions.</p>
+  </div>
+</section>
+
+<section id="time">
+  <h2>Time, staleness, and refusing to invent answers</h2>
+  <p>
+    A driver whose phone dies is indistinguishable, from the server's point of view, from a driver in
+    a tunnel. The system has to act on silence without knowing which it is — and the cost of acting
+    wrongly is wildly different depending on what the driver was doing.
+  </p>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Driver was…</th><th>Cost of deciding wrongly</th><th>Window</th></tr></thead>
+      <tbody>
+        <tr><td>Idle</td><td>Misses offers until they reappear; self-healing</td><td>Short — 15 s</td></tr>
+        <tr><td>Driving to a pickup</td><td>Rider's driver is swapped mid-approach; visible, recoverable</td><td>Longer — 90 s</td></tr>
+        <tr><td>Mid-trip</td><td>Trip ended and the fare captured while it is still happening; <strong>unrecoverable</strong></td><td>Long — 10 min</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Hence three windows rather than one shared constant. A single sixty-second timeout would end live
+    trips every time a driver drove through a tunnel.
+  </p>
+  <p>
+    Crucially, none of these write to the driver's declared status. Losing signal does not end a
+    shift; only the driver ends a shift. A driver who reappears becomes matchable again on their
+    next heartbeat with no transition, no audit event and no manual recovery. A tunnel is not a
+    resignation.
+  </p>
+
+  <h3>The decision I am most pleased with</h3>
+  <p>
+    An early design had a timeout on rides awaiting authorisation: if no outcome arrived within a few
+    minutes, give up and fail the ride. It seems obviously right — the rider deserves an answer
+    rather than waiting forever.
+  </p>
+  <p>
+    It is actively harmful, and the reason took a while to see. Failing the ride frees the rider to
+    request another, which places a <em>second</em> hold while the first is still outstanding. During
+    an outage that affects every stuck rider simultaneously — so a payment provider being briefly
+    unreachable produces a wave of duplicate holds against the very provider that is already
+    struggling. The timeout does not mitigate the failure; it amplifies it, and it fires hardest
+    exactly when the system is least able to cope.
+  </p>
+  <p>
+    Removing it also revealed something that was already true: a rider with a stuck ride
+    <em>cannot request another one</em>, because of the one-active-ride rule. That rule turns out to
+    be natural admission control. During a payment outage the system throttles itself, with no
+    explicit shedding — and the timeout would have deliberately opened that valve at the worst
+    possible moment.
+  </p>
+  <div class="pull good">
+    <p>Bound the windows where the system can determine an outcome. Never bound a wait for external truth it will eventually receive.</p>
+    <p>
+      "We looked for a driver and found nobody" is an answer the system genuinely holds, so giving up
+      is legitimate. "We have not heard back about the payment" is not an answer — and inventing one
+      is what causes the damage. A metric and an alert replace the mechanism; a human decides,
+      because only a human has the context the system is missing.
+    </p>
+  </div>
+</section>
+
+<section id="failure">
+  <h2>What breaks first, and what happens then</h2>
+  <p>
+    Every queue in the request path has an explicit bound, and the tightest one sits where there is
+    visibility — at the edge proxy, which has a stats page and can return a 503. The reasoning is
+    that an unbounded queue does not absorb overload, it converts a throughput problem into an
+    unbounded latency problem. And a bound set too generously at the edge does not help either: if
+    the proxy admits a hundred concurrent requests to a service that can only run ten database
+    operations at once, the queue has not been controlled, it has merely <em>moved</em> — into the
+    JVM, where nothing reports on it.
+  </p>
+  <p>
+    Sizing them uses Little's Law: concurrency equals arrival rate times service time. Applied here
+    it consistently says the numbers should be <em>smaller</em> than instinct suggests. Ride writes
+    need single-digit database concurrency. The common reflex — setting a connection pool to a
+    hundred "for safety" — is actively harmful, because it just relocates queueing into the database
+    where each waiting connection costs real memory and nothing surfaces it.
+  </p>
+
+  <h3>Degrading on purpose</h3>
+  <p>
+    The final deployment target is a single local Kubernetes cluster, which makes the resource budget
+    a real constraint rather than an abstract one. So it is worth knowing in advance what can be
+    switched off — and the answer turned out to be already determined by the architecture.
+  </p>
+  <div class="pull">
+    <p>A component can be turned off exactly when it sits behind an event boundary.</p>
+  </div>
+  <p>
+    Audit and analytics consume events and nothing depends on them, so they can be stopped entirely
+    and <em>nothing breaks</em>. Better still, nothing is lost: their consumer group offsets survive,
+    and the backlog drains when they return. That is a direct consequence of Kafka never deleting on
+    consumption — with a conventional acknowledge-and-delete queue, the events would have been gone
+    unless the consumer stayed alive.
+  </p>
+  <p>
+    Payments are one step in: with the service down, rides stall before dispatch rather than
+    crashing. Everything on the synchronous request path is required. Three tiers, and the boundary
+    between them is not a judgement call — it follows the event boundaries exactly.
+  </p>
+</section>
+
+<section id="wrong">
+  <h2>What I got wrong</h2>
+  <p>
+    Before adopting this design I put it through three independent adversarial reviews: one walking a
+    quality rubric, one verifying every named technology and version against upstream sources, and
+    one whose only instruction was to construct two components that obey every rule and still build
+    something incompatible.
+  </p>
+  <p>
+    All three found real defects. That is the point of the exercise, but the <em>pattern</em> in what
+    they found is the more useful lesson.
+  </p>
+  <div class="pull bad">
+    <p>The worst findings were decisions where I had written down the reasoning and then failed to write down the rule.</p>
+  </div>
+  <p>
+    The clearest example is the outbox ordering trap. I had explicitly noted that a cursor-based
+    relay would skip late-committing rows — and then wrote a rule saying the identifier is
+    "monotonic", which positively invites a developer to build exactly that cursor. The knowledge was
+    recorded; the constraint was not. Nobody reading the rule would have known the hazard existed.
+  </p>
+  <p>Others worth keeping:</p>
+  <ul>
+    <li>
+      <strong>Two rules that contradicted each other.</strong> One said the system could
+      auto-authorise when payments were unavailable; another said rides should stall. The first would
+      have dispatched rides against funds nobody was holding. Two reviewers found this independently,
+      which is a good sign about both of them.
+    </li>
+    <li>
+      <strong>A restart that would have charged everyone.</strong> Redis holds no persistence by
+      design, and driver positions carry an expiry. Nothing defined what a <em>missing</em> entry
+      meant — so one reasonable reading has the system treat every driver as unreachable after a
+      Redis restart and auto-complete every trip in progress, capturing every fare at once.
+    </li>
+    <li>
+      <strong>A recovery path that could never run.</strong> The window for detecting a silent driver
+      mid-approach was longer than the window for giving up on finding a driver at all, with nothing
+      saying when the second one started. A rescued ride would have been killed on the next sweep —
+      not occasionally, but every single time.
+    </li>
+    <li>
+      <strong>A dependency that would not have compiled.</strong> The resilience library version I
+      pinned predates the framework version I pinned, and does not publish a compatible module.
+    </li>
+  </ul>
+  <p>
+    None of these were subtle once pointed out. All of them survived my own repeated reading, because
+    I had spent hours arguing myself into each decision and could no longer see the gap between what
+    I meant and what I had written. That is not a failure of care; it is a structural limit of
+    reviewing your own work, and the only fix is someone who was not in the room.
+  </p>
+</section>
+
+<section id="limits">
+  <h2>The limits of this design</h2>
+  <p>
+    Knowing where a design stops working is more useful than believing it does not.
+  </p>
+  <p>
+    <strong>The geo index is a single key.</strong> Nearest-driver search runs against one Redis
+    sorted set, and Redis executes commands on a single thread. Clustering does not help, because
+    clustering shards by key and there is only one. The escape is partitioning the index by
+    geographic cell — but that only pays when cells are substantially larger than the search radius,
+    or boundary queries eat the gain. It is deliberately the last lever, not the first.
+  </p>
+  <p>
+    <strong>Matching is a single writer.</strong> One service owns all ride and dispatch state, which
+    is what makes the concurrency story clean. It is also a ceiling: past a certain rate, the answer
+    would be to shard by geography and accept the coordination that comes with it — which is roughly
+    the point at which this architecture becomes a different architecture.
+  </p>
+  <p>
+    <strong>Tests run sequentially.</strong> They share one database and reset between classes, which
+    is the right trade at this size and a real limit as the suite grows.
+  </p>
+  <p>
+    <strong>Ordering can break under retry.</strong> If one event for a ride fails and backs off
+    while a later one succeeds, they reach consumers out of order. Consumer state machines reject
+    invalid transitions, so the damage is contained rather than silent — but the guarantee is
+    "detected", not "prevented". Closing it properly means blocking an entity's whole stream behind
+    its own failed event, which costs more than it currently returns.
+  </p>
+  <p>
+    <strong>And none of the security shape is a security boundary.</strong> Identity is passed per
+    request and trusted as-is, because authentication is explicitly out of scope. The 404-instead-of-403
+    convention, the sub-resource addressing, the masked payment tokens — those are correct
+    <em>habits</em> practised deliberately, not defences. Presenting them as security would be
+    dishonest, and the discipline is worth building precisely so it is automatic when the stakes are
+    real.
+  </p>
+</section>
+
+</div>
+
+<div class="wrap">
+  <footer>
+    Puber solution design · derived from ARCHITECTURE-SPINE.md and its decision log ·
+    every version verified against upstream sources at authoring
+  </footer>
+</div>
+</html>
