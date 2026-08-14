@@ -285,10 +285,10 @@
       every failure and recovery path, and what is deliberately not being built.
     </p>
     <div class="facts">
-      <div class="fact"><span class="fact-n">50</span><span class="fact-l">Requirements</span></div>
+      <div class="fact"><span class="fact-n">51</span><span class="fact-l">Requirements</span></div>
       <div class="fact"><span class="fact-n">10</span><span class="fact-l">Non-functional</span></div>
       <div class="fact"><span class="fact-n">9</span><span class="fact-l">Ride states</span></div>
-      <div class="fact"><span class="fact-n">6</span><span class="fact-l">Payment states</span></div>
+      <div class="fact"><span class="fact-n">7</span><span class="fact-l">Payment states</span></div>
       <div class="fact"><span class="fact-n">5</span><span class="fact-l">Services</span></div>
     </div>
   </header>
@@ -296,8 +296,9 @@
   <section id="ride">
     <h2>Ride state machine</h2>
     <p class="sec-note">
-      Six states on the happy path and three terminals. Every terminal resolves the payment —
-      there is no way for a ride to end and leave money in limbo.
+      Six states on the happy path and three terminals. Every terminal resolves the payment, and a
+      delivered trip is pursued until it resolves too — there is no way for a ride to end and leave
+      money in limbo.
     </p>
 
     <div class="rail">
@@ -416,54 +417,107 @@
     <h2>Payments, and when money actually moves</h2>
     <p class="sec-note">
       Two phases: the fare is authorised as a hold when the ride is requested, and captured only
-      when a trip is delivered. Everything else releases the hold.
+      when a trip is delivered. A ride that delivers no trip releases the hold; a capture is then
+      pursued until it settles, never until a retry budget runs out.
     </p>
 
     <div class="rail">
-      <svg viewBox="0 0 900 290" role="img" aria-label="Payment state machine: INITIATED to AUTHORIZED to CAPTURED to REFUNDED, with terminals FAILED and VOIDED">
-        <circle class="sm-entry" cx="42" cy="120" r="5"></circle>
-        <path class="sm-edge" d="M 52,120 L 108,120"></path>
+      <svg viewBox="0 0 1000 380" role="img" aria-label="Payment state machine: INITIATED to AUTHORIZED to CAPTURED to REFUNDED, with a retry self-loop on AUTHORIZED and three terminals: FAILED, VOIDED and CAPTURE_FAILED">
+        <circle class="sm-entry" cx="42" cy="152" r="5"></circle>
+        <path class="sm-edge" d="M 52,152 L 108,152"></path>
 
-        <rect class="sm-chip" x="116" y="98" width="132" height="44" rx="5"></rect>
-        <text class="sm-name" x="182" y="121">INITIATED</text>
+        <rect class="sm-chip" x="116" y="130" width="132" height="44" rx="5"></rect>
+        <text class="sm-name" x="182" y="152">INITIATED</text>
 
-        <rect class="sm-chip is-live" x="326" y="98" width="146" height="44" rx="5"></rect>
-        <text class="sm-name" x="399" y="121">AUTHORIZED</text>
+        <rect class="sm-chip is-live" x="326" y="130" width="146" height="44" rx="5"></rect>
+        <text class="sm-name" x="399" y="152">AUTHORIZED</text>
 
-        <rect class="sm-chip is-good" x="550" y="98" width="132" height="44" rx="5"></rect>
-        <text class="sm-name" x="616" y="121">CAPTURED</text>
+        <rect class="sm-chip is-good" x="550" y="130" width="132" height="44" rx="5"></rect>
+        <text class="sm-name" x="616" y="152">CAPTURED</text>
 
-        <rect class="sm-chip" x="754" y="98" width="132" height="44" rx="5"></rect>
-        <text class="sm-name" x="820" y="121">REFUNDED</text>
+        <rect class="sm-chip" x="754" y="130" width="132" height="44" rx="5"></rect>
+        <text class="sm-name" x="820" y="152">REFUNDED</text>
 
-        <path class="sm-edge" d="M 248,120 L 318,120"></path>
-        <text class="sm-tag" x="283" y="110">hold placed</text>
-        <text class="sm-tag" x="283" y="88">at request</text>
+        <path class="sm-edge" d="M 248,152 L 318,152"></path>
+        <text class="sm-tag" x="283" y="142">hold placed</text>
+        <text class="sm-tag" x="283" y="120">at request</text>
 
-        <path class="sm-edge" d="M 472,120 L 542,120"></path>
-        <text class="sm-tag" x="507" y="110">captured</text>
-        <text class="sm-tag" x="507" y="88">at completion</text>
+        <path class="sm-edge" d="M 472,152 L 542,152"></path>
+        <text class="sm-tag" x="507" y="142">captured</text>
+        <text class="sm-tag" x="507" y="120">at completion</text>
 
-        <path class="sm-edge" d="M 682,120 L 746,120"></path>
-        <text class="sm-tag" x="714" y="110">internal</text>
-        <text class="sm-tag" x="714" y="88">FR-39</text>
+        <path class="sm-edge" d="M 682,152 L 746,152"></path>
+        <text class="sm-tag" x="714" y="142">internal</text>
+        <text class="sm-tag" x="714" y="120">FR-39</text>
 
-        <rect class="sm-chip is-bad" x="176" y="220" width="120" height="44" rx="5"></rect>
-        <text class="sm-name" x="236" y="243">FAILED</text>
+        <!-- retry self-loop: a failing capture stays AUTHORIZED, with no cap -->
+        <path class="sm-edge" d="M 366,130 C 348,68 450,68 432,128"></path>
+        <text class="sm-tag" x="399" y="44">capture keeps retrying — no cap, survives restarts</text>
+        <text class="sm-tag" x="399" y="58">provider unreachable is just the next retry · FR-37</text>
 
-        <rect class="sm-chip is-bad" x="420" y="220" width="120" height="44" rx="5"></rect>
-        <text class="sm-name" x="480" y="243">VOIDED</text>
+        <rect class="sm-chip is-bad" x="120" y="290" width="130" height="44" rx="5"></rect>
+        <text class="sm-name" x="185" y="312">FAILED</text>
 
-        <path class="sm-edge is-bad" d="M 190,142 C 196,180 210,190 224,212"></path>
-        <text class="sm-tag" x="128" y="186">declined</text>
+        <rect class="sm-chip is-bad" x="390" y="290" width="130" height="44" rx="5"></rect>
+        <text class="sm-name" x="455" y="312">VOIDED</text>
 
-        <path class="sm-edge is-bad" d="M 380,142 C 350,180 300,196 268,212"></path>
-        <text class="sm-tag" x="330" y="196">capture exhausted</text>
+        <rect class="sm-chip is-bad" x="636" y="290" width="190" height="44" rx="5"></rect>
+        <text class="sm-name" x="731" y="312">CAPTURE_FAILED</text>
 
-        <path class="sm-edge is-bad" d="M 420,142 C 440,180 460,196 474,212"></path>
-        <text class="sm-tag" x="536" y="186">no trip delivered</text>
-        <text class="sm-tag" x="536" y="200">FR-36</text>
+        <path class="sm-edge is-bad" d="M 178,174 C 170,214 176,250 190,282"></path>
+        <text class="sm-tag" x="100" y="232">authorisation declined</text>
+        <text class="sm-tag" x="100" y="246">FR-9</text>
+
+        <path class="sm-edge is-bad" d="M 398,174 C 392,216 414,250 440,282"></path>
+        <text class="sm-tag" x="318" y="232">no trip delivered</text>
+        <text class="sm-tag" x="318" y="246">FR-36</text>
+
+        <path class="sm-edge is-bad" d="M 452,174 C 540,242 626,272 690,283"></path>
+        <text class="sm-tag" x="666" y="214">provider reports the hold is gone</text>
+        <text class="sm-tag" x="666" y="228">expired · revoked · cancelled · FR-37</text>
       </svg>
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--accent)"></i> hold in place</span>
+        <span><i class="swatch" style="background:var(--good)"></i> money collected</span>
+        <span><i class="swatch" style="background:var(--bad)"></i> terminal, nothing captured</span>
+      </div>
+    </div>
+
+    <div class="callout">
+      <p>
+        <strong>Two terminals look alike and are not.</strong>
+        <span class="st bad">FAILED</span> is an authorisation declined before any trip happened —
+        nobody was charged and nothing was lost. <span class="st bad">CAPTURE_FAILED</span> is a
+        delivered trip whose money is gone. They stay separate states because they differ in
+        <em>kind</em>, not in provenance: one is a ride that never happened, the other is the only
+        case in the system that is genuine revenue loss — which is why only the second is counted
+        and summed as one <span class="fr">FR-46</span>.
+      </p>
+      <p>
+        <strong>Only the provider can declare a hold dead.</strong> A capture that fails is retried
+        with jittered backoff, keeps the payment in <span class="st">AUTHORIZED</span> while it
+        retries, and goes on retrying across process restarts — there is no cap, because a valid
+        hold on a delivered trip is money owed and a cap would throw it away. A provider that is
+        unreachable has not answered, and that is the next retry rather than an outcome.
+        <span class="st bad">CAPTURE_FAILED</span> is reached only when the provider reports the
+        hold expired, was revoked, or was cancelled. So a hold always ends captured, voided, or
+        provably uncapturable — never in limbo.
+      </p>
+      <p>
+        <strong>This is the one place payment state reaches back into rides.</strong> Every other
+        coupling in the system runs ride → payment; <span class="fr">FR-51</span> runs the other way,
+        refusing a new ride request while the rider's last payment is unsettled, or for 30 minutes
+        after their most recent <span class="st bad">CAPTURE_FAILED</span>. It sits at request
+        admission and nowhere else — once a hold is confirmed the ride stops waiting on payment
+        entirely, so nothing a rider is already waiting on pays for this guard.
+      </p>
+      <p>
+        <strong>Refusals are counted by reason, never as one total</strong>
+        <span class="fr">FR-46</span>. A one-active-ride refusal is ordinary rider behaviour and
+        tells you nothing; a spike in either payment-driven reason is a provider failing or
+        recovering, seen at the one place a rider actually feels it rather than inferred from the
+        provider's own telemetry. Collapsed into a single counter, that signal disappears.
+      </p>
     </div>
 
     <h3>Outcome by outcome</h3>
@@ -516,9 +570,15 @@
             <td class="num"><span class="fr">FR-14</span></td>
           </tr>
           <tr>
-            <td>Capture retried and still failing</td>
-            <td>Trip happened, money not collected; not pursued</td>
-            <td><span class="st bad">FAILED</span></td>
+            <td>Trip delivered, provider not answering</td>
+            <td>Hold intact; capture retried with jittered backoff, across restarts, with no cap</td>
+            <td><span class="st">AUTHORIZED</span></td>
+            <td class="num"><span class="fr">FR-37</span></td>
+          </tr>
+          <tr>
+            <td>Trip delivered, provider says the hold is gone</td>
+            <td>Money unrecoverable — the one outcome that is revenue loss; not pursued</td>
+            <td><span class="st bad">CAPTURE_FAILED</span></td>
             <td class="num"><span class="fr">FR-37</span></td>
           </tr>
         </tbody>
@@ -550,8 +610,8 @@
       <li class="step">
         <span class="step-n">03</span>
         <div class="step-b">
-          <p class="step-t">Request the ride <span class="fr">FR-2</span> <span class="fr">FR-3</span></p>
-          <p class="step-d">Carries a payment-method token, since no account stores one. Fare locks here. A second simultaneous request is refused — every non-terminal state counts as active.</p>
+          <p class="step-t">Request the ride <span class="fr">FR-2</span> <span class="fr">FR-3</span> <span class="fr">FR-51</span></p>
+          <p class="step-d">Carries a payment-method token, since no account stores one. Fare locks here. Three separate refusals guard this door, each distinguishable from the others: a ride already in flight — every non-terminal state counts as active; a previous payment that has not settled yet; and a <span class="st bad">CAPTURE_FAILED</span> less than 30 minutes old. The last two clear themselves — one when the payment settles, the other on a timer — with nothing marked against the rider.</p>
         </div>
       </li>
       <li class="step">
@@ -579,7 +639,7 @@
         <span class="step-n">07</span>
         <div class="step-b">
           <p class="step-t">See what was charged <span class="fr">FR-7</span></p>
-          <p class="step-d">Final fare and payment outcome — captured, failed or refunded — so the payment machine has a visible consequence.</p>
+          <p class="step-d">Final fare and payment outcome — captured, refunded, or left uncaptured because the hold was no longer capturable — so the payment machine has a visible consequence. A capture still retrying is not yet an outcome; the rider sees one once the payment settles.</p>
         </div>
       </li>
       <li class="step">
@@ -720,8 +780,26 @@
           <tr>
             <td>Capture fails after the trip</td>
             <td>Provider response</td>
-            <td>Retried with jitter, then terminal <span class="st bad">FAILED</span>; not pursued</td>
+            <td>Retried with jittered backoff, surviving restarts; the payment stays <span class="st">AUTHORIZED</span> and no cap discards a valid hold</td>
             <td class="num"><span class="fr">FR-37</span></td>
+          </tr>
+          <tr>
+            <td>Provider reports the hold expired, revoked or cancelled</td>
+            <td>Provider response</td>
+            <td>Terminal <span class="st bad">CAPTURE_FAILED</span> — counted and summed as revenue loss, and alerted on; not pursued</td>
+            <td class="num"><span class="fr">FR-37</span></td>
+          </tr>
+          <tr>
+            <td>Rider requests again with a payment still unsettled</td>
+            <td>Admission check at request</td>
+            <td>Refused until the previous payment settles — otherwise the uncapped retry lets one rider stack up unpaid trips while the provider struggles</td>
+            <td class="num"><span class="fr">FR-51</span></td>
+          </tr>
+          <tr>
+            <td>Rider requests again just after a <span class="st bad">CAPTURE_FAILED</span></td>
+            <td>Admission check at request</td>
+            <td>Refused for 30 minutes from the last one, then admitted automatically. Both refusals are distinguishable from the one-active-ride refusal</td>
+            <td class="num"><span class="fr">FR-51</span></td>
           </tr>
           <tr>
             <td>A webhook never arrives</td>
@@ -751,13 +829,18 @@
         has no timeout at all. Timing it out would free the rider to request again and place a second
         hold while the first is outstanding — during a provider outage that manufactures a hold storm
         against the one dependency the system cannot control. Instead the one-active-ride rule becomes
-        natural admission control: a rider with a stuck ride cannot generate more.
+        natural admission control: a rider with a stuck ride cannot generate more. <span class="fr">FR-51</span>
+        closes the sibling gap — a rider whose ride has gone terminal while its payment has not settled
+        cannot generate more either, which is what keeps the uncapped capture retry from turning one
+        struggling provider into a pile of unpaid trips.
       </p>
       <p>
-        The principle behind both this and the stranded-hold row: <strong>bound the windows where the
-        system can determine an outcome; never bound a wait for external truth it will eventually
-        receive.</strong> "We looked and found nobody" is an answer the system holds. "We do not know
-        yet" is not, and inventing one there is what causes the damage.
+        The principle behind this, the stranded-hold row, and the uncapped capture retry:
+        <strong>bound the windows where the system can determine an outcome; never bound a wait for
+        external truth it will eventually receive.</strong> "We looked and found nobody" is an answer
+        the system holds. "We do not know yet" is not, and inventing one there is what causes the
+        damage — which is exactly what a capture retry cap did before it was removed: it turned a
+        provider that had not yet answered into a write-off.
       </p>
     </div>
   </section>
@@ -765,14 +848,14 @@
   <section id="coverage">
     <h2>Where the requirements sit</h2>
     <p class="sec-note">
-      Ten groups, fifty requirements. The bar shows each group's share.
+      Ten groups, fifty-one requirements. The bar shows each group's share.
     </p>
     <div class="grid">
       <div class="cell">
         <p class="cell-k">Group A</p>
         <p class="cell-t">Rider requests &amp; reads</p>
-        <p class="cell-r">FR-1 – FR-8 · 8</p>
-        <div class="meter"><i style="width:73%"></i></div>
+        <p class="cell-r">FR-1 – FR-8, FR-51 · 9</p>
+        <div class="meter"><i style="width:82%"></i></div>
       </div>
       <div class="cell">
         <p class="cell-k">Group B</p>
@@ -877,7 +960,10 @@
           <p>
             Each of these is recorded with its reasoning rather than just its verdict — the
             debtor-standing decision in particular turns on the pre-authorisation hold having
-            already removed the case that motivated it.
+            already removed the case that motivated it. What is out of scope there is the
+            <em>persistent</em> standing: a flag on a rider with an operator lifecycle to clear it.
+            The narrower guard of <span class="fr">FR-51</span> is built, and it marks nobody —
+            it reads payment state at admission time and clears on its own.
           </p>
         </div>
       </div>
@@ -925,8 +1011,8 @@
     </div>
     <div class="callout">
       <p>
-        <strong>What is still open sits below this altitude:</strong> retry caps, batch sizes,
-        pool and replica counts, partition counts. The sizing <em>method</em> is settled — arrival
+        <strong>What is still open sits below this altitude:</strong> outbox retry and backoff
+        windows, batch sizes, pool and replica counts, partition counts. The sizing <em>method</em> is settled — arrival
         rate × service time, drain must exceed arrival with headroom — and the stress test exists
         to produce the numbers.
       </p>
@@ -934,9 +1020,10 @@
   </section>
 
   <footer>
-    Generated from prd.md · status final · 50 functional and 10 non-functional requirements ·
-    regenerated 2026-08-13 after syncing with the architecture pass: <code>OFFERED</code> added,
-    session expiry added, services renamed
+    Generated from prd.md · status final · 51 functional and 10 non-functional requirements ·
+    regenerated 2026-08-14 after the capture-model change: <code>CAPTURE_FAILED</code> added,
+    the capture retry cap removed, <code>FAILED</code> narrowed to a declined authorisation,
+    and <code>FR-51</code> added — the first guard that reads payment state at ride admission
   </footer>
 </div>
 </html>

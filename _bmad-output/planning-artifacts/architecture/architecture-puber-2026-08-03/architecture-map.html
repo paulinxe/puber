@@ -289,7 +289,7 @@
           <tr><td><strong>rider-service</strong></td><td><em>nothing</em></td><td>Stateless façade. REST in, gRPC out.</td></tr>
           <tr><td><strong>driver-service</strong></td><td><code>drivers</code> — identity, position</td><td>No dispatch status. Also holds driver WebSockets.</td></tr>
           <tr><td><strong>matching-service</strong></td><td><code>rides</code>, <code>drivers</code> (dispatch), <code>fare_rules</code>, <strong>Redis</strong></td><td>A second table also named <code>drivers</code> — different database, different purpose, never joined across.</td></tr>
-          <tr><td><strong>payment-service</strong></td><td><code>payment_intents</code>, <code>webhook_events</code></td><td>The only service that talks to the provider.</td></tr>
+          <tr><td><strong>payment-service</strong></td><td><code>payments</code>, <code>webhook_events</code></td><td>The only service that talks to the provider.</td></tr>
           <tr><td><strong>audit-service</strong></td><td><code>audit_events</code> + columnar tables</td><td>Pure consumer. Nothing depends on it.</td></tr>
         </tbody>
       </table>
@@ -772,6 +772,8 @@ index (next_attempt_at, id) WHERE dead_at IS NULL</pre>
           <tr><td class="num"><span class="ad">AD-55</span></td><td>Consumer failure bounded and visible</td><td>A poison message blocking a partition, or being silently dropped</td></tr>
           <tr><td class="num"><span class="ad">AD-56</span></td><td>Tests on the real stack, reset per class</td><td>Flaky concurrency tests indistinguishable from real races</td></tr>
           <tr><td class="num"><span class="ad">AD-57</span></td><td>SOLID made testable — Liskov on strategies, segregation by consumer</td><td>An unfalsifiable review argument; a stub that resolves differently and voids the stress test</td></tr>
+          <tr><td class="num"><span class="ad">AD-58</span></td><td>Settlement driven by a durable claim-loop worker — capture and void — with a backoff ceiling instead of a retry cap</td><td>A retry loop dying with its pod and writing off a valid hold or losing a requested void; an unbounded retry becoming an unbounded request rate</td></tr>
+          <tr><td class="num"><span class="ad">AD-59</span></td><td>Ride admission reads a local payment-settlement projection, never a synchronous call</td><td>A rider stacking unpaid trips; and the fix for it promoting payment-service onto the hot path it must survive</td></tr>
         </tbody>
       </table>
     </div>
@@ -803,7 +805,7 @@ index (next_attempt_at, id) WHERE dead_at IS NULL</pre>
   </section>
 
   <footer>
-    Companion to ARCHITECTURE-SPINE.md · 56 decisions · reviewed by rubric, currency and
+    Companion to ARCHITECTURE-SPINE.md · 59 decisions · reviewed by rubric, currency and
     adversarial lenses · identifiers stable for downstream citation
   </footer>
 </div>
