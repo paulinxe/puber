@@ -9,7 +9,8 @@ tell a driver who chose to stop from one who merely lost signal.
 > heartbeat over gRPC to the index. Epic 4 replaces the forward with a Kafka event and the Postgres
 > columns with Redis — the seam does not move, only its implementation. This epic therefore creates
 > `matching-service`'s dispatch `drivers` table carrying declared status, a position snapshot and
-> `last_seen_at`; Epic 3 extends it with `current_ride_id` by expand-only migration.
+> `last_seen_at`; **Story 3.5** extends it with `current_ride_id` by expand-only migration, in the
+> first story that needs the column.
 
 ### Story 2.1: Fixture drivers exist with identities and positions
 

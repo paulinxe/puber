@@ -48,10 +48,11 @@ vocabulary spans both tables (AD-31)
 by which point the ride may have moved on
 **And** it never uses native Java serialisation, since consumers are independently built (AD-30)
 
-**Given** the payload contents
-**When** they are reviewed
-**Then** the event carries what its consumers need inline and nothing more, because every extra field
-becomes one that can never be removed (AD-32)
+**Given** each field on an event payload
+**When** it is traced to a consumer
+**Then** at least one consumer reads it — the event carries what its consumers need inline and nothing
+more
+**And** this is because a field once published can never be removed (AD-32, AD-33)
 
 **Given** an event type
 **When** it is declared
@@ -437,10 +438,12 @@ drivers (FR-19)
 **And** it is never recomputed later, so a surge change between quote and request moves the price
 while a change after request does not (FR-18, FR-1)
 
-**Given** the scope of surge
-**When** it is examined
-**Then** it is one ratio-derived multiplier and nothing more — no demand forecasting, no machine
-learning, no per-rider or time-of-day pricing, and no geographic granularity (Non-goals, Deferred)
+**Given** the surge recomputation
+**When** its inputs are inspected
+**Then** they are exactly two — the count of outstanding ride requests and the count of available
+drivers — and it produces one multiplier
+**And** rider identity, time of day, and any geographic cell are not inputs, so no demand forecasting,
+machine learning, per-rider or time-of-day pricing can be present (Non-goals, Deferred)
 
 **Given** the recomputation interval
 **When** it is exercised in a test

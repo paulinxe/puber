@@ -162,14 +162,16 @@ So that neither store is derived from the other and either can be rebuilt from t
 **When** it is fed
 **Then** it consumes **the same Kafka topics** in its own independent consumer group (FR-43, AD-53)
 
-**Given** the feeding mechanism
-**When** it is examined
-**Then** it is a **parallel consumer, never a Postgres-to-columnar copy job**
+**Given** the columnar store's ingest path
+**When** it is traced
+**Then** it reads from Kafka only, and **no code path reads the Postgres `audit_events` table to
+populate it** — it is a parallel consumer, never a copy job
 **And** neither store is therefore derived from the other (AD-53)
 
-**Given** the columnar store
-**When** its retention is considered
-**Then** it holds the full logical history indefinitely (NFR-6, AD-53)
+**Given** the columnar store's configuration
+**When** it is inspected
+**Then** no pruning job, TTL or partition-drop schedule acts on it — it holds the full logical history
+indefinitely (NFR-6, AD-53)
 
 **Given** either store lost entirely
 **When** it is rebuilt
@@ -234,14 +236,10 @@ So that the pings the system already collects stop being write-only.
 **When** they are consumed into the columnar store
 **Then** the position history persists durably (FR-27)
 
-**Given** the location history
-**When** its home is examined
-**Then** it lives in the columnar store **only**
-**And** there is deliberately no Postgres location history at all (Constraints, FR-27)
-
-**Given** ping volume of roughly 1.3M/day at simulator load
-**When** the design is reviewed
-**Then** this volume is precisely why the history is columnar-only and never enters the audit trail (Constraints)
+**Given** the schema of every Postgres database in the system
+**When** it is inspected
+**Then** no location-history table exists in any of them — the history lives in the columnar store
+**only**, and there is deliberately no Postgres location history at all (Constraints, FR-27, AD-60)
 
 **Given** a redelivered location event
 **When** it is consumed
@@ -250,8 +248,9 @@ So that the pings the system already collects stop being write-only.
 (AD-60, AD-36, NFR-4)
 
 **Given** the ping history
-**When** its start is considered
-**Then** it **begins with the topic** and is never backfilled
+**When** its earliest row is read
+**Then** it is no older than the topic itself — the history **begins with the topic**, and no backfill
+path exists
 **And** before the HTTP→Kafka swap there is no ping history at all, since Redis holds none (AD-60, AD-27)
 
 **Given** `audit-service` owning the columnar ping table
@@ -282,6 +281,11 @@ measurement under the stress run rather than guessed now (AD-47, AD-35)
 **When** they are observed
 **Then** both are gauges that alert before the bound is reached (AD-54)
 
+> **Why this stream is columnar-only.** Location pings run roughly 1.3M/day at simulator load against
+> ~10k/day of state transitions — two orders of magnitude apart. That ratio is precisely why the ping
+> history is columnar-only and never enters the audit trail: routed there it would turn the audit log
+> into a location log and bury the state-transition story it exists to tell (Constraints, AD-60).
+
 ### Story 6.6: Aggregate analytics are computed from data already collected
 
 As an analyst,
@@ -303,14 +307,15 @@ So that the collected data has a consumer instead of sitting unread.
 **Then** it is derived from the driver **state-transition audit trail**, not from location pings (FR-44)
 
 **Given** any of these analytics
-**When** the data they need is considered
-**Then** nothing new is collected for them — each is computed from data already being collected (FR-44)
+**When** its inputs are traced
+**Then** each reads only the existing ping history and audit trail
+**And** no new collection point, column or event is introduced to serve them (FR-44)
 
-**Given** a question about the past
-**When** the store to answer it is chosen
-**Then** point lookups by entity or actor are served from Postgres, and aggregate analytics from the
-columnar store
-**And** there is exactly one answer to "which store answers this question" (AD-53)
+**Given** a point lookup by entity or actor and an aggregate analytical query
+**When** each is served
+**Then** the point lookup reads Postgres and the aggregate reads the columnar store
+**And** no query type is served from both, so there is exactly one answer to "which store answers this
+question" (AD-53)
 
 **Given** each aggregate
 **When** the migration is delivered

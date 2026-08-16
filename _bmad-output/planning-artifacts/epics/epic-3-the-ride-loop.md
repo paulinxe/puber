@@ -59,9 +59,10 @@ So that I am not left waiting on a payment provider before I even know my ride e
 **Then** it is locked at request time from the current fare rules
 **And** it is never recomputed at trip end (FR-2, FR-18)
 
-**Given** the `REQUESTED` state
-**When** its meaning is asserted
-**Then** it means *awaiting authorization* and nothing else (AD-13)
+**Given** a ride sitting in `REQUESTED`
+**When** the matching worker claims work
+**Then** the ride is not selected, because `REQUESTED` means *awaiting authorization* and nothing else
+**And** no code path treats it as dispatchable or as carrying any other meaning (AD-13, AD-19)
 
 **Given** the `PaymentGateway` Strategy
 **When** no `payment-service` exists in this phase
@@ -126,7 +127,7 @@ reason label
 persisted nothing to derive from and this is a Tier-1 request path (Metrics convention)
 
 **Given** a request rejected for any other reason
-**When** the counter is examined
+**When** the counter is read
 **Then** only AD-38's 409 admission refusals have incremented it
 **And** a malformed 400 and a shed 503 have not, each keeping its own signal (AD-54, AD-35)
 
@@ -140,9 +141,12 @@ persisted nothing to derive from and this is a Tier-1 request path (Metrics conv
 **And** no metrics-reset hook exists on the service, since truncate-and-reseed does not reset
 in-process meters and a reset would break the monotonicity `rate()` depends on (Metrics convention, AD-56)
 
-> **Scope boundary:** AD-54's other two reason labels — unsettled payment and capture-failed cooldown
-> — are added in Epic 5 with the projection that can see them. The closed enum and its single
-> registration point are established here so they cannot be bolted on as free strings later.
+> **Scope boundary:** AD-54's other two reason labels — *most recent completed ride not yet paid*
+> (AD-59 arm 1) and *cooldown after `CAPTURE_FAILED`* (AD-59 arm 2) — are added in Epic 5 with the
+> projection that can see them. The closed enum and its single registration point are established here
+> so they cannot be bolted on as free strings later. **Use these names verbatim:** AD-59 binds the
+> API's reason tokens and the metric's labels to the same values, so a reason renamed here and not
+> there is exactly the disagreement that rule exists to prevent.
 
 ### Story 3.4: Rider reads their rides
 
@@ -196,6 +200,13 @@ I want the system to find me the nearest driver who is genuinely able to take my
 So that I am matched quickly and not held by someone who will never answer.
 
 **Acceptance Criteria:**
+
+**Given** `matching-service`'s dispatch `drivers` table as Story 2.2 created it
+**When** this story's Flyway migration runs
+**Then** it adds `current_ride_id` — a nullable UUID naming the ride currently engaging the driver —
+as an **expand-only** migration: a column is added, nothing existing is dropped, renamed or retyped
+**And** the migration applies cleanly over rows seeded by Epic 2, and a second start applies nothing
+and fails nothing (AD-15, Migrations convention)
 
 **Given** rides awaiting a driver
 **When** the matching worker claims work
@@ -252,10 +263,11 @@ So that I commit to a passenger and begin the trip.
 **When** they accept
 **Then** the ride moves `OFFERED → MATCHED` (FR-22, AD-13)
 
-**Given** the `MATCHED` state
-**When** it is asserted
-**Then** it means the driver has *accepted* and is en route
-**And** it is distinct from `OFFERED`, which means a driver is still deciding (AD-13)
+**Given** a ride that has moved `OFFERED → MATCHED`
+**When** its state and assigned driver are read
+**Then** it reports a driver who has *accepted* and is en route, with that driver assigned to it
+**And** it is never conflated with `OFFERED`, which reports a driver still deciding and no
+assignment (AD-13)
 
 **Given** a driver acting on a ride not offered to them
 **When** they accept
@@ -312,9 +324,10 @@ So that I am not left waiting on someone who was never going to come.
 **Then** they **release only** — neither makes an offer, because offers are made in exactly one
 place (AD-20)
 
-**Given** the design
-**When** offer history is considered
-**Then** no separate offers table is created — the durable record is the audit trail (AD-17)
+**Given** the schema after this story
+**When** it is inspected
+**Then** no `offers` table exists
+**And** the durable record of offer history is the audit trail alone (AD-17)
 
 **Given** the offer timeout
 **When** it is exercised in a test
@@ -474,9 +487,10 @@ So that one call tells me everything I need to act on.
 **When** it is assembled
 **Then** it is delivered by one call, not several (FR-21)
 
-**Given** the 2 s driver poll cadence
-**When** it is compared with the 10 s offer timeout
-**Then** poll is comfortably shorter, so an offer is never missed between polls (AD-46)
+**Given** the 2 s driver poll cadence and the 10 s offer timeout
+**When** the time-constant ordering test runs
+**Then** it asserts poll is comfortably shorter than the timeout, so an offer is never missed between
+polls (AD-46)
 
 ### Story 3.13: Ride gives up as NO_DRIVER
 
@@ -501,14 +515,15 @@ So that I am not left waiting indefinitely on a ride that is never coming.
 **Then** the time it spent `MATCHED` did not consume the budget
 **And** the salvage path is therefore reachable rather than killed on the next sweep (AD-46)
 
-**Given** the bounded window
-**When** its justification is examined
-**Then** it bounds an outcome the system can determine — "we looked and found nobody"
-**And** it is never applied to a wait on external truth the system will eventually receive (AD-45)
-
 **Given** the seeking budget
 **When** it is exercised in a test
 **Then** it is reached by advancing the `Clock`, never by sleeping (NFR-9)
+
+> **Why this window is legitimate when the authorization wait has none.** The seeking budget bounds an
+> outcome the system can determine — *"we looked and found nobody"* is an answer it genuinely holds.
+> AD-45 forbids bounding a wait on external truth the system will eventually receive, which is why a
+> ride awaiting authorization has no timeout at all (Story 5.3). Keep the distinction in view when
+> tuning this value: the two look alike and are governed by opposite rules.
 
 > **Scope boundary:** FR-12 also requires the authorization hold to be released on `NO_DRIVER`. The
 > ride-side terminal state lands here; the void it stamps arrives in Epic 5 (FR-36, AD-44).

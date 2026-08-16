@@ -6,6 +6,14 @@
 > PRD still described something different. **The PRD, spine and SPEC have since been corrected and now
 > agree with these entries.** Where an entry cites an AD, that citation is the mechanism binding it,
 > not a divergence.
+>
+> **Second sync, same day.** The implementation-readiness re-assessment found four entries still out of
+> step, because the reconciliation list above was written before the last of the PRD corrections landed:
+> **FR-7** (AD-61's *settlement in progress*), **FR-49** (the in-process Simulator form the PRD deleted),
+> **NFR-8** (the CI clause dropped when the no-CI-server decision was taken), and **FR-14**, whose
+> restatement had silently dropped the PRD's requirement that auto-completions stay distinguishable
+> *when serving a read*. All four are corrected below. This file is the requirements text story authors
+> read, so an entry that disagrees with the PRD is worse than no entry at all.
 
 ### Functional Requirements
 
@@ -17,7 +25,7 @@ FR-3: A rider cannot hold two simultaneous active rides — a new request is rej
 FR-4: Rider can look up their current active ride by rider identity alone, without the ride identifier; returns at most one ride, or nothing.
 FR-5: Rider can read a single ride by its identifier, returning current state and details.
 FR-6: While a ride is `MATCHED`, the rider can see the assigned driver's **display name — never their identifier** (AD-39) — their current position, and an ETA to pickup that updates as the driver moves.
-FR-7: Rider can see the payment outcome on a finished ride — final fare and whether it was captured, refunded, or left uncaptured (`CAPTURE_FAILED`) on a `COMPLETED` ride, or that authorization was declined on a `PAYMENT_FAILED` one. A capture still retrying is not yet an outcome.
+FR-7: Rider can see the payment outcome on a finished ride — final fare and whether it was captured, refunded, or left uncaptured (`CAPTURE_FAILED`) on a `COMPLETED` ride, or that authorization was declined on a `PAYMENT_FAILED` one. **Those four are the only outcomes to show.** A capture still being pursued is **not** an outcome: it is surfaced as **settlement in progress**, never as uncaptured and never as nothing at all, because AD-58's retry is a live pursuit rather than a verdict. The answer is read from **`payment-service`, the owner of payment state** — `rider-service` calls it by `ride_id` over gRPC alongside the ride-detail read — and **never from AD-59's admission projection**, which is advisory and fail-open and would give one row two meanings for absence. When `payment-service` is unavailable this read answers `UNAVAILABLE` → 503: **no answer is better than a guessed one** (AD-61, AD-39, AD-37).
 FR-8: Rider can query ride history, most recent first, bounded by a result-size limit.
 FR-51: A ride request is refused while the rider has money outstanding, in two cases beyond FR-3. Both read **one anchor — the rider's most recent ride, ordered by the `rides` identity bigint — and its single payment row**, and are evaluated in fixed order after FR-3: **(a) unsettled delivered trip** — the anchor ride is `COMPLETED` with its payment still `AUTHORIZED`; refused until the payment settles **or until the session-expiry bound lapses measured from `capture_requested_at`, whichever comes first**. A `CANCELLED`, `NO_DRIVER` or `PAYMENT_FAILED` anchor **never** refuses, since its hold is being voided rather than captured. **(b) capture cooldown** — the anchor ride's payment reached `CAPTURE_FAILED` less than 30 minutes ago, measured on wall clock from a recorded `capture_failed_at`. All three refusals are distinguishable by the caller and counted separately by reason.
 
@@ -28,7 +36,7 @@ FR-10: System matches each ride to the nearest **matchable** driver — declared
 FR-11: An offered driver has a bounded window to accept, during which the ride sits in `OFFERED`. On timeout or explicit decline the ride returns to `WAITING_MATCH` and is offered to the next-nearest driver. A driver who declined or timed out is never re-offered that ride.
 FR-12: If no driver is found for a `WAITING_MATCH` ride within a bounded **seeking budget — accumulated time in `WAITING_MATCH` only, never time spent `OFFERED` or `MATCHED`** (AD-46) — it becomes terminal `NO_DRIVER`, retrying stops, and the hold is released. The rider is never charged.
 FR-13: If the driver holding a `MATCHED` ride goes silent past a staleness window before starting the trip, the ride returns to `WAITING_MATCH` (never to `REQUESTED`) and the silent driver is released.
-FR-14: If the driver on an `IN_PROGRESS` ride goes silent past a staleness window, the system auto-completes the ride, captures the locked fare through the normal payment path, and releases the driver. The ride records `completed_by = SYSTEM` and the audit trail records `SYSTEM` as actor.
+FR-14: If the driver on an `IN_PROGRESS` ride goes silent past a staleness window, the system auto-completes the ride, captures the locked fare through the normal payment path, and releases the driver. The ride records `completed_by = SYSTEM` and the audit trail records `SYSTEM` as actor — so an auto-completion stays distinguishable from a genuine one **both when serving a read and after the fact**. Completion remains a single state; how it was completed is a column alongside it, never a separate state (AD-18).
 FR-15: Full ride state machine: `REQUESTED → WAITING_MATCH → OFFERED → MATCHED → IN_PROGRESS → COMPLETED`, plus terminals `CANCELLED`, `NO_DRIVER`, `PAYMENT_FAILED`. `REQUESTED` is entered exactly once and never returned to.
 FR-16: Rider may cancel any time before the trip starts (`REQUESTED`, `WAITING_MATCH`, `OFFERED`, `MATCHED`); cancelling releases any assigned driver, withdraws any outstanding offer, and voids any hold — including one that lands *after* the cancellation. A mismatched rider identity is rejected without revealing whether the ride exists.
 FR-17: Matching is race-safe under concurrency — no driver is ever double-booked; a rider cancelling as a driver accepts resolves to exactly one winner, the loser rejected.
@@ -84,7 +92,7 @@ FR-47: All services deploy to a local Kubernetes cluster.
 **I. Identity & Simulation**
 
 FR-48: No authentication or registration; identity is passed per-request (rider header-carried, driver fixture-seeded) and trusted as-is.
-FR-49: A Simulator generates synthetic riders, drivers, and ride traffic at configurable, deterministic/seeded scale. In-process test fixture early, standalone containerized load generator later. Supplies payment-method tokens including deliberately-declining test tokens. Generates coordinates relative to the configured bounds.
+FR-49: A Simulator generates synthetic riders, drivers, and ride traffic at configurable, deterministic/seeded scale. It is **delivered once, as a standalone containerized load generator, in the final phase** — matching correctness is proven by deterministic test scenarios (NFR-1), never by synthetic traffic, so **nothing earlier depends on it** and no in-process fixture form is built. Ramps generation volume toward the NFR-2 stress scale. Supplies payment-method tokens including deliberately-declining test tokens. Generates coordinates relative to the configured bounds.
 
 **J. Live Operational Dashboard**
 
@@ -99,7 +107,7 @@ NFR-4 (Idempotency & consistency): Delivery is at-least-once throughout, so dupl
 NFR-5 (Observability): Every service exposes health and metrics from day one; dashboards make match latency, throughput and error rates visible without log-diving. Money is watched separately from throughput. Refused ride requests are counted split by reason, never as one total.
 NFR-6 (Data retention & queryability): Audit data in Postgres retained for a bounded window — 12-month revisable default, dropped by partition — with the same logical history preserved indefinitely in ClickHouse.
 NFR-7 (Deployability, local only): Every service builds and runs in Docker with no host JDK dependency. The final deployment target is a **local** Kubernetes cluster; no cloud vendor at any point.
-NFR-8 (Payments scale boundary): Payments correctness is proven at normal/small concurrent scale, not at NFR-2 volume. The exclusion is achieved by **swapping the payment provider, not by skipping the payment path** — the payment service and its state machine still run; only the outbound Stripe call is replaced. The same swap enables running before payments exist and CI without credentials.
+NFR-8 (Payments scale boundary): Payments correctness is proven at normal/small concurrent scale, not at NFR-2 volume. The exclusion is achieved by **swapping the payment provider, not by skipping the payment path** — the payment service and its state machine still run; only the outbound Stripe call is replaced. The same swap enables running before `payment-service` exists, and lets the suite run with no provider credentials configured. **There is no CI server** — the suite runs locally behind git hooks, so "runs without credentials" is a property of the local suite, not of a pipeline.
 NFR-9 (Determinism & time control): Simulator runs are reproducible — same seed, same sequence. Every bounded time window must be exercisable under a controlled clock rather than by waiting. Elapsed durations and deadlines use a **monotonic** clock; recorded facts use **wall clock**; a durable deadline crossing processes or services uses wall clock too.
 NFR-10 (Payment data handling): Payment-method tokens are never logged, echoed in API responses, or **persisted at all** (AD-42); provider API keys live in environment configuration, never in source or fixtures.
 
@@ -214,7 +222,7 @@ capability whose mechanism lands early and whose full behaviour lands with a lat
 | FR-46 | **1** + **4** + **5** + **6** | E1: health + metrics per service from the first commit (CAP-36 enabler). E4: dashboards and the fixed KPI definitions. E5: money gauges and refused-requests-by-reason. E6: audit ingest rate |
 | FR-47 | 7 | Local Kubernetes deployment |
 | FR-48 | 1 | Per-request identity, trusted as-is |
-| FR-49 | **7** | The Simulator is a containerized load generator delivered once, in Epic 7. Its "in-process test fixture" form is not built as a component: the deterministic scenarios earlier epics need are ordinary test fixtures shipping inside the stories they prove (see *Testing policy*) |
+| FR-49 | **7** | The Simulator is a containerized load generator delivered once, in Epic 7 — which is now what FR-49 itself says, the earlier in-process-fixture form having been dropped from the PRD. The deterministic scenarios earlier epics need are ordinary test fixtures shipping inside the stories they prove (see *Testing policy*) |
 | FR-50 | 7 | Live operational dashboard |
 | FR-51 | 5 | Money-outstanding admission guard, both arms |
 

@@ -72,10 +72,12 @@ So that I can watch rides and drivers move rather than reading infrastructure me
 **Then** the dashboard consumer holds them, consuming in its own consumer group per replica, on the
 same fan-out-and-filter routing (AD-51)
 
-**Given** this dashboard and the Grafana dashboards of Story 4.9
-**When** they are compared
-**Then** they are distinct: this one shows **domain and business state**, those show infrastructure
-metrics (FR-50, FR-46)
+**Given** this dashboard's data source
+**When** it is traced
+**Then** it reads domain counts from the event stream and **queries no Prometheus metric**, keeping it
+distinct from the Grafana dashboards of Story 4.9
+**And** the two are never merged: this one shows **domain and business state**, those show
+infrastructure metrics (FR-50, FR-46)
 
 **Given** the dashboard disabled entirely
 **When** the rest of the system runs
@@ -170,10 +172,11 @@ So that it is a system rather than a pile of local processes.
 and the dashboard
 **And** disabling Tier 3 breaks nothing and loses no data (AD-48)
 
-**Given** the deployment target
-**When** it is examined
-**Then** it is a **local** cluster
-**And** no cloud vendor is used at any point (NFR-7)
+**Given** the manifests under `deploy/`
+**When** they are inspected
+**Then** they reference no cloud-vendor resource, registry, load-balancer class or credential — the
+target is a **local** cluster
+**And** no cloud vendor is used at any point in the project (NFR-7)
 
 ### Story 7.5: Deployment is reconciled from git
 
@@ -261,13 +264,14 @@ and scale narratives are the project's stated secondary deliverable (Goals)
 **When** the system is under stress load
 **Then** they still hold — no driver is ever double-booked (NFR-1, FR-17)
 
-**Given** the scale target
-**When** its nature is stated
-**Then** it is a milestone to reach, not sustained production traffic to hold (NFR-2)
-
 **Given** constrained machine resources
 **When** the run is set up
 **Then** Tier 3 may be disabled, which is what the tiering exists to permit (AD-48)
+
+> **What the scale target is, and is not.** NFR-2's 20k drivers / 200k riders is a **milestone to
+> reach**, not sustained production traffic to hold. The run exists to surface bottlenecks and set the
+> capacity values AD-47 leaves underived; nothing in the system is required to stay at that load, and
+> no acceptance criterion anywhere should be read as demanding it (NFR-2).
 
 > **Decide when detailing: which environment the stress run targets.** The roadmap sequences it after
 > the Kubernetes deploy, but a single-machine kind cluster running the full stack *and* 20k simulated

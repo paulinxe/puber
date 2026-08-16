@@ -1,6 +1,6 @@
 ---
 status: final
-readiness: 'READY — conditional (0 critical, 22 actionable issues)'
+readiness: 'READY — conditional (0 critical, 12 actionable, 2 major; NEW-1, QUAL-2, QUAL-5 resolved; NEW-2 closed by decision)'
 stepsCompleted:
   - step-01-document-discovery
   - step-02-prd-analysis
@@ -8,6 +8,7 @@ stepsCompleted:
   - step-04-ux-alignment
   - step-05-epic-quality-review
   - step-06-final-assessment
+  - re-assessment-2026-08-16
 documentsIncluded:
   prd:
     - _bmad-output/planning-artifacts/prds/prd-puber-2026-08-02/prd.md
@@ -20,7 +21,7 @@ documentsIncluded:
   architecture:
     - _bmad-output/planning-artifacts/architecture/architecture-puber-2026-08-03/ARCHITECTURE-SPINE.md
   epics:
-    - _bmad-output/planning-artifacts/epics.md
+    - _bmad-output/planning-artifacts/epics/  # sharded 2026-08-16; epics.md deleted
   ux: []
   flows:
     - _bmad-output/planning-artifacts/prds/prd-puber-2026-08-02/flows.html
@@ -762,3 +763,210 @@ Address items 1–6 before the first commit; the rest are sequenced against the 
 **Assessed by:** Implementation Readiness workflow (Product Manager review)
 **Artifacts assessed:** PRD (`prd.md` + `addendum.md`), SPEC kernel, `ARCHITECTURE-SPINE.md`, `epics.md` (7 epics / 59 stories / 414 acceptance criteria), `flows.html`
 **UX:** N/A — backend-only product, confirmed by user
+
+---
+---
+
+# Re-Assessment — 2026-08-16 (second pass)
+
+Triggered by the user reporting the findings fixed. **Every claim was re-verified against the files on disk, not accepted on report.** Structural changes since the first pass are material and are covered first.
+
+## Structural changes since the first pass
+
+**The epics were sharded.** `epics.md` (3,299 lines) is gone — deleted in commit `58d0232` — and replaced by `_bmad-output/planning-artifacts/epics/`: `index.md`, `overview.md`, `requirements-inventory.md`, `epic-list.md`, and one file per epic. No duplicate monolith remains, so the whole/sharded conflict this workflow exists to catch does not apply.
+
+**Shard fidelity verified mechanically** against the pre-shard monolith at commit `e22bf20`:
+
+| Measure | Monolith | Shards | Result |
+|---|---|---|---|
+| Stories | 59 | 59 | ✅ identical sets (diffed by title) |
+| Given/When/Then blocks | 428 | 428 | ✅ |
+| Blockquote note lines | 178 | 178 | ✅ |
+| Per-epic story counts | 4/7/16/9/11/6/6 | 4/7/16/9/11/6/6 | ✅ sums to 59 |
+
+**No content was lost or mangled in the split**, and `index.md` correctly links every epic and every story. This was checked deliberately rather than assumed.
+
+**Three correction logs were produced** — `prd-corrections-2026-08-16.md`, `spine-corrections-2026-08-16.md`, `specs/spec-puber/spec-corrections-2026-08-16.md` — and applied. The PRD grew 43.5→50.3 KB, the spine 70.2→78.1 KB, SPEC 33.0→36.1 KB.
+
+**Work well beyond this report's findings was done.** A separate PRD-vs-spine validation pass found eleven requirements where the PRD had never been reconciled against the architecture run — FR-6, FR-10, FR-12, FR-26, FR-27, FR-45, FR-46, FR-51, NFR-3, NFR-4, NFR-10 — plus defects in §2, §5 and §6. All are applied and spot-verified. The spine gained **AD-60** (location-ping stream) and **AD-61** (rider-visible payment outcome), and **AD-5** was rewritten. This is a materially stronger chain than the one assessed in the first pass, and most of it was not in my punch list.
+
+## Verification results — the 22 original findings
+
+### ✅ Fixed and verified (9)
+
+| ID | Finding | Evidence on disk |
+|---|---|---|
+| **GAP-3** | PRD FR-51 diverged from Story 5.11 | **All four defects closed.** FR-51 now anchors both arms on *"the rider's most recent ride and that ride's single payment"*, fixes evaluation order *"(a) before (b)"*, restricts arm (a) to a `COMPLETED` anchor with `CANCELLED`/`NO_DRIVER`/`PAYMENT_FAILED` explicitly never refusing, adds the one-hour bound measured from first capture request, and replaces the self-contradiction with *"Each refusal clears on its own, and that is the entire clearing mechanism."* |
+| **GAP-5** | PRD §8 claimed "None outstanding" | §8 now carries a four-row table of open decisions, each pointing at the story that owns it |
+| **GAP-8** | FR-49's in-process Simulator form | Clause deleted; *"delivered once, as a standalone containerized load generator, in the final phase."* Zero occurrences of "in-process test fixture" remain in the PRD |
+| **W-2** | Spine did not know FR-51 existed | `binds: FR-1–FR-51`, `scope` updated, `FR-51` now appears 5× |
+| **GAP-1** | FR-46 payment success rate had no story | New AC in Story 5.5: *"it is the proportion of payments reaching a settled outcome against those that did not, derived from the `payments` table… throughput rather than money, so it is read and alerted separately from capture loss"* |
+| **QUAL-1** | Dispatch `drivers` table created by no story | Story 2.2 now creates it via Flyway with the full column list — id, declared status (`OFFLINE｜AVAILABLE｜BUSY`), display identity, position snapshot, `last_seen_at` |
+| **QUAL-3** | `fare_rules` creation implied only | Story 1.3 now has an explicit creation AC with columns |
+| **QUAL-8** | An AC presumed a CI environment nobody built | **Resolved by decision, correctly.** There is no CI server — the suite runs locally behind git hooks with a PR to `dev`. PRD NFR-8's CI clause is gone; all four story-level CI references were removed |
+| **UX-1** | The one UI had no route to reach it | Settled by the AD-5 rewrite. Story 7.2 AC: *"it is **not** a gateway route — the gateway carries actor-facing traffic only, and operator and observability surfaces are reached directly inside the cluster, as Prometheus and Grafana are"* |
+
+### 🟢 Downgraded — no longer a gap, now a tracked decision (1)
+
+**QUAL-6 — Story 5.9 (reconciliation).** The acceptance criteria are unchanged; the story is still not implementation-ready. But it now carries a substantial open-decision note that names *why* it is thin (*"its source is: AD-50, AD-58 and AD-59 specify the payment machine… while reconciliation has no AD of its own"*), poses five specific questions, states the binding constraint, and observes something the first pass missed: AD-54's oldest-retrying gauge only watches rows with `capture_requested_at` or `void_requested_at` stamped, so **an `AUTHORIZED` payment whose ride never reached a terminal state is watched by nothing — precisely the stranded case FR-40 exists for.** It is also listed in PRD §8. An invisible gap has become a scheduled decision with a checklist. That is the right outcome for something four epics away; it is not a fix.
+
+### ❌ Still open — verified unchanged (12)
+
+| ID | Sev | Finding | Verified state |
+|---|---|---|---|
+| **GAP-2** | 🟠 | FR-14 auto-completions not distinguishable on a read | `completed_by` still appears only as a written column (3.9, 3.10) and an internal read (5.8). Story 3.4 unchanged; no read surfaces it |
+| **GAP-4** | 🟡 | No story scales the driver population to 20k | No configurable seed count anywhere. Story 2.1 unchanged; NFR-2 still needs ~20k drivers that nothing creates |
+| **QUAL-2** | 🟠 | `current_ride_id` expand-only migration | Still appears **only** in Epic 2's preamble prose. No Epic 3 story AC performs it |
+| **QUAL-4** | 🟡 | Story 5.11 oversized | Still 17 AC blocks |
+| **QUAL-5** | 🟠 | Rationale-shaped acceptance criteria | Still exactly 20 |
+| **QUAL-7** | 🟡 | Missing error paths | Story 5.8 still has no AC rejecting a refund on a non-`CAPTURED` payment; Story 2.3 still has no unknown-driver / offline-driver / out-of-bounds heartbeat ACs |
+| **UX-2** | 🟡 | "active riders" undefined | Still undefined in the PRD glossary and restated verbatim in Story 7.2 |
+| **UX-3** | 🔵 | Dashboard failure states | Only *"disabled entirely"* is covered; socket drop and consumer lag are not |
+| **W-1** | 🟡 | `flows.html` absent from epics inputs | `index.md` `inputDocuments` still omits it, though the spine declares it as a source |
+| **GAP-6** | 🔵 | Milestone git tags | No story creates `v0.1`/`v0.2`/`v0.3`/`v1.0` |
+| **GAP-7** | 🔵 | CV/interview-narrative deliverable | No coverage |
+| — | 🔵 | Story 2.2's `SYSTEM`-actor AC untestable until 2.7 | Unchanged |
+
+## 🆕 New findings from this pass (2)
+
+**NEW-1 (🟠 Major) — `requirements-inventory.md` has three entries now stale against the corrected PRD.**
+The inventory carries a header claiming reconciliation against the corrected PRD and spine for eleven named requirements. I verified all eleven — FR-6, FR-10, FR-12, FR-26, FR-27, FR-45, NFR-3, NFR-4, NFR-10 spot-checked and correct. **Three requirements corrected in the later pass were not carried through:**
+
+| Entry | Inventory says | Corrected PRD / spine says |
+|---|---|---|
+| **FR-49** | *"In-process test fixture early, standalone containerized load generator later"* | The clause was **deleted** from the PRD this pass — delivered once, containerized, final phase |
+| **NFR-8** | *"…and CI without credentials"* | CI clause removed; there is no CI server |
+| **FR-7** | *"A capture still retrying is not yet an outcome"* | AD-61 requires it be reported as **settlement in progress** — never as uncaptured, never as nothing. Story 5.10 has this correctly; the inventory does not |
+
+*Why this matters more than it looks:* the inventory is the requirements text a story author reads — it sits in the epics directory, next to the stories. Three entries now contradict the PRD they were just reconciled against, and FR-49's stale line contradicts the epics' own Story 7.3 and their CAP-39 note. The reconciliation was real; it was scoped to a list written before the last three corrections landed.
+
+**NEW-2 (🟡 Minor) — Story 1.1 is now the largest story in the document at 19 AC blocks**, up from ~9 and past Story 5.11's 17. The Epic 1 fixes landed there. It is 2.7× the median, and it is the **first story anyone implements**. Worth a look at whether the test-harness ACs (AD-56 container-joined runner, sequential execution, real-Postgres-only) want to be their own story.
+
+**Also carried forward:** the inventory's FR-14 restatement drops the *"distinguishable both when serving a read and after the fact"* clause the PRD retains. That omission is why GAP-2 stayed invisible — the story author's copy of FR-14 does not contain the obligation.
+
+## Revised Status
+
+# ✅ READY — conditional (unchanged verdict, materially improved chain)
+
+| | First pass | This pass |
+|---|---|---|
+| 🔴 Critical | 0 | **0** |
+| 🟠 High / Major | 7 | **5** |
+| 🟡 Medium | 5 | **6** |
+| 🔵 Low / Minor | 10 | **5** |
+| **Total actionable** | **22** | **16** |
+| Fixed and verified | — | **9** |
+| Downgraded to tracked decision | — | **1** |
+| New findings | — | **2** |
+
+**Nine of twenty-two closed, one converted into a tracked decision, twelve untouched, two new.** Net position is better than the arithmetic suggests: the nine fixed include every finding that touched an **upstream** document (PRD, spine), which were the ones flagged as most expensive to leave — upstream errors get re-derived by whoever reads them next. Everything still open is downstream, in the epics, where it is cheap to correct and mostly lands in Epics 2, 3, 5 and 7.
+
+Two of the six pre-first-commit items are the ones still worth doing before code exists: **NEW-1** (three stale inventory entries, because that file is what a story author reads) and **QUAL-5** (20 rationale-shaped ACs, because a dev agent cannot close *"When their separation is questioned"*).
+
+### Recommended next actions
+
+**Now — the inventory is the live requirements text:**
+1. **NEW-1** — sync `requirements-inventory.md` FR-49, NFR-8 and FR-7 to the corrected PRD, and restore FR-14's read-side clause.
+2. **QUAL-5** — relocate the 20 rationale ACs into the `>` note blocks the shards already use well.
+
+**Before Epic 2:** GAP-4 (configurable fixture driver count) · the Story 2.2 `SYSTEM`-actor AC · QUAL-7b (heartbeat edge cases).
+**Before Epic 3:** QUAL-2 (`current_ride_id` migration on Story 3.5) · GAP-2 (decide and record whether `completed_by` is exposed on reads).
+**Before Epic 5:** QUAL-6 (answer Story 5.9's five questions — and if the answer introduces mechanism, put it in the spine as an AD, as the note itself suggests) · QUAL-4 (consider splitting 5.11) · QUAL-7a (refund rejection path).
+**Before Epic 7:** UX-2 (define "active riders") · UX-3 (dashboard failure states).
+**Housekeeping:** W-1 (`flows.html` into epics inputs) · GAP-6 (milestone tags) · GAP-7 (narrative deliverable) · NEW-2 (Story 1.1 sizing).
+
+---
+
+**Re-assessment date:** 2026-08-16 (second pass)
+**Method:** all 22 findings re-verified against files on disk; shard fidelity diffed against the pre-shard monolith at `e22bf20`; no claim accepted on report
+
+---
+
+## NEW-1 — resolved 2026-08-16
+
+`requirements-inventory.md` synced to the corrected PRD and spine. Six edits:
+
+| Entry | Was | Now |
+|---|---|---|
+| **FR-7** | *"A capture still retrying is not yet an outcome."* | Carries AD-61 in full — the four outcomes are the only ones to show; a live pursuit is surfaced as **settlement in progress**, never as uncaptured and never as nothing; the answer is read from `payment-service` as owner and **never from AD-59's advisory fail-open projection**; `UNAVAILABLE` → 503 when the owner is down |
+| **FR-14** | Dropped the read-side clause | Restores *"distinguishable from a genuine one **both when serving a read and after the fact**"*, plus AD-18's single-state rule |
+| **FR-49** | *"In-process test fixture early, standalone containerized load generator later."* | *"Delivered once, as a standalone containerized load generator, in the final phase… **nothing earlier depends on it** and no in-process fixture form is built"* |
+| **NFR-8** | *"…and CI without credentials."* | *"…lets the suite run with no provider credentials configured. **There is no CI server** — the suite runs locally behind git hooks, so 'runs without credentials' is a property of the local suite, not of a pipeline"* |
+| **FR Coverage Map, FR-49 row** | Argued against an in-process form as a deviation from the PRD | States that the PRD now says the same thing, so it is no longer a deviation |
+| **Header note** | Recorded the first reconciliation only | Adds a second-sync note naming all four entries and why the first pass missed them — its list was written before the last PRD corrections landed |
+
+**One further stale item found and fixed while sweeping**, outside the inventory:
+
+- **`epic-3-the-ride-loop.md`** — Story 3.3's scope-boundary note named AD-54's remaining reason labels as *"unsettled payment and capture-failed cooldown"*. The corrected vocabulary is **"most recent completed ride not yet paid"** (AD-59 arm 1) and **"cooldown after `CAPTURE_FAILED`"** (AD-59 arm 2). This one mattered more than a wording nit: AD-59 binds the API's reason tokens and the metric's labels to the same values, so a label named one way in the story that establishes the closed enum and another way in the story that extends it is precisely the disagreement that rule exists to prevent. The note now carries the verbatim names and says why they must not be paraphrased.
+
+**Verification after the edits:**
+
+| Check | Result |
+|---|---|
+| Removed-phrase sweep across all 11 shards (7 phrases the PRD corrections deleted) | ✅ all clean |
+| Stories | 59 ✅ |
+| Given/When/Then blocks | 437 ✅ unchanged |
+| FR entries / NFR entries in inventory | 51 / 10 ✅ complete, none missing |
+| FR Coverage Map rows | 51 ✅ |
+
+**Revised total: 15 actionable issues** (was 16). Major count drops to 4.
+
+---
+
+## QUAL-2 and QUAL-5 — resolved 2026-08-16
+
+### QUAL-2 — `current_ride_id` migration now owned by a story
+
+Added as the **first acceptance criterion of Story 3.5**, the first story that needs the column:
+
+> **Given** `matching-service`'s dispatch `drivers` table as Story 2.2 created it
+> **When** this story's Flyway migration runs
+> **Then** it adds `current_ride_id` — a nullable UUID naming the ride currently engaging the driver — as an **expand-only** migration: a column is added, nothing existing is dropped, renamed or retyped
+> **And** the migration applies cleanly over rows seeded by Epic 2, and a second start applies nothing and fails nothing (AD-15, Migrations convention)
+
+Epic 2's preamble, which previously said only *"Epic 3 extends it with `current_ride_id`"*, now names **Story 3.5** so the reference resolves to an owner rather than to an epic. With QUAL-1 fixed earlier, **every table and column in the system is now created by a story's acceptance criteria** rather than by prose.
+
+### QUAL-5 — rationale-shaped acceptance criteria
+
+The original count of 20 came from a fixed phrase list. A broader sweep for passive review-activity *When* clauses found **12 more**, for **32 total**. Each was judged individually rather than relocated wholesale:
+
+| Disposition | Count | Rationale |
+|---|---|---|
+| **Restated as testable criteria** | 24 | The *Then* already asserted something checkable; only the trigger was wrong |
+| **Moved to `>` note blocks** | 5 | Pure design rationale with nothing to verify |
+| **Left as-is** | 3 | Legitimate process criteria — see below |
+
+**Restated (24).** In each case the assertion was preserved verbatim and only the trigger made concrete. Representative examples:
+
+- *"When their separation is questioned, Then they remain distinct states"* → **"When the transition table and every query over payment outcomes are inspected, Then they are two distinct terminal states, and no query counts one as the other."**
+- *"When its finality is asserted, Then it is terminal"* → **"When its outgoing transitions are inspected, Then it has none… and any transition attempted out of it raises."**
+- *"When stranded-looking holds are considered, Then there is no automatic voiding sweep"* → **"Given an `AUTHORIZED` hold far older than any plausible trip whose ride has not reached a terminal state, When the settlement worker runs, Then it does not act on it… and no claim predicate anywhere reads a hold's age."**
+- *"When they are compared with the metric labels, Then they are the same values"* → **"When a test compares the two sets, Then they are the same values, drawn from the single closed enum of Story 3.3 rather than declared twice."**
+- *"When it is examined, Then it is a parallel consumer, never a copy job"* → **"When the ingest path is traced, Then it reads from Kafka only, and no code path reads the Postgres `audit_events` table to populate it."**
+- *"When the design is reviewed, Then surge is one ratio-derived multiplier and nothing more"* → **"When its inputs are inspected, Then they are exactly two… rider identity, time of day, and any geographic cell are not inputs."**
+
+**Moved to notes (5)** — content preserved in full, each placed on the story it belongs to: the `NO_DRIVER` window's AD-45 justification (Story 3.13, now explicitly contrasted with the authorization wait that deliberately has no bound); which money gauge leads during an outage (Story 5.5); the 1.3M/day ping-volume reasoning (Story 6.5); the `REQUESTED` semantic note, which was instead **restated** against the matching worker; and NFR-2's milestone-not-sustained-traffic framing (Story 7.6).
+
+**Left as-is (3), deliberately.** `epic-4:118` (partition counts), `epic-4:492` (metric source), `epic-6:276` (storage ceiling). Each reads *"When \<value\> is chosen"* — a real decision event at detailing time carrying a binding rule about **how** it must be derived (*"the reasoning is recorded alongside them"*, *"durable state is read from the owning table"*, *"derived as ingest rate × the window to retain… rather than guessed now"*). These are process criteria that can be complied with or violated, not review prompts. Removing them would delete a genuine constraint.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| Rationale-shaped *When* clauses remaining | **3** (the deliberate process criteria), down from 32 |
+| Stories | 59 ✅ unchanged |
+| Given/When/Then blocks | **434** — 437 + 1 (QUAL-2) − 4 (moved to notes) ✅ reconciles exactly |
+| Note blocks | 40 |
+| Content lost | **None** — every moved block's text is preserved in its note |
+
+**Revised total: 13 actionable issues.** Major count drops to **2** — GAP-2 (`completed_by` on reads) and QUAL-6 (Story 5.9, tracked as an open decision).
+
+---
+
+## NEW-2 — closed by decision, 2026-08-16
+
+**Story 1.1 stays at 19 acceptance criteria.** Reviewed and accepted by the user; not to be re-raised.
+
+The finding was a sizing observation, not a defect — the story has no correctness, traceability or dependency problem. The counter-argument is in the story's own title: *"Containerized service, **proven against the real stack**."* The AD-56 test-harness criteria are within its stated scope by design rather than appended to it, and splitting them would produce a second story whose output nothing can be demonstrated against — the bootstrap and the means of proving it are one deliverable here.
+
+Revised total: **12 actionable issues, 2 major** (GAP-2, QUAL-6).

@@ -35,24 +35,24 @@ REFUNDED`, plus terminals `VOIDED`, `FAILED` and `CAPTURE_FAILED`
 **And** illegal transitions raise rather than no-op, which is what makes a replayed provider webhook
 safe (FR-35, AD-11, AD-50)
 
-**Given** `CAPTURED`
-**When** its meaning is asserted
-**Then** it means the money moved
-**And** the payment stays `AUTHORIZED` for the whole capture pursuit including every retry, so there
-is no `CAPTURING` state to invent
-**And** retry bookkeeping is columns on the row, never a state (AD-50)
+**Given** the declared payment transition table and the `payments` columns
+**When** they are inspected
+**Then** no `CAPTURING` state exists — a payment under active capture pursuit reads `AUTHORIZED`
+through every retry, and `CAPTURED` is written only once the money has moved
+**And** retry bookkeeping lives in columns on the row, never in a state (AD-50)
 
 **Given** `FAILED` and `CAPTURE_FAILED`
-**When** their separation is questioned
-**Then** they remain distinct states — a deliberate divergence from AD-18's fold-provenance-into-a-column
-rule, because they differ in **kind**: `FAILED` is a ride that never happened and cost nothing, while
-`CAPTURE_FAILED` is a delivered trip whose money is gone
-**And** only the second is revenue loss, so collapsing them would hide a loss inside a non-loss (AD-50)
+**When** the transition table and every query over payment outcomes are inspected
+**Then** they are two distinct terminal states, and **no query counts one as the other** — capture
+loss (AD-54) counts `CAPTURE_FAILED` alone
+**And** this is a deliberate divergence from AD-18's fold-provenance-into-a-column rule, because they
+differ in **kind**: `FAILED` is a ride that never happened and cost nothing, `CAPTURE_FAILED` is a
+delivered trip whose money is gone, and only the second is revenue loss (AD-50)
 
 **Given** `CAPTURE_FAILED`
-**When** its finality is asserted
-**Then** it is terminal for this build
-**And** leaving it later would be a state-machine change — a newly declared transition or a second
+**When** its outgoing transitions are inspected
+**Then** it has none — it is terminal for this build, and any transition attempted out of it raises
+**And** leaving it later is therefore a state-machine change — a newly declared transition or a second
 payment for the ride — never a background job added quietly (AD-50)
 
 **Given** any payment state entry, `INITIATED` included
@@ -257,12 +257,12 @@ So that a slow provider is never mistaken for lost money, and lost money is neve
 `CAPTURE_FAILED`; **anything else — unreachable, timeout, 5xx, rate-limited, ambiguous — is not an
 outcome and reschedules** (AD-58, AD-50)
 
-**Given** an answer classified as **uncapturable**
-**When** it is examined
-**Then** the provider has reported the hold **expired**, **revoked**, or **cancelled** — one of those
-three, and nothing else qualifies
-**And** the system therefore holds a positive statement from the provider rather than an inference
-from silence, which is what makes this state terminal rather than a guess (FR-37, AD-50)
+**Given** a provider answer that is **not** expired, revoked or cancelled
+**When** it is classified
+**Then** it **never** yields `CAPTURE_FAILED` — only those three verdicts do, and nothing else
+qualifies
+**And** the terminal state therefore always rests on a positive statement from the provider rather
+than an inference from silence (FR-37, AD-50)
 
 **Given** an ambiguous answer
 **When** it is classified
@@ -285,15 +285,15 @@ from silence, which is what makes this state terminal rather than a guess (FR-37
 **And** the bound moves from the *number* of attempts to the *interval* between them, so an unbounded
 pursuit still presents a bounded request rate (AD-58, FR-37)
 
-**Given** a capture that cannot proceed
-**When** its handling is examined
-**Then** there is **no retry cap and therefore no dead-letter path** — AD-34's cap-then-dead-letter
-explicitly does not apply here
-**And** the row simply stays claimable, watched by the oldest-retrying gauge instead (AD-58, AD-55)
+**Given** a capture failing repeatedly without a provider verdict
+**When** the payment row is inspected after any number of attempts
+**Then** `dead_at` is never stamped and the row stays claimable — there is **no retry cap and
+therefore no dead-letter path**, and AD-34's cap-then-dead-letter explicitly does not apply here
+**And** the row is watched by the oldest-retrying gauge instead (AD-58, AD-55)
 
 **Given** a payment reaching `CAPTURE_FAILED`
-**When** the ride is examined
-**Then** the ride stays `COMPLETED`, because the trip did happen
+**When** the ride is read
+**Then** it is still `COMPLETED`, because the trip did happen
 **And** it is never routed to the ride machine's `PAYMENT_FAILED`, which would drop those rides out of
 every "completed rides" query (AD-50)
 
@@ -325,11 +325,11 @@ derived from the `payments` table alongside the money gauges
 **And** it is throughput rather than money, so it is read and alerted separately from capture loss
 (FR-46, AD-54, Metrics convention)
 
-**Given** the two gauges
-**When** they are read during an outage
-**Then** oldest-retrying is the leading indicator and the one to watch
-**And** capture loss only ever confirms the other gauge was read too late, because by the time a
-payment is `CAPTURE_FAILED` the money is already unrecoverable (AD-54)
+> **Which gauge to watch, and in what order.** During a provider outage **oldest-retrying is the
+> leading indicator** — it moves while the money is still recoverable. Capture loss only ever confirms
+> that the other gauge was read too late: by the time a payment reaches `CAPTURE_FAILED` the money is
+> already gone. Both alert independently, but an alert on capture loss is a post-mortem, not a
+> warning (AD-54).
 
 ### Story 5.6: Holds are released on rides that delivered no trip
 
@@ -374,17 +374,19 @@ with `:now` bound from the `Clock` strategy
 already gone also settles as `VOIDED`**, because the outcome the void wanted has been achieved
 **And** there is no `VOID_FAILED` to invent; anything else reschedules (AD-58)
 
-**Given** the system
-**When** stranded-looking holds are considered
-**Then** there is **no automatic voiding sweep** — a hold that merely looks stale may belong to a
-genuinely long live trip, and voiding it would leave a completed ride with nothing to capture
-**And** the worker acts only on an explicit stamp written by a terminal ride event, never on a hold's
-age (AD-44)
+**Given** an `AUTHORIZED` hold far older than any plausible trip whose ride has **not** reached a
+terminal state
+**When** the settlement worker runs
+**Then** it does not act on it — there is **no automatic voiding sweep**, and no claim predicate
+anywhere reads a hold's age
+**And** this is because such a hold may belong to a genuinely long live trip, and voiding it would
+leave a completed ride with nothing to capture (AD-44)
 
-**Given** any hold
-**When** its possible endings are enumerated
-**Then** there are exactly three — captured, voided, or uncapturable
-**And** a hold never sits in limbo, which is asserted in tests and monitored by an alert (AD-44)
+**Given** any hold that has reached a terminal state
+**When** that state is read
+**Then** it is exactly one of `CAPTURED`, `VOIDED` or `CAPTURE_FAILED` — three endings and no fourth
+**And** that no hold sits in limbo is asserted by a test over the payment machine and monitored by an
+alert in production (AD-44)
 
 ### Story 5.7: Provider webhooks are verified and applied once
 
@@ -437,12 +439,12 @@ So that money taken in error can be given back even though riders cannot request
 **When** it arrives
 **Then** it is processed idempotently and the result reconciles (FR-39)
 
-**Given** the trigger
-**When** it is examined
-**Then** there is **no rider-facing way to request a refund** — it is internal only, exercised by
-tests and the Simulator (FR-39, Non-goals)
-**And** the trigger is **not a gateway route**: operator surfaces are reached directly inside the
-cluster, which is a stronger boundary than exposing a route (AD-5)
+**Given** the gateway's route table and every rider-facing endpoint
+**When** they are inspected
+**Then** none reaches the refund trigger — there is **no rider-facing way to request a refund**, and
+the trigger is **not a gateway route**
+**And** it is reached directly inside the cluster as operator surfaces are, which is a stronger
+boundary than exposing a route; it is exercised by tests and the Simulator (FR-39, Non-goals, AD-5)
 
 **Given** the refund action
 **When** it is recorded
@@ -455,8 +457,8 @@ cluster, which is a stronger boundary than exposing a route (AD-5)
 distinct state (AD-18, FR-14)
 
 **Given** `CAPTURED`
-**When** its exits are examined
-**Then** a deliberate refund is the only one (AD-50)
+**When** its outgoing transitions are inspected
+**Then** `REFUNDED` is the only one, reachable solely by a deliberate operator-triggered refund (AD-50)
 
 ### Story 5.9: Reconciliation surfaces what delivery missed
 
@@ -642,11 +644,13 @@ stable RFC 9457 `type` URI whose final segment is that same token
 **And** `detail` prose is never the discriminator, since `FAILED_PRECONDITION` → 409 alone cannot tell
 the two payment refusals apart (AD-59, AD-38)
 
-**Given** those tokens
-**When** they are compared with the metric labels
-**Then** they are the **same values** AD-54 counts by
-**And** a reason added, split or renamed changes both together, so the API and the metric can never
-disagree about why a rider was turned away (AD-59)
+**Given** the reason tokens surfaced in gRPC error details and the `reason` label values on the
+refusal counter
+**When** a test compares the two sets
+**Then** they are the **same values**, drawn from the single closed enum of Story 3.3 rather than
+declared twice
+**And** a reason added, split or renamed therefore changes both together, so the API and the metric
+can never disagree about why a rider was turned away (AD-59, AD-54)
 
 **Given** the refusal counter
 **When** the two payment reasons are added
