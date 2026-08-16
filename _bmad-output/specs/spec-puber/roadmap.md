@@ -14,11 +14,11 @@ Companion to `SPEC.md`. Five phases across a 32-week plan; phase-level shape onl
 
 ## Week one, before any phase
 
-Three capabilities are tagged `enabler` in `SPEC.md` and do not belong to the phase their subject matter suggests. They are built first, because each is cheap to establish and expensive to retrofit:
+Two capabilities are tagged `enabler` in `SPEC.md` and do not belong to the phase their subject matter suggests. They are built first, because each is cheap to establish and expensive to retrofit:
 
 - **CAP-36 — health and metrics per service.** The spine and the PRD both say *from the first commit, not retrofitted*, while observability as a phase lands in weeks 8–16. Both are true: the dashboards and the fixed KPI definitions are phase 2, but a service that ships uninstrumented in phase 1 has already broken the rule.
 - **CAP-40 — the clock abstraction.** Phase 1 already contains the offer timeout, the `NO_DRIVER` budget and the staleness windows. Every one of them must be exercisable by advancing a clock rather than by sleeping, from the first test that touches them.
-- **CAP-39 — the Simulator**, in its in-process fixture form. Phase 1's matching correctness is proven against it, so it is a phase-1 tool that merely grows into a phase-5 load generator.
+**CAP-39 — the Simulator — was previously listed here and is not.** The reasoning that placed it in week one was that phase 1's matching correctness is proven against it. That correctness lands in phase 1's *matching* work, and it is proven by **deterministic test scenarios rather than synthetic traffic**: two threads, one ride, one latch, the clock advanced deliberately. A hand-written scenario is more deterministic than a seeded generator, because it contains no randomness to reproduce in the first place. Nothing before phase 5 therefore depends on the Simulator existing, which is what `enabler` means — so it is scheduled as an ordinary phase-5 capability and delivered once, as a component, where its actual job begins: surfacing **emergent** behaviour under mixed load that nobody wrote a scenario for, and making the deployed system watchable while it happens. Seeded reproducibility serves re-running a surprise, not asserting a known invariant.
 
 Properties (`CAP-13`, `CAP-20`, `CAP-23`, `CAP-24`, `CAP-31`) are not scheduled at all. They attach as acceptance criteria to the stories that could violate them, in whatever phase those stories land.
 

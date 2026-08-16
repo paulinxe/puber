@@ -196,9 +196,9 @@ Each capability carries its **kind**, because the three do not decompose into wo
 
 ### Simulation and testability
 
-- **CAP-39** — Simulator generates the load (FR-49, NFR-2) · enabler
+- **CAP-39** — Simulator generates the load (FR-49, NFR-2) · slice
   - **intent:** Synthetic riders, drivers, and traffic stand in for real users at any scale the system needs to be proven at.
-  - **success:** Runs as an in-process test fixture early and a standalone containerized generator later, against automatically seeded fixture drivers; supplies payment-method tokens — including deliberately-declining test tokens so the authorization-failure path is routinely exercised; generates coordinates relative to the configured bounds; ramps from fixture scale (~30 drivers) to the stress scale of NFR-2 (~20k drivers, ~200k riders) and surfaces concrete bottlenecks — connection pools, index gaps, Kafka partition throughput, cache hot-key contention.
+  - **success:** Runs as a containerized generator against automatically seeded fixture drivers; supplies payment-method tokens — including deliberately-declining test tokens so the authorization-failure path is routinely exercised; generates coordinates relative to the configured bounds; ramps from fixture scale (~30 drivers) to the stress scale of NFR-2 (~20k drivers, ~200k riders) and surfaces concrete bottlenecks — connection pools, index gaps, Kafka partition throughput, cache hot-key contention.
 
 - **CAP-40** — Reproducible runs under a controlled clock (NFR-9) · enabler
   - **intent:** A race or timing failure can be re-run rather than merely observed once, and no test waits in real time.
