@@ -479,6 +479,93 @@ So that I can start the system, confirm it is alive, and trust that every later 
 **Then** it uses the real Postgres instance
 **And** no in-memory substitute, fake repository, or alternative SQL dialect is used anywhere (AD-10)
 
+**Given** the repository root
+**When** it is set up
+**Then** a `Makefile` provides a build target that builds the project
+**And** it **orchestrates each service's own Gradle wrapper** rather than becoming a root build, so
+every service stays independently buildable as if it lived in its own repository (AD-52)
+**And** every target it runs executes in Docker, requiring no host JDK (NFR-7)
+
+**Given** the build target
+**When** it runs
+**Then** it installs a `pre-commit` and a `pre-push` git hook
+**And** the hook sources are **tracked in the repository** rather than living only in `.git/hooks`,
+which is not version-controlled — so a fresh clone plus a build restores both gates
+
+**Given** one repository holding all five services
+**When** the hooks are installed
+**Then** there is **one hook of each kind**, because a repository has a single hooks path
+**And** per-service behaviour comes from the hook **dispatching on which services a change touches**,
+never from multiple hooks
+
+**Given** a commit touching one service
+**When** `pre-commit` runs
+**Then** it runs that service's **unit tests only**, so the gate stays fast enough to be tolerated
+**And** a failure **blocks the commit**
+
+**Given** a commit touching the versioned contracts directory
+**When** `pre-commit` runs
+**Then** it runs **every** service's unit tests
+**And** this is because those `.proto` and event-schema files are copied into all services at build
+time, so a change there is a change to all of them (AD-52)
+
+**Given** a push
+**When** `pre-push` runs
+**Then** it runs the **full suite**, including the integration tests against the Compose stack
+**And** a failure **blocks the push** — the boundary immediately before the PR to `dev`, which is
+where the gate actually has to hold
+
+**Given** either hook
+**When** it invokes tests
+**Then** it runs them through the containerized test runner above
+**And** it never assumes a JDK on the host (NFR-7, AD-56)
+
+**Given** the build
+**When** it runs
+**Then** static analysis runs as part of it
+**And** a violation **fails the build** rather than producing a report nobody reads
+
+**Given** static analysis
+**When** it is wired in
+**Then** it runs inside the build container, requiring no host JDK and no IDE plugin (NFR-7)
+**And** it is configured per service without introducing a root build, following AD-52's pattern of
+one versioned configuration source copied in at build time rather than a shared build plugin that
+couples the services
+
+**Given** the `pre-commit` hook
+**When** it runs
+**Then** the fast static checks run alongside the unit tests, since they cost approximately nothing
+
+> **Investigate when this story is detailed: which analyzers, and whether they run on Java 25.** The
+> rules to enforce are **already written** across Stories 1.1 and 1.2 — this is a question of what
+> executes them, not what they should be:
+>
+> | Rule already specified | What would enforce it |
+> | --- | --- |
+> | AD-8 one-way dependency: `model` imports nothing framework-flavoured, `service` imports Strategy interfaces but no implementation, nothing imports `controller` | **ArchUnit** is the Java ecosystem's standard for asserting package dependency rules as ordinary tests, and is the strongest candidate here |
+> | AD-7 package structure, and `model` never named `entity` | ArchUnit |
+> | AD-57 Liskov: no caller inspects a Strategy's concrete type | ArchUnit — assert no `instanceof` against strategy implementations |
+> | NFR-9 / AD-58: no `Instant.now()`, `System.currentTimeMillis()`, or SQL `now()` outside the `Clock` | ArchUnit, or a compile-time checker such as Error Prone with a custom rule |
+> | NFR-10 / AD-42: tokens never logged, provider keys never in source | A secret scanner over the repository, plus a rule that the masked token type is never passed to a logger |
+>
+> Broader candidates worth a look while there: **SpotBugs**, **Error Prone**, **PMD**, **Checkstyle**,
+> **Spotless** (formatting), **NullAway**, and **OWASP Dependency-Check**.
+>
+> **Verify Java 25 and Spring Boot 4.1 support rather than assuming it.** The stack pins very recent
+> versions, and analyzer support for a new JDK routinely lags by months — the same discipline the
+> spine applied to its own Stack table, whose versions were *"verified against upstream release data
+> at authoring, not asserted from memory."* An analyzer that cannot parse Java 25 is not a candidate,
+> however good it is.
+
+> **Why the split, recorded so it is not "simplified" later.** The gate exists because a suite that
+> runs only when someone remembers it eventually stops being run — AD-56 names flaky concurrency
+> tests *"the worst possible failure here"* precisely because people *"learn to re-run and ignore"*
+> them. That same reasoning is why the **full** suite is not on `pre-commit`: by Epics 5–6 it runs
+> sequentially against Postgres, Kafka, Redis and ClickHouse, and a multi-minute gate on every commit
+> is one that gets bypassed with `--no-verify` inside a week. A bypassed hook protects nothing while
+> reporting success, which is worse than no hook. Fast checks where commits are frequent, the full
+> suite where it is cheap to wait and expensive to be wrong.
+
 > **Note on ordering.** The truncate-and-reseed discipline of AD-56 is deliberately *not* here: with
 > no owned tables and no seed data yet, it would assert over an empty set. It is introduced in Story
 > 1.3 against `fare_rules` — the first seeded state — and extended in Story 2.1 to the fixture
@@ -523,6 +610,11 @@ I want the fare for a trip computed from a published formula over configurable r
 So that the price I am quoted is explainable and consistent rather than arbitrary.
 
 **Acceptance Criteria:**
+
+**Given** a first start after this story
+**When** Flyway migrations run
+**Then** a `fare_rules` table is created holding base, per-km, per-minute and the surge multiplier
+**And** it is owned by `matching-service` (AD-3)
 
 **Given** a `fare_rules` row carrying base, per-km, per-minute and surge
 **When** a fare is computed for a pickup/dropoff pair
@@ -663,6 +755,13 @@ I want to declare when I am working and when I have stopped,
 So that I receive offers only when I have chosen to be available.
 
 **Acceptance Criteria:**
+
+**Given** a first start after this story
+**When** `matching-service`'s Flyway migrations run
+**Then** its dispatch `drivers` table is created, holding driver id, declared status
+(`OFFLINE | AVAILABLE | BUSY`), the driver's display identity, a position snapshot and `last_seen_at`
+**And** it is a separate table in a separate database from `driver-service`'s identity table, with no
+foreign key between them (AD-1, AD-3, AD-16)
 
 **Given** a seeded driver who is `OFFLINE`
 **When** they go online
@@ -930,7 +1029,8 @@ So that I am not left waiting on a payment provider before I even know my ride e
 
 **Given** that implementation
 **When** it is wired
-**Then** it is confined to phases before `payment-service` exists and to CI
+**Then** it is confined to phases before `payment-service` exists, and to test runs that exercise the
+ride path without payments
 **And** it is never selectable as a runtime degradation for a payment outage (AD-43)
 
 > **Scope boundary — the payment-method token is deliberately not here.** FR-2 defines it as part of
@@ -1023,6 +1123,12 @@ So that I always know where my ride is and what happened on the ones before it.
 **Given** a ride identifier
 **When** the owning rider reads it
 **Then** current state and details are returned (FR-5)
+
+**Given** a `COMPLETED` ride
+**When** the rider reads it
+**Then** the response says whether the driver completed it or the system did
+**And** an auto-completed trip is therefore distinguishable **when serving a read**, not only in the
+audit trail after the fact (FR-14, AD-18)
 
 **Given** ride detail
 **When** it is requested repeatedly
@@ -2030,7 +2136,7 @@ payment for the ride — never a background job added quietly (AD-50)
 
 As an engineer,
 I want the provider behind a strategy whose stub can produce every settlement outcome on demand,
-So that the stress run and CI exercise the real payment path rather than code that exists only in tests.
+So that the stress run and credential-free test runs exercise the real payment path rather than code that exists only in tests.
 
 **Acceptance Criteria:**
 
@@ -2065,9 +2171,10 @@ machine in the flow
 **And** never by skipping the payment path, which would stress-test code that does not exist in
 production (NFR-8, AD-43)
 
-**Given** CI with no provider credentials
-**When** the suite runs
-**Then** it runs against the stub and passes (AD-43)
+**Given** no provider credentials configured in the environment
+**When** the full suite runs
+**Then** it runs against the stub and passes
+**And** a fresh clone is therefore testable without obtaining sandbox credentials first (AD-43, NFR-10)
 
 **Given** provider API keys
 **When** they are configured
@@ -2105,8 +2212,8 @@ Epic 7 (FR-9, FR-49)
 **Given** `matching-service`'s `PaymentGateway`
 **When** this story lands
 **Then** it calls `payment-service` instead of signalling authorised immediately
-**And** the immediate-authorise implementation is retired from runtime, remaining only for CI and for
-phases before `payment-service` existed
+**And** the immediate-authorise implementation is retired from runtime, remaining only for test runs
+that exclude payments and for phases before `payment-service` existed
 **And** it is never selectable as a degradation for a payment outage, which would dispatch rides
 against funds nobody holds (AD-43)
 
@@ -2279,6 +2386,13 @@ that a capture-only gauge cannot see**
 **And** it **includes rows an open breaker has left untouched**, since excluding them flattens the
 gauge through exactly the outage it exists to lead (AD-54)
 
+**Given** **payment success rate**
+**When** it is exported
+**Then** it is the proportion of payments reaching a settled outcome against those that did not,
+derived from the `payments` table alongside the money gauges
+**And** it is throughput rather than money, so it is read and alerted separately from capture loss
+(FR-46, AD-54, Metrics convention)
+
 **Given** the two gauges
 **When** they are read during an outage
 **Then** oldest-retrying is the leading indicator and the one to watch
@@ -2434,6 +2548,34 @@ it would invent an answer the system does not have (FR-40, AD-44)
 **When** reconciliation encounters it
 **Then** it is not recovered — the state is terminal for this build
 **And** recovering one later is a state-machine change rather than an extension of this task (AD-50)
+
+> **Open decision — the reconciliation mechanism.** To be settled when this story is detailed. This
+> story is deliberately thinner than its neighbours because **its source is**: AD-50, AD-58 and AD-59
+> specify the payment machine, the settlement worker and the projection down to literal predicates,
+> while reconciliation has no AD of its own — FR-40 and one clause of AD-44 are the entire input.
+>
+> Five questions to answer, and one constraint that binds whatever the answers are:
+>
+> 1. **Schedule.** What cadence, and driven by the `Clock` so it is testable without waiting (NFR-9)?
+> 2. **Missed-webhook detection.** Poll the provider's event list forward from a durable watermark, or
+>    compare local `payments` against provider intents? The first needs a stored watermark and
+>    inherits AD-29's cursor hazard; the second costs work proportional to open payments.
+> 3. **"Longer than a ride can plausibly live."** Derived from AD-46's ordered set — the `IN_PROGRESS`
+>    staleness window is already the system's bound on a single trip — or a new constant? If new, it
+>    **joins that ordered set and is ordered against it**, never chosen alone (AD-46).
+> 4. **What "flagged" means concretely** — a gauge, an alert, a table, or an operator-facing query.
+> 5. **Which holds this actually covers.** AD-54's oldest-retrying gauge already watches rows with
+>    `capture_requested_at` or `void_requested_at` stamped. A hold with **neither** — an `AUTHORIZED`
+>    payment whose ride never reached a terminal state — is watched by nothing, and is precisely the
+>    stranded case FR-40 describes. Scope this to that gap rather than duplicating the gauge.
+>
+> **The binding constraint: reconciliation observes and never corrects** (FR-40, AD-44). It must not
+> duplicate or race AD-58's settlement worker, and it must not void a hold that merely looks stale —
+> that hold may belong to a genuinely long live trip, and voiding it would leave a completed ride with
+> nothing to capture.
+>
+> **If the answer introduces mechanism, it likely belongs in the spine as an AD** rather than living
+> only here — the same gap AD-47 has with storage ceilings.
 
 ### Story 5.10: Rider sees how the money ended
 
