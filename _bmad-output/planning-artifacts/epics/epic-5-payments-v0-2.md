@@ -396,8 +396,10 @@ So that a forged payload changes nothing and a redelivery cannot advance a payme
 
 **Given** an inbound webhook
 **When** it arrives
-**Then** the gateway routes it to `payment-service`'s webhook endpoint, which is one of the four
-routes the gateway exposes (AD-5)
+**Then** the gateway routes it to `payment-service`'s webhook endpoint
+**And** that endpoint is the **only** `payment-service` surface the gateway exposes — it exists because
+the provider must reach it, and no other `payment-service` route is created; a rider reads a payment
+outcome through `rider-service` (Story 5.10), never `payment-service` directly (AD-5, AD-61)
 
 **Given** a webhook payload
 **When** it is received
@@ -439,6 +441,8 @@ So that money taken in error can be given back even though riders cannot request
 **When** it is examined
 **Then** there is **no rider-facing way to request a refund** — it is internal only, exercised by
 tests and the Simulator (FR-39, Non-goals)
+**And** the trigger is **not a gateway route**: operator surfaces are reached directly inside the
+cluster, which is a stronger boundary than exposing a route (AD-5)
 
 **Given** the refund action
 **When** it is recorded
@@ -531,8 +535,30 @@ So that the payment outcome is something I can read rather than infer.
 
 **Given** a capture still being retried
 **When** the rider reads the ride
-**Then** **no outcome is reported yet** — a retry in progress is not an outcome
-**And** one appears only once the payment settles (FR-7)
+**Then** it reports **settlement in progress** — never "uncaptured", and never nothing at all
+**And** exactly four values are outcomes: `CAPTURED`, `REFUNDED`, `CAPTURE_FAILED`, `FAILED`; an
+`AUTHORIZED` payment on a `COMPLETED` ride is AD-58's live pursuit, not one of them (FR-7, AD-61)
+
+**Given** the outcome read
+**When** it is served
+**Then** it hangs off the ride as a sub-resource, served by `rider-service`, which makes **two** calls:
+ride detail from `matching-service` — establishing the ride is this rider's and is terminal, so an
+identity mismatch is 404 — and the outcome from `payment-service` by `ride_id` over gRPC (AD-61, AD-39, AD-38)
+
+**Given** AD-59's admission projection
+**When** a source for this read is chosen
+**Then** it is **never** used — being advisory and fail-open is what makes it right for admission and
+wrong for money, and reading it here would give one row's absence two meanings (AD-61, AD-59)
+
+**Given** `payment-service` unavailable
+**When** the rider reads the outcome
+**Then** the read answers `UNAVAILABLE` → 503 — **no answer, never a guessed one**
+**And** the ride-request path is untouched, because admission does not travel this edge (AD-61, AD-48)
+
+**Given** the gRPC contract for this read
+**When** it is defined
+**Then** it is segregated by consumer — its own service definition, never a method bolted onto the
+settlement contract `matching-service` calls (AD-61, AD-57)
 
 **Given** a rider whose trip was auto-completed and then charged
 **When** they look for a remedy

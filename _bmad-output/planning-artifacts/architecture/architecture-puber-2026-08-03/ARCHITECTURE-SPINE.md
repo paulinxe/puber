@@ -4,17 +4,18 @@ type: architecture-spine
 purpose: build-substrate
 altitude: feature
 paradigm: layered services with Strategy-swapped adapters; synchronous gRPC for commands and reads, event-driven for propagation
-scope: All five Puber services, their datastores, the event backbone, and the local Kubernetes deployment — the system specified by PRD FR-1–FR-50 and NFR-1–NFR-10.
+scope: All five Puber services, their datastores, the event backbone, and the local Kubernetes deployment — the system specified by PRD FR-1–FR-51 and NFR-1–NFR-10.
 status: final
 created: '2026-08-03'
-updated: '2026-08-14'
+updated: '2026-08-16'
 binds:
-  - FR-1–FR-50
+  - FR-1–FR-51
   - NFR-1–NFR-10
 sources:
   - _bmad-output/planning-artifacts/prds/prd-puber-2026-08-02/prd.md
   - _bmad-output/planning-artifacts/prds/prd-puber-2026-08-02/addendum.md
   - _bmad-output/planning-artifacts/prds/prd-puber-2026-08-02/flows.html
+  - _bmad-output/planning-artifacts/spine-corrections-2026-08-16.md
 companions:
   - .memlog.md
   - architecture-map.html
@@ -57,6 +58,7 @@ graph TD
   DS -->|gRPC| MS
   MS -->|gRPC| PS["payment-service"]
   PS -->|gRPC| MS
+  RS -->|gRPC| PS
   MS -. events .-> KB[["Kafka"]]
   DS -. events .-> KB
   PS -. events .-> KB
@@ -93,7 +95,7 @@ graph LR
 
 - **Binds:** all persistence
 - **Prevents:** ride state and driver availability landing in different databases, which would force cross-service coordination on every dispatch
-- **Rule:** `rider-service` owns nothing (stateless façade). `driver-service` owns driver identity and location only. `matching-service` owns `rides`, its own dispatch `drivers`, `fare_rules`, and AD-59's `payment_standing` projection — a **derived read model, never a second owner**: it is fed only by payment events, written by no other service, and authoritative for nothing. `payment-service` owns `payments` and `webhook_events`. `audit-service` owns `audit_events` and the ClickHouse tables. **Redis is owned solely by `matching-service`** — it is the only writer of both the geo set and the position keys, because membership requires dispatch status that only it holds; `driver-service` contributes positions by publishing events, never by writing Redis.
+- **Rule:** `rider-service` owns nothing (stateless façade). `driver-service` owns driver identity and location only. `matching-service` owns `rides`, its own dispatch `drivers`, `fare_rules`, and AD-59's `payment_standing` projection — a **derived read model, never a second owner**: it is fed only by payment events, written by no other service, and authoritative for nothing. `payment-service` owns `payments` and `webhook_events`. `audit-service` owns `audit_events`, the ClickHouse tables, and the columnar location-ping history (AD-60) — a separate stream on its own topic and consumer group, never a partition of the audit trail. **Redis is owned solely by `matching-service`** — it is the only writer of both the geo set and the position keys, because membership requires dispatch status that only it holds; `driver-service` contributes positions by publishing events, never by writing Redis.
 
 ### AD-4 — Caches are advisory; the owning row is authoritative
 
@@ -104,8 +106,8 @@ graph LR
 ### AD-5 — The gateway exposes edge services only
 
 - **Binds:** HAProxy routing
-- **Prevents:** `matching-service` becoming publicly reachable, which would make the façade layer optional and let clients bypass it
-- **Rule:** the gateway routes only to `rider-service`, `driver-service`, the Stripe webhook, and audit's query API. `matching-service` is never publicly routable. Internal hops bypass the gateway entirely.
+- **Prevents:** `matching-service` becoming publicly reachable, which would make the façade layer optional and let clients bypass it — and the route list drifting from "the actor-facing edge" into "everything that speaks HTTP", which is the distinction this rule exists to hold
+- **Rule:** the gateway carries **actor-facing traffic only**, and routes only to `rider-service`, `driver-service`, the Stripe webhook, and audit's query API. `matching-service` is never publicly routable, and `payment-service` is routable for **the Stripe webhook alone** — that one endpoint exists because the provider must reach it, and no other `payment-service` surface is a route: a rider reads a payment outcome through `rider-service` (AD-61), never `payment-service` directly. Internal hops bypass the gateway entirely. **Operator and observability surfaces are deliberately not routes:** FR-39's refund trigger, FR-50's live dashboard, Prometheus and Grafana are reached directly inside the cluster. That is a *stronger* boundary than a route rather than a looser one — nothing outside the cluster reaches them at all — and it is why the list grows when a new **actor** appears and never when a new operator surface does. Each such surface **mints its own correlation id at entry** (AD-54), since no gateway did it for them.
 
 ### AD-6 — Queue bounds form one chain, sized from the scarcest resource outward
 
@@ -297,7 +299,7 @@ graph LR
 
 - **Binds:** all inter-service calls, all public endpoints
 - **Prevents:** a mixed transport story, and the assumption that Kafka removes the synchronous path
-- **Rule:** everything through the gateway is REST — curl, a browser and the Simulator are first-class clients. Every internal synchronous hop is gRPC; the edge services are protocol translators. Kafka carries propagation only: anything an actor waits on a response for stays synchronous, because the façades own no data.
+- **Rule:** everything through the gateway is REST — curl, a browser and the Simulator are first-class clients. Every internal synchronous hop is gRPC; the edge services are protocol translators. Kafka carries propagation only: anything an actor waits on a response for stays synchronous, because the façades own no data. An edge service may therefore **fan out to more than one owning service within a single request** — `rider-service` reads ride detail from `matching-service` and the payment outcome from `payment-service` (AD-61) — since owning no data is precisely what makes translation its whole job.
 
 ### AD-38 — One error vocabulary, mapped at the façade
 
@@ -333,7 +335,7 @@ graph LR
 
 - **Binds:** `matching-service`, `payment-service`, NFR-8
 - **Prevents:** conflating "there is no payment service yet" with "there is no provider", which are different problems at different layers
-- **Rule:** `matching-service` holds an outbound gateway strategy — call `payment-service`, or signal authorised immediately. `payment-service` separately holds a provider strategy — real provider, or stub for the stress test and CI. The provider strategy carries AD-58's full settlement outcome set — the three-way capture answer (settled, provably uncapturable, or neither) **and the two-way void answer** — and the stub must be able to produce every one of them, or the retry-until-settled path, `CAPTURE_FAILED`, and the durable void are never exercised outside production. The stress exclusion swaps the **provider**, keeping the whole payment state machine in the flow, rather than skipping the path and exercising code that does not exist in production. **The immediate-authorise gateway is confined to phases before `payment-service` exists, and to CI.** It is explicitly **not** a runtime degradation for a payment-service outage: auto-authorising while payments are merely *unavailable* would dispatch rides against funds nobody holds and capture against `payments` rows that were never created, breaking FR-9. When payments exist but are down, rides stall (AD-48).
+- **Rule:** `matching-service` holds an outbound gateway strategy — call `payment-service`, or signal authorised immediately. `payment-service` separately holds a provider strategy — real provider, or stub for the stress test and for any run with no provider credentials configured. The provider strategy carries AD-58's full settlement outcome set — the three-way capture answer (settled, provably uncapturable, or neither) **and the two-way void answer** — and the stub must be able to produce every one of them, or the retry-until-settled path, `CAPTURE_FAILED`, and the durable void are never exercised outside production. The stress exclusion swaps the **provider**, keeping the whole payment state machine in the flow, rather than skipping the path and exercising code that does not exist in production. **The immediate-authorise gateway is confined to phases before `payment-service` exists, and to runs with no `payment-service` in the stack.** It is explicitly **not** a runtime degradation for a payment-service outage: auto-authorising while payments are merely *unavailable* would dispatch rides against funds nobody holds and capture against `payments` rows that were never created, breaking FR-9. When payments exist but are down, rides stall (AD-48).
 
 ### AD-44 — A terminal ride never leaves an outstanding authorisation
 
@@ -349,15 +351,15 @@ graph LR
 
 ### AD-46 — Time constants are one tuned set with fixed ordering
 
-- **Binds:** FR-11, FR-12, FR-13, FR-14, FR-21, FR-26, FR-29, FR-30
+- **Binds:** FR-11, FR-12, FR-13, FR-14, FR-21, FR-26, FR-29, FR-30, FR-51 (the `CAPTURE_FAILED` cooldown)
 - **Prevents:** independently chosen intervals that interact badly — a poll slower than the offer window, or a staleness window shorter than plausible clock skew
 - **Rule:** heartbeat 2 s; driver poll 2 s (one client timer serves both); offer timeout 10 s; worker idle backoff 500 ms; `NO_DRIVER` budget 60 s; idle staleness 15 s; `MATCHED` staleness 90 s; `IN_PROGRESS` staleness 10 min; `CAPTURE_FAILED` cooldown 30 min; session expiry 1 h. **The `NO_DRIVER` budget is accumulated time spent in `WAITING_MATCH` only** — it does not run while a ride is `OFFERED` or `MATCHED`. Measured as wall time since request it would be shorter than the 90 s `MATCHED` staleness window, so a ride salvaged from a silent driver (FR-13) would be killed as `NO_DRIVER` on the very next sweep, making the salvage path unreachable in every case rather than occasionally. **The `CAPTURE_FAILED` cooldown (AD-59) is measured on wall clock** from the `capture_failed_at` recorded on the payment of AD-59's **anchor ride** — the rider's most recent ride, which is what "most recent `CAPTURE_FAILED`" designates and the only reading that keeps AD-59's two arms a partition. Restarted by each new one, never stacked. It is the Timestamps convention's *wall-clock for recorded facts* case, not its *monotonic for deadlines within a process* case, because it is a stored fact compared across restarts and across two services; an in-process deadline could not survive either. The **ordering is the invariant** and must survive any retuning: `poll ≪ offer timeout`; `idle < MATCHED < IN_PROGRESS < capture-failed cooldown < session expiry`; every staleness window comfortably exceeds clock skew plus lag; and no seeking budget is consumed by time spent not seeking. The cooldown's two bounds each carry a reason. It **exceeds `IN_PROGRESS` staleness**, the system's bound on a single trip, because a cooldown shorter than one ride refuses nobody in practice — any rider taking normal-length trips would have been occupied longer than the window anyway, so it would lapse before it ever bit. It stays **below session expiry** because it is a self-clearing cooling-off window, not standing: the longest this system holds anything against an actor is one shift, and a refusal outliving that is a debtor flag by another name — deliberately out of scope, and the self-clearing is what keeps this admission control instead.
 
 ### AD-47 — Capacity is derived, not guessed
 
-- **Binds:** connection pools, thread pools, worker pools, replica counts, partition counts
-- **Prevents:** oversized pools that relocate queueing into Postgres, where it is invisible and each connection costs real memory
-- **Rule:** size every pool as arrival rate × service time. The result is usually smaller than instinct suggests — ride writes need single-digit database concurrency, and the read path barely touches Postgres at all because detail reads answer 304 and position reads are Redis-only. Concrete values are set from measurement under the NFR-2 stress run.
+- **Binds:** connection pools, thread pools, worker pools, replica counts, partition counts, storage ceilings
+- **Prevents:** oversized pools that relocate queueing into Postgres, where it is invisible and each connection costs real memory — and a dimension being sized by instinct because this rule never claimed it
+- **Rule:** size every pool as arrival rate × service time. The result is usually smaller than instinct suggests — ride writes need single-digit database concurrency, and the read path barely touches Postgres at all because detail reads answer 304 and position reads are Redis-only. **Storage is derived the same way:** the disk bound for Postgres and for the columnar store is ingest rate × the window to retain, with headroom — AD-35's derivation applied to bytes rather than to queue depth. AD-60's ping ceiling is the one that matters, since pings outnumber audit events by roughly 130:1 and a bound on the audit table is near-cosmetic beside it. Concrete values, storage included, are set from measurement under the NFR-2 stress run.
 
 ### AD-48 — A component may be turned off exactly when it sits behind an event boundary
 
@@ -399,7 +401,7 @@ graph LR
 
 - **Binds:** NFR-5, FR-46
 - **Prevents:** five services instrumented differently, so no dashboard can compare them and no trace survives a hop
-- **Rule:** every service exposes health and Prometheus metrics from its first commit, not retrofitted. The gateway mints a correlation id on every inbound request; it is propagated across gRPC metadata, carried in the event envelope (AD-31), and included in every log line and error response. Every queue, pool, and backlog named in AD-6, AD-34 and AD-35 exposes depth and age as gauges — an unmeasured bound cannot be tuned, and the NFR-2 stress run exists to read exactly these. **Two payment gauges are money rather than throughput, and alert on their own:** **capture loss** — the count *and* the summed amount of `CAPTURE_FAILED` payments (AD-50), zero in health — and **the age of the oldest capture still retrying** (AD-58). Both are derived from the `payments` table, never from an in-process counter that resets with the pod and quietly makes "zero in health" unfalsifiable: capture loss is `count(*)` and `sum(amount)` over `CAPTURE_FAILED`, summed from the stored `DECIMAL` and exported in integer minor units per the Money convention; oldest-retrying is `max(now() − coalesce(capture_requested_at, void_requested_at))` in seconds over the rows AD-58 calls claimable — **coalesced, because a void stuck against a broken provider is a live AD-44 breach and a capture-only gauge cannot see it** — and **including rows an open breaker has left untouched** — excluding them flattens the gauge through exactly the outage it exists to lead. The second is the leading indicator and the one to watch during a provider outage: by the time a payment reaches `CAPTURE_FAILED` the money is already unrecoverable, so capture loss only ever confirms the other gauge was read too late. **Refused ride requests are counted by reason, and the split is a prohibition, not a preference:** one counter in `matching-service` over **AD-38's 409 admission refusals only** — a shed 503 (AD-35) and a malformed 400 are not refusals and keep their own signals — carrying a `reason` label over a closed set of exactly three: active ride (AD-14), most recent completed ride not yet paid (AD-59 arm 1), cooldown after `CAPTURE_FAILED` (AD-59 arm 2). Collapsed to one total it destroys the signal that justifies it — a one-active-ride refusal is ordinary rider behaviour carrying none, while a movement in either payment-driven reason is a provider failing or recovering, observed at the one place a rider actually feels it instead of inferred from provider-side telemetry. That prohibition **binds queries, not the exporter**, because a labelled counter is always summable and no exporter can prevent it: every alert expression, recording rule and dashboard panel over this counter **groups by `reason`**, and no aggregation across reasons is permitted anywhere. The label is a **closed enum with a single registration point**, never free text, or cardinality follows whatever string the refusal path happened to be holding. **The three reasons alert differently, and the differences are not interchangeable:** the cooldown reason inherits capture loss's **zero in health**, since it can only fire downstream of a `CAPTURE_FAILED`; the unsettled-trip reason has a **nonzero healthy baseline** — the ordinary completion-to-capture window — so it alerts on deviation and never on a nonzero absolute; the active-ride reason is counted for baseline and never alerts. Both alerting reasons are read **together with AD-59's projection-lag gauge**, because fail-open drives them toward zero exactly when the projection is the broken thing. **One increment per refused ride-request call reaching the admission check** — a client re-attempting on AD-46's poll cadence counts again — so alerts are rate-based against the affected-rider population, never raw volume, or one stuck rider retrying outweighs a hundred genuinely affected ones. Which source each of these is read from is the **Metrics convention's** call, not a per-metric choice.
+- **Rule:** every service exposes health and Prometheus metrics from its first commit, not retrofitted. The gateway mints a correlation id on every inbound request, and a surface reached outside the gateway mints its own at entry (AD-5) so no request anywhere is untraceable; it is propagated across gRPC metadata, carried in the event envelope (AD-31), and included in every log line and error response. Every queue, pool, and backlog named in AD-6, AD-34 and AD-35 exposes depth and age as gauges — an unmeasured bound cannot be tuned, and the NFR-2 stress run exists to read exactly these. **Two payment gauges are money rather than throughput, and alert on their own:** **capture loss** — the count *and* the summed amount of `CAPTURE_FAILED` payments (AD-50), zero in health — and **the age of the oldest capture still retrying** (AD-58). Both are derived from the `payments` table, never from an in-process counter that resets with the pod and quietly makes "zero in health" unfalsifiable: capture loss is `count(*)` and `sum(amount)` over `CAPTURE_FAILED`, summed from the stored `DECIMAL` and exported in integer minor units per the Money convention; oldest-retrying is `max(now() − coalesce(capture_requested_at, void_requested_at))` in seconds over the rows AD-58 calls claimable — **coalesced, because a void stuck against a broken provider is a live AD-44 breach and a capture-only gauge cannot see it** — and **including rows an open breaker has left untouched** — excluding them flattens the gauge through exactly the outage it exists to lead. The second is the leading indicator and the one to watch during a provider outage: by the time a payment reaches `CAPTURE_FAILED` the money is already unrecoverable, so capture loss only ever confirms the other gauge was read too late. **Refused ride requests are counted by reason, and the split is a prohibition, not a preference:** one counter in `matching-service` over **AD-38's 409 admission refusals only** — a shed 503 (AD-35) and a malformed 400 are not refusals and keep their own signals — carrying a `reason` label over a closed set of exactly three: active ride (AD-14), most recent completed ride not yet paid (AD-59 arm 1), cooldown after `CAPTURE_FAILED` (AD-59 arm 2). Collapsed to one total it destroys the signal that justifies it — a one-active-ride refusal is ordinary rider behaviour carrying none, while a movement in either payment-driven reason is a provider failing or recovering, observed at the one place a rider actually feels it instead of inferred from provider-side telemetry. That prohibition **binds queries, not the exporter**, because a labelled counter is always summable and no exporter can prevent it: every alert expression, recording rule and dashboard panel over this counter **groups by `reason`**, and no aggregation across reasons is permitted anywhere. The label is a **closed enum with a single registration point**, never free text, or cardinality follows whatever string the refusal path happened to be holding. **The three reasons alert differently, and the differences are not interchangeable:** the cooldown reason inherits capture loss's **zero in health**, since it can only fire downstream of a `CAPTURE_FAILED`; the unsettled-trip reason has a **nonzero healthy baseline** — the ordinary completion-to-capture window — so it alerts on deviation and never on a nonzero absolute; the active-ride reason is counted for baseline and never alerts. Both alerting reasons are read **together with AD-59's projection-lag gauge**, because fail-open drives them toward zero exactly when the projection is the broken thing. **One increment per refused ride-request call reaching the admission check** — a client re-attempting on AD-46's poll cadence counts again — so alerts are rate-based against the affected-rider population, never raw volume, or one stuck rider retrying outweighs a hundred genuinely affected ones. Which source each of these is read from is the **Metrics convention's** call, not a per-metric choice.
 
 ### AD-55 — Consumer-side failure is bounded and visible
 
@@ -427,12 +429,24 @@ graph LR
 
 ### AD-59 — Ride admission reads a local payment-settlement projection, never a synchronous call
 
-- **Binds:** FR-3, ride request admission, `matching-service`, the payment topics
+- **Binds:** FR-3, FR-51, ride request admission, `matching-service`, the payment topics
 - **Prevents:** one rider stacking unlimited unpaid trips while AD-58 is still pursuing their previous captures — and the fix for that quietly promoting `payment-service` onto the hot path of the one operation that must survive its outage
 - **Rule:** two admission refusals sit on top of AD-14's index, and **AD-14 is evaluated first** — a rider with an active ride always gets `ALREADY_EXISTS` → 409, so the refusals below apply only when no active ride exists and a client can always tell the three cases apart (AD-38). Both refusals read the rider's **most recent ride, ordered by the `rides` identity bigint**; earlier rides are never considered, or one stuck hold refuses a rider forever. **Both arms read that same anchor ride and its single payment row** — never an earlier ride's payment, which is also what AD-46's "most recent `CAPTURE_FAILED`" designates — and **arm 1 is evaluated before arm 2**, so exactly one reason is emitted per refused request and AD-54's label set is a true partition rather than an arbitrary pick between two matching arms.
   **(1) Unsettled delivered trip** — most recent ride `COMPLETED` with its payment still `AUTHORIZED`: refused **until it settles, or until AD-46's session-expiry bound lapses measured from `capture_requested_at`, whichever comes first** — that stamp is the anchor because it is the recorded moment the trip completed and the pursuit began, and without naming it the lapse is uncomputable from the projection. Both halves of that scope are load-bearing. Only `COMPLETED` refuses, because only a delivered trip can be unpaid; a `CANCELLED`, `NO_DRIVER` or `PAYMENT_FAILED` ride never refuses, since its hold is being voided rather than captured and refusing on it would revoke AD-45's promise that the rider's own cancellation is their exit. And the lapse is not optional: AD-58's pursuit is deliberately unbounded, so "until it settles" alone would refuse **every rider who completed a trip, for the entire length of a provider outage** — reproducing through the projection the exact Tier-1 breakage this rule cites the synchronous call for. Bounded, the worst case is one unpaid trip per rider per window instead of unlimited stacking, which is what the refusal is actually for.
   **(2) Cooldown** — the anchor ride's payment reached `CAPTURE_FAILED` inside AD-46's cooldown: refused until the window lapses.
   Both facts are owned by `payment-service` (AD-3), and `matching-service` learns them from a **local read-model projection fed by the payment topic** — never a synchronous gRPC call on the request path. The synchronous version is the tempting one and it is wrong: it would put a Tier-2 dependency on a Tier-1 operation, turning a `payment-service` outage from "rides stall before dispatch" into "no ride can be requested at all" (AD-48), the coupling AD-41 was built to remove. The projection is **advisory in AD-4's sense** — it selects who to refuse and guards no owning row. That is legitimate *here and not for double-booking* because this is admission control rather than a correctness invariant, so the cost is real and accepted: it is eventually consistent, and a rider may slip one extra request through the lag. **It fails open, never closed** — an absent row means "no reason to refuse", never "refuse", which is AD-26's *absence is never evidence* generalised; cold start, rebuild and consumer lag degrade to AD-14 alone rather than refusing every rider at once, the failure mode that would make this rule worse than not having it. Shape is fixed so two builders cannot pick different keys: **one row per `ride_id` — `(ride_id, payment_status, capture_requested_at, capture_failed_at, last_event_id)` — joined to the local `rides` table on read**, so no `rider_id` has to be added to payment payloads by a contract change nobody owns. `payment-service` emits an event on **every** payment state entry, `INITIATED` included, or a state the projection never hears about is silently unrefusable. It is rebuildable by replaying the payment topic from `earliest` (AD-36); consumer lag is a gauge (AD-54) on an AD-55-governed consumer. Both refusals surface as `FAILED_PRECONDITION` → 409, which AD-38's status vocabulary alone cannot tell apart — so **each of the three refusals carries a reason token in the gRPC error detail, and the façade renders it as a distinct, stable RFC 9457 `type` URI whose final segment is that same token**. `detail` prose is never the discriminator. Those tokens are **the same values AD-54 counts by label** — one fact seen from two sides — so a reason added, split or renamed changes both together, and the API and the metric can never disagree about why a rider was turned away. This is the **first payment → ride coupling in the system** — every other runs ride → payment — and it deliberately travels the existing event edge, adding no synchronous dependency and no new arrow to the service graph.
+
+### AD-60 — Location pings are one telemetry stream: one producer, one topic, independent consumer groups, columnar-only
+
+- **Binds:** FR-27, the ping half of FR-44, `driver-service`, `audit-service`, the location topic
+- **Prevents:** the system's largest data stream having no owner, no store and no ceiling — roughly 1.3M pings/day at fixture load against ~10k/day of state transitions, a ratio of about 130:1, on a path from which AD-26, AD-27 and AD-28 between them removed every durable write
+- **Rule:** `driver-service` produces every heartbeat **exactly once**, directly onto a single location topic keyed by driver id (AD-36). A ping is **telemetry, not a domain event**: no `event_outbox` row (AD-28), no Postgres history anywhere, and it never enters `audit_events` (AD-53) — at 130:1 it would turn the audit trail into a location log. Every reader is an **independent consumer group over that same topic** — `matching-service` maintaining Redis (AD-26), `audit-service` writing the columnar ping history it owns (AD-3) — in AD-53's parallel-consumer shape, so neither store is derived from the other and either rebuilds from the log. Owning that **table** makes `audit-service` no second owner of the **fact**: `driver-service` remains the sole producer of a driver's location (AD-3), the history is written by that one consumer and by nothing else, and reading it is never a substitute for reading Redis — the same separation AD-59's projection keeps between holding payment state and owning it. **Never a re-publish onto a second topic:** a republishing hop is exactly where AD-23's produce-time stamp gets lost or re-stamped, and consumer lag would start masking staleness again. Because a ping carries no outbox `event_id`, AD-36's idempotency is satisfied by a key **derived from the payload — `(driver_id, occurred_at)`** — rather than generated, so a redelivery presents the same key with nothing to remember; a builder must not go looking for an `event_id` that this stream does not have. The retained row carries driver identity, position and the produce-time timestamp, and is the **sole** source for distance-per-driver and ride-density-by-area (FR-44); driver utilisation is computed from the state-transition trail instead, never from pings. Storage is governed by a **configured ceiling enforced by evicting the oldest data first**, with an ingest stop as an **alarmed backstop only, never the routine mechanism** — a stop outlasting Kafka's retention converts a disk problem into permanent silent loss, which is precisely what AD-48's promise that Tier 3 can be turned off and lose nothing depends on not happening. Stored volume and headroom are gauges that alert before the bound (AD-54); the ceiling's value is derived, not guessed (AD-47). Before the HTTP→Kafka swap the heartbeat travels the `DriverLocationIndex` strategy directly (AD-10) and there is **no ping history at all**; the history begins with the topic and is never backfilled from Redis, which holds none (AD-27).
+
+### AD-61 — The rider's payment outcome is read from the owner, never from the admission projection
+
+- **Binds:** FR-7, `rider-service`, `payment-service`
+- **Prevents:** a rider being told whether their money moved by a read model this spine declares advisory, authoritative for nothing, and fail-open
+- **Rule:** FR-7's outcome is a **sub-resource of the ride** (AD-39), served by `rider-service`, which makes **two** calls: ride detail from `matching-service` — establishing that the ride is this rider's and that it is terminal, so an identity mismatch is 404 (AD-38) — and the outcome from `payment-service` by `ride_id` over gRPC (AD-37). That is a new synchronous edge, drawn in the dependency graph, and it is **confined to this read**: admission stays on AD-59's projection precisely so a `payment-service` outage cannot block a ride request (AD-48). **AD-59's projection is not an alternative source here** — being advisory and fail-open is what makes it right for admission and wrong for money, and reading it for FR-7 would give one row two meanings for absence. The Tier-1 argument that forced admission onto a projection does not apply to a read on a **terminal** ride, which is why the owner can be read directly. When `payment-service` is down this read answers `UNAVAILABLE` → 503 — **no answer, never a guessed one** — and the ride-request path is untouched because it does not travel this edge. **A capture still being pursued is not an outcome:** `AUTHORIZED` on a `COMPLETED` ride is AD-58's live pursuit and is reported as settlement in progress, never as uncaptured; only `CAPTURED`, `REFUNDED`, `CAPTURE_FAILED` and `FAILED` are outcomes to show. The gRPC contract is **segregated by consumer** (AD-57) — the rider-facing outcome read is its own service definition, not a method bolted onto the settlement contract `matching-service` calls.
 
 ## Consistency Conventions
 
@@ -493,14 +507,18 @@ erDiagram
   DISPATCH ||--o| RIDE : "current_ride_id"
   RIDE ||--o| PAYMENT : "one per ride"
   RIDE ||--o{ AUDIT_EVENT : "entity_id"
+  DRIVER_IDENTITY ||--o{ LOCATION_PING : "driver_id"
   FARE_RULES ||--o{ RIDE : "priced by"
   PAYMENT ||--o{ WEBHOOK_EVENT : "provider callbacks"
   PAYMENT ||--o| PAYMENT_STANDING : "projected for ride admission"
 ```
 
 `DRIVER_IDENTITY` belongs to `driver-service`; `DISPATCH`, `RIDE` and `FARE_RULES` to
-`matching-service`; `PAYMENT` and `WEBHOOK_EVENT` to `payment-service`; `AUDIT_EVENT` to
-`audit-service`. `PAYMENT_STANDING` is AD-59's admission projection and belongs to
+`matching-service`; `PAYMENT` and `WEBHOOK_EVENT` to `payment-service`; `AUDIT_EVENT` and
+`LOCATION_PING` to `audit-service`. `LOCATION_PING` is AD-60's history — columnar only, with no
+Postgres counterpart and no place in the audit trail, drawn here because it is the largest table
+in the system by two orders of magnitude and was previously visible nowhere.
+`PAYMENT_STANDING` is AD-59's admission projection and belongs to
 `matching-service` — the one place payment state has a second representation across a service
 boundary, drawn here rather than left implicit so that AD-1 and AD-3 stay checkable: it is
 derived, read-only, and authoritative for nothing. The relationships crossing those boundaries
@@ -532,47 +550,47 @@ graph TB
   subgraph LOCAL["Local development — Docker Compose"]
     LC["all services + datastores, hot rebuild"]
   end
-  subgraph CI["CI"]
-    CT["same Compose stack, reset per test class; stub provider"]
-  end
   subgraph K8S["Local Kubernetes — final target"]
     T1["Tier 1 — gateway, ride path, Redis, Kafka"]
     T2["Tier 2 — payments"]
     T3["Tier 3 — audit, ClickHouse, Prometheus, Grafana, dashboard"]
   end
-  LOCAL --> CI --> K8S
+  LOCAL --> K8S
   T1 --> T2 --> T3
 ```
 
-There is no cloud environment at any point (NFR-7). The local Kubernetes cluster is the final
-deployment target, and the tiering above is what makes it possible to run a reduced stack when
-resources are constrained.
+There is no cloud environment at any point (NFR-7), and **no CI server**: the suite runs locally
+against the same Compose stack, behind git hooks, before a PR to `dev`. The gate is local, so a
+green run is a fact about the developer's machine and nothing else asserts it. The local Kubernetes
+cluster is the final deployment target, and the tiering above is what makes it possible to run a
+reduced stack when resources are constrained.
 
 ## Capability → Architecture Map
 
 | Capability | Lives in | Governed by |
 | --- | --- | --- |
-| Quote, request, cancel, rider reads (FR-1–FR-8) | `rider-service` → `matching-service` `quote` / `ride` | AD-3, AD-14, AD-39, AD-40, AD-59 |
+| Quote, request, cancel, rider reads (FR-1–FR-8, FR-51) | `rider-service` → `matching-service` `quote` / `ride` | AD-3, AD-14, AD-39, AD-40, AD-59 |
 | Authorisation gate (FR-9) | `matching-service` `ride` ← `payment-service` | AD-41, AD-19, AD-45 |
 | Matching, offers, recovery (FR-10–FR-14) | `matching-service` `dispatch` | AD-15, AD-17, AD-19, AD-20, AD-26 |
 | Ride state machine (FR-15–FR-17) | `matching-service` `ride` `model` | AD-11, AD-13, AD-15 |
-| Rider-visible payment outcome (FR-7) | `payment-service` → `rider-service` | AD-50, AD-58 |
+| Rider-visible payment outcome (FR-7) | `rider-service` → `payment-service` | AD-50, AD-58, AD-61 |
 | Fares and surge (FR-18, FR-19) | `matching-service` `fare` | AD-9, AD-25 |
 | Driver session and actions (FR-20–FR-25) | `driver-service` → `matching-service` `dispatch` | AD-16, AD-21, AD-24, AD-38 |
 | Location, reachability, session expiry (FR-26–FR-30) | `driver-service` → Redis via Kafka | AD-21, AD-22, AD-23, AD-26, AD-27 |
+| Durable location-ping history (FR-27) | `driver-service` → location topic → `audit-service` columnar | AD-60, AD-23, AD-36, AD-47 |
 | Event backbone and resilience (FR-31–FR-33) | outbox + relay in every producer | AD-28, AD-34, AD-35, AD-36, AD-55 |
-| Payments (FR-34–FR-40) | `payment-service` | AD-41, AD-42, AD-43, AD-44, AD-50, AD-58 |
-| Audit and analytics (FR-41–FR-44) | `audit-service`, columnar store | AD-31, AD-36, AD-53 |
+| Payments (FR-34–FR-40) | `payment-service` | AD-5, AD-41, AD-42, AD-43, AD-44, AD-50, AD-58 |
+| Audit and analytics (FR-41–FR-44) | `audit-service`, columnar store | AD-31, AD-36, AD-53, AD-60 |
 | Retention and partitioning (NFR-6) | `audit-service` | AD-53 |
 | Real-time push (FR-45) | `driver-service` sockets | AD-51 |
 | Health, metrics, dashboards (FR-46, NFR-5) | every service | AD-54, AD-59 |
 | Deployment to local Kubernetes (FR-47, NFR-7) | `deploy/`, GitOps controller | AD-48, AD-49 |
 | Identity and simulation (FR-48, FR-49) | header identity, `simulator` | AD-39, AD-43 |
-| Live operational dashboard (FR-50) | dashboard consumer | AD-51, AD-48 |
+| Live operational dashboard (FR-50) | dashboard consumer, reached outside the gateway | AD-5, AD-48, AD-51 |
 
 ## Deferred
 
-- **Concrete capacity values** — pool sizes, replica and partition counts, outbox bound, backoff base, the outbox retry cap, and AD-58's capture backoff ceiling. The derivation method is fixed (AD-47, AD-35, AD-58); the numbers come from measurement under the NFR-2 stress run, and guessing them now would be fiction.
+- **Concrete capacity values** — pool sizes, replica and partition counts, outbox bound, backoff base, the outbox retry cap, AD-58's capture backoff ceiling, and the **storage ceilings for Postgres and for the columnar store**, AD-60's ping ceiling foremost among them. The derivation method is fixed (AD-47, AD-35, AD-58, AD-60); the numbers come from measurement under the NFR-2 stress run, and guessing them now would be fiction.
 - **Per-cell geo partitioning** — kept available as the last scaling lever if a single geo key saturates, but it only pays when cells are substantially larger than the search radius, and nothing before it has been exhausted.
 - **Eager staleness sweep** — lazy removal on encounter is sufficient until lingering geo ghosts are shown to matter.
 - **Change-data-capture for the outbox** — polling teaches the pattern; a log-based relay is a later upgrade with its own infrastructure cost.

@@ -310,9 +310,22 @@ freshly heard (AD-23)
 **When** it is published
 **Then** the partition key is the driver id (AD-36)
 
+**Given** `driver-service` producing heartbeats
+**When** they are published
+**Then** every heartbeat goes **exactly once** onto a **single** location topic
+**And** it is never re-published onto a second topic, which is where AD-23's produce-time stamp would
+be lost or re-stamped and consumer lag would start masking staleness again (AD-60)
+
 **Given** `matching-service` consuming location events
 **When** an event arrives
-**Then** it is deduplicated on `event_id` (AD-36, NFR-4)
+**Then** it is deduplicated on a key **derived from the payload — `(driver_id, occurred_at)`**
+**And** **a ping carries no `event_id`**, so no generated identifier is looked for on this stream; a
+redelivery presents the same derived key with nothing to remember (AD-60, AD-36, NFR-4)
+
+**Given** every reader of driver location
+**When** it consumes
+**Then** it does so as an **independent consumer group over that same topic**, in AD-53's
+parallel-consumer shape (AD-60)
 
 **Given** a redelivered event
 **When** it is processed again

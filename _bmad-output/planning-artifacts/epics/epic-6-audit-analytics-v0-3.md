@@ -8,10 +8,11 @@ and complete in a columnar store — and the location and audit history finally 
 > exist yet. The table is created *partitioned* in Story 6.1 because partitioning is structural and
 > cannot be retrofitted cheaply; only the *pruning* waits.
 
-> **Open decision — storage ceilings for both stores.** To be settled when Stories 6.4 and 6.5 are
-> detailed. **AD-47's deferred-capacity list does not cover storage** — it names pool sizes, replica
-> and partition counts, the outbox bound, backoff base, retry caps and the capture ceiling, but no
-> disk bound for Postgres or ClickHouse. This is a gap in the spine, not a number it deferred.
+> **Open decision — storage ceiling *values*.** To be settled when Stories 6.4 and 6.5 are detailed.
+> **The mechanism is no longer open**: AD-60 fixes it for the ping history — a configured ceiling
+> enforced by **evicting the oldest data first**, with an ingest stop as an **alarmed backstop only,
+> never the routine mechanism** — and AD-47's deferred-capacity list now covers storage. What remains
+> is the numbers, and applying the same shape to the Postgres audit table.
 >
 > **Where the risk actually sits.** Order-of-magnitude, to be replaced by measurement: audit events
 > run ~10k/day at fixture load — roughly 4 MB/day, ~1.5 GB across a 12-month window. Location pings
@@ -31,8 +32,7 @@ and complete in a columnar store — and the location and audit history finally 
 > retention converts a disk problem into permanent, silent data loss.
 >
 > **Derive rather than guess**, following AD-35's precedent for the outbox bound: ingest rate ×
-> the window to retain, with headroom, confirmed under the NFR-2 stress run (AD-47). If a ceiling is
-> adopted, AD-47's deferred list should gain it so the spine stops being silent on storage.
+> the window to retain, with headroom, confirmed under the NFR-2 stress run (AD-47, AD-60).
 
 ### Story 6.1: audit-service records every state transition with its actor
 
@@ -118,7 +118,8 @@ So that a question about the past has an answer that does not involve reading lo
 
 **Given** the audit query API
 **When** it is exposed
-**Then** the gateway routes to it, as one of the four routes the gateway exposes (AD-5)
+**Then** the gateway routes to it — audit's query API is one of the actor-facing routes the gateway
+carries, alongside `rider-service`, `driver-service` and the Stripe webhook (AD-5)
 
 **Given** an entity type and id
 **When** the audit trail is queried
@@ -244,7 +245,20 @@ So that the pings the system already collects stop being write-only.
 
 **Given** a redelivered location event
 **When** it is consumed
-**Then** it does not produce a duplicate row (AD-36, NFR-4)
+**Then** it does not produce a duplicate row, deduplicated on the payload-derived key
+**`(driver_id, occurred_at)`** rather than on an `event_id`, which this stream does not carry
+(AD-60, AD-36, NFR-4)
+
+**Given** the ping history
+**When** its start is considered
+**Then** it **begins with the topic** and is never backfilled
+**And** before the HTTP→Kafka swap there is no ping history at all, since Redis holds none (AD-60, AD-27)
+
+**Given** `audit-service` owning the columnar ping table
+**When** ownership is examined
+**Then** owning the **table** makes it no second owner of the **fact** — `driver-service` remains the
+sole producer of a driver's location
+**And** reading this history is never a substitute for reading Redis (AD-60, AD-3)
 
 **Given** a retained ping
 **When** its stored shape is inspected

@@ -185,7 +185,7 @@
       so it is recorded alongside the rule rather than lost.
     </p>
     <div class="facts">
-      <div class="fact"><span class="fact-n">57</span><span class="fact-l">Decisions</span></div>
+      <div class="fact"><span class="fact-n">61</span><span class="fact-l">Decisions</span></div>
       <div class="fact"><span class="fact-n">5</span><span class="fact-l">Services</span></div>
       <div class="fact"><span class="fact-n">4</span><span class="fact-l">Datastores</span></div>
       <div class="fact"><span class="fact-n">9</span><span class="fact-l">Ride states</span></div>
@@ -199,10 +199,12 @@
       Five services behind one gateway, and one rule shaping everything else:
       <strong>matching-service is never publicly routable.</strong> It holds all authoritative ride
       and dispatch state, and reaching it only through the edge is what makes the façade layer mean
-      something rather than being an optional hop.
+      something rather than being an optional hop. The gateway carries <strong>actor-facing traffic
+      only</strong> — payment-service is routable for the Stripe webhook alone, because the provider
+      must reach it, and everything operator-facing is deliberately outside the gateway entirely.
     </p>
     <div class="rail">
-      <svg viewBox="0 0 900 540" role="img" aria-label="Topology: clients to HAProxy to rider-service and driver-service, both to matching-service over gRPC, which publishes to Kafka consumed by payment-service and audit-service">
+      <svg viewBox="0 0 900 540" role="img" aria-label="Topology: clients to HAProxy to rider-service and driver-service, both to matching-service over gRPC, which publishes to Kafka consumed by payment-service and audit-service; rider-service also calls payment-service directly over gRPC for the FR-7 payment outcome read">
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--line-strong)"></path></marker>
           <marker id="arrow-sys" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--sys)"></path></marker>
@@ -251,6 +253,9 @@
         <path class="sm-edge" d="M 280,426 L 280,462"></path>
         <path class="sm-edge" d="M 620,426 L 620,462"></path>
 
+        <path class="sm-edge" d="M 168,230 C 104,254 32,290 30,430 C 29,466 96,484 174,489"></path>
+        <text class="sm-tag" x="130" y="452">gRPC · FR-7 outcome</text>
+
         <rect class="sm-chip" x="180" y="466" width="200" height="50" rx="5"></rect>
         <text class="sm-name" x="280" y="484">payment-service</text>
         <text class="sm-sub" x="280" y="502">the only provider caller</text>
@@ -272,6 +277,25 @@
         fire-and-forget cannot deliver any of those. Events carry <em>propagation</em>; anything an
         actor waits on stays a call. <span class="ad">AD-37</span>
       </p>
+      <p>
+        <strong>That long edge down the left is the one an actor waits on for money.</strong> A rider
+        asking whether their payment settled is read from <em>the owner</em>, not from the admission
+        projection — being advisory and fail-open is exactly what makes that projection right for
+        deciding who to refuse and wrong for telling someone where their money went. It is confined
+        to this read: admission never travels it, so a payment-service outage still cannot block a
+        ride request. When payments are down the read answers 503 —
+        <strong>no answer, never a guessed one.</strong> <span class="ad">AD-61</span>
+      </p>
+    </div>
+    <div class="callout warn">
+      <p>
+        <strong>Operator surfaces are not gateway routes, and that is the stronger boundary.</strong>
+        The refund trigger, the live dashboard, Prometheus and Grafana are reached directly inside the
+        cluster — nothing outside it reaches them at all, where a route would have exposed them. So
+        the list grows when a new <em>actor</em> appears and never when a new operator surface does.
+        Each such surface mints its own correlation id at entry, since no gateway did it for them.
+        <span class="ad">AD-5</span> <span class="ad">AD-54</span>
+      </p>
     </div>
   </section>
 
@@ -286,11 +310,11 @@
       <table>
         <thead><tr><th>Service</th><th>Owns</th><th>Notes</th></tr></thead>
         <tbody>
-          <tr><td><strong>rider-service</strong></td><td><em>nothing</em></td><td>Stateless façade. REST in, gRPC out.</td></tr>
-          <tr><td><strong>driver-service</strong></td><td><code>drivers</code> — identity, position</td><td>No dispatch status. Also holds driver WebSockets.</td></tr>
-          <tr><td><strong>matching-service</strong></td><td><code>rides</code>, <code>drivers</code> (dispatch), <code>fare_rules</code>, <strong>Redis</strong></td><td>A second table also named <code>drivers</code> — different database, different purpose, never joined across.</td></tr>
-          <tr><td><strong>payment-service</strong></td><td><code>payments</code>, <code>webhook_events</code></td><td>The only service that talks to the provider.</td></tr>
-          <tr><td><strong>audit-service</strong></td><td><code>audit_events</code> + columnar tables</td><td>Pure consumer. Nothing depends on it.</td></tr>
+          <tr><td><strong>rider-service</strong></td><td><em>nothing</em></td><td>Stateless façade. REST in, gRPC out — and the one edge service that fans out to two owners in a single request.</td></tr>
+          <tr><td><strong>driver-service</strong></td><td><code>drivers</code> — identity, position</td><td>No dispatch status. Also holds driver WebSockets. Sole <em>producer</em> of a driver's location, wherever that location later lands.</td></tr>
+          <tr><td><strong>matching-service</strong></td><td><code>rides</code>, <code>drivers</code> (dispatch), <code>fare_rules</code>, <code>payment_standing</code>, <strong>Redis</strong></td><td>A second table also named <code>drivers</code> — different database, different purpose, never joined across. <code>payment_standing</code> is a projection, not a second owner.</td></tr>
+          <tr><td><strong>payment-service</strong></td><td><code>payments</code>, <code>webhook_events</code></td><td>The only service that talks to the provider, and the authoritative answer to "did the money move".</td></tr>
+          <tr><td><strong>audit-service</strong></td><td><code>audit_events</code>, columnar tables, <strong>the location-ping history</strong></td><td>Pure consumer. Nothing depends on it. Owning the ping <em>table</em> makes it no owner of the <em>fact</em>.</td></tr>
         </tbody>
       </table>
     </div>
@@ -303,6 +327,9 @@
           <tr><td>Is this driver free?</td><td>dispatch <code>drivers.status</code></td><td>geo-set membership</td><td>Conditional update decides; loser re-searches</td></tr>
           <tr><td>Where is this driver?</td><td>nowhere durable — ephemeral</td><td>position key</td><td>Staleness affects match <em>quality</em>, never correctness</td></tr>
           <tr><td>Who is the driver?</td><td>driver-service <code>drivers</code></td><td>snapshot on the ride</td><td>Snapshot is <em>more</em> correct — records who actually drove</td></tr>
+          <tr><td>Where <em>has</em> this driver been?</td><td>nothing — a stream, not a state</td><td>columnar ping history</td><td>Analytical only. Never read to answer "where is this driver now"</td></tr>
+          <tr><td>Does this rider owe money?</td><td>payment-service <code>payments</code></td><td><code>payment_standing</code> projection</td><td>Admission control, not an invariant — and it <strong>fails open</strong>, so lag admits rather than refuses</td></tr>
+          <tr><td>Did this rider's payment settle?</td><td>payment-service <code>payments</code></td><td><em>none — read the owner</em></td><td>The one advisory copy that is deliberately <em>not</em> reused: money answers come from the owner or not at all</td></tr>
         </tbody>
       </table>
     </div>
@@ -430,15 +457,33 @@
         <p class="step-t">driver-service stamps it at <em>produce</em> time</p>
         <p class="step-d">Stamping on consume would let consumer lag mask staleness — a backed-up consumer makes every vanished driver look freshly heard, and it fails worst under load.</p></div></li>
       <li class="step"><span class="step-n">02</span><div class="step-b">
-        <p class="step-t">Published keyed by driver</p>
-        <p class="step-d">So one driver's events stay ordered relative to each other across partitions.</p></div></li>
+        <p class="step-t">Published <em>once</em>, onto one topic, keyed by driver</p>
+        <p class="step-d">So one driver's events stay ordered relative to each other across partitions. One topic and never a re-publish onto a second one: a republishing hop is exactly where the produce-time stamp gets lost or re-stamped, and lag would start masking staleness again.</p></div></li>
       <li class="step"><span class="step-n">03</span><div class="step-b">
         <p class="step-t">matching-service writes Redis — two ops, one round trip</p>
         <p class="step-d">Geo set plus position key. <strong>Zero Postgres writes</strong>: a heartbeat column would mean thousands of updates per second on a hot row.</p></div></li>
       <li class="step"><span class="step-n">04</span><div class="step-b">
         <p class="step-t">audit-service consumes the same topic independently</p>
         <p class="step-d">Its own consumer group, unaware of the other. The thing a delete-on-acknowledge queue could not do — and the reason audit can be switched off without losing anything.</p></div></li>
+      <li class="step"><span class="step-n">05</span><div class="step-b">
+        <p class="step-t">It lands in the columnar store — and <em>only</em> there</p>
+        <p class="step-d">No Postgres history anywhere, and never in <code>audit_events</code>: at roughly 130 pings per state transition it would turn the audit trail into a location log. A ping carries no outbox <code>event_id</code>, so dedupe keys on <code>(driver_id, occurred_at)</code> — derived from the payload rather than generated, so a redelivery presents the same key with nothing to remember.</p></div></li>
     </ol>
+    <div class="callout warn">
+      <p>
+        <strong>The largest stream in the system, and until recently the one nothing owned.</strong>
+        About 1.3M pings a day against ~10k state transitions. Three earlier rules between them had
+        removed every durable write from this path — no outbox, no Postgres, no Redis persistence —
+        which is exactly how a stream this size ended up with no home, no ceiling and no owner
+        written down anywhere. <span class="ad">AD-60</span>
+      </p>
+      <p>
+        <strong>Its ceiling evicts oldest-first; a hard ingest stop is an alarmed backstop only.</strong>
+        Never the routine mechanism — a stop outlasting Kafka's retention converts a disk problem into
+        permanent, silent loss, and that is precisely what the promise that Tier 3 can be switched off
+        and lose nothing depends on not happening. <span class="ad">AD-48</span> <span class="ad">AD-60</span>
+      </p>
+    </div>
   </section>
 
   <section id="code">
@@ -593,8 +638,8 @@ index (next_attempt_at, id) WHERE dead_at IS NULL</pre>
         <tbody>
           <tr><td><span class="st store">Postgres</span> <em>per service</em></td><td>Every authoritative fact. One instance per service, never shared.</td><td>Live driver positions — that write rate belongs nowhere near a hot row.</td></tr>
           <tr><td><span class="st store">Redis</span></td><td>Latest position, and the matchable geo index. Owned solely by matching-service.</td><td>A source of truth for anything. Not durable, not history, not surge.</td></tr>
-          <tr><td><span class="st store">Kafka</span></td><td>The backbone, and the only durable record of the location stream.</td><td>A queue. Nothing is deleted on acknowledgement — retention is time-based.</td></tr>
-          <tr><td><span class="st store">Columnar</span></td><td>Audit history and the location-derived analytics.</td><td>Anything on a request path. Analytical reads only.</td></tr>
+          <tr><td><span class="st store">Kafka</span></td><td>The backbone, and the transport every store rebuilds from.</td><td>A queue. Nothing is deleted on acknowledgement — retention is time-based. No longer the location stream's <em>only</em> durable record; it is its transport.</td></tr>
+          <tr><td><span class="st store">Columnar</span></td><td>Audit history, <strong>the location-ping history</strong>, and the analytics derived from both.</td><td>Anything on a request path. Analytical reads only — never consulted for where a driver is <em>now</em>.</td></tr>
         </tbody>
       </table>
     </div>
@@ -625,6 +670,7 @@ index (next_attempt_at, id) WHERE dead_at IS NULL</pre>
           <tr><td><strong>Lost a race; a retry may succeed</strong></td><td class="num">ABORTED</td><td class="num"><em>retried internally, never surfaced</em></td></tr>
           <tr><td>Malformed</td><td class="num">INVALID_ARGUMENT</td><td class="num">400</td></tr>
           <tr><td>Shed by a bound</td><td class="num">UNAVAILABLE</td><td class="num">503</td></tr>
+          <tr><td><strong>Payment outcome asked for while payment-service is down</strong></td><td class="num">UNAVAILABLE</td><td class="num">503 — <em>never a guess</em></td></tr>
         </tbody>
       </table>
     </div>
@@ -634,6 +680,15 @@ index (next_attempt_at, id) WHERE dead_at IS NULL</pre>
         "this can never succeed" from "you lost a race, try again" — precisely the matching-worker
         collision where two workers pick the same nearest driver. Over HTTP both would have collapsed
         into an indistinguishable 409. <span class="ad">AD-38</span>
+      </p>
+      <p>
+        <strong>Three different refusals share one status code, so the code cannot be the
+        discriminator.</strong> An active ride, an unsettled delivered trip, and a cooldown after a
+        failed capture all reach the rider as 409. Each therefore carries a reason token in the gRPC
+        error detail, rendered as a distinct stable Problem Details <code>type</code> URI whose final
+        segment <em>is</em> that token — never prose in <code>detail</code>. Those are the same values
+        the refusal metric counts by label, so the API and the metric can never disagree about why a
+        rider was turned away. <span class="ad">AD-59</span> <span class="ad">AD-54</span>
       </p>
     </div>
     <div class="callout warn">
@@ -649,8 +704,11 @@ index (next_attempt_at, id) WHERE dead_at IS NULL</pre>
   <section id="ops">
     <h2>Operations</h2>
     <p class="sec-note">
-      One local Kubernetes cluster is the final target — no cloud vendor at any point. Which makes
-      the resource budget real, and makes it worth knowing in advance what can be switched off.
+      One local Kubernetes cluster is the final target — no cloud vendor at any point, and
+      <strong>no CI server</strong>: the suite runs locally against the same Compose stack, behind git
+      hooks, before a PR to <code>dev</code>. Which makes the resource budget real, makes a green run
+      a fact about one developer's machine and nothing else, and makes it worth knowing in advance
+      what can be switched off.
     </p>
 
     <h3>What can be turned off</h3>
@@ -693,7 +751,7 @@ index (next_attempt_at, id) WHERE dead_at IS NULL</pre>
   <section id="decisions">
     <h2>Decision log</h2>
     <p class="sec-note">
-      All 56, each with what it prevents. Identifiers match
+      All 61, each with what it prevents. Identifiers match
       <code>ARCHITECTURE-SPINE.md</code> and are stable — downstream epics and stories cite them.
     </p>
     <div class="tbl-wrap">
@@ -705,7 +763,7 @@ index (next_attempt_at, id) WHERE dead_at IS NULL</pre>
           <tr><td class="num"><span class="ad">AD-2</span></td><td>Co-written data shares one transactional owner</td><td>A saga anywhere in the core dispatch path</td></tr>
           <tr><td class="num"><span class="ad">AD-3</span></td><td>Explicit ownership, including Redis</td><td>Ride state and driver availability landing in different databases</td></tr>
           <tr><td class="num"><span class="ad">AD-4</span></td><td>Caches advisory, owning row authoritative</td><td>A stale read causing a double-booking rather than a retry</td></tr>
-          <tr><td class="num"><span class="ad">AD-5</span></td><td>Gateway exposes edge services only</td><td>matching-service becoming reachable, making the façade optional</td></tr>
+          <tr><td class="num"><span class="ad">AD-5</span></td><td>Gateway carries actor-facing traffic only; operator surfaces sit outside it</td><td>matching-service becoming reachable, making the façade optional — and the route list drifting from "the actor-facing edge" into "everything that speaks HTTP"</td></tr>
           <tr><td class="num"><span class="ad">AD-6</span></td><td>Queue bounds as one chain, tightest where visible</td><td>An edge bound that merely relocates the queue somewhere unobservable</td></tr>
 
           <tr class="grp"><td colspan="3">Code structure</td></tr>
@@ -734,6 +792,7 @@ index (next_attempt_at, id) WHERE dead_at IS NULL</pre>
           <tr><td class="num"><span class="ad">AD-25</span></td><td>Grid size is a scenario parameter</td><td>A radius exceeding the whole grid, so it filters nothing at scale</td></tr>
           <tr><td class="num"><span class="ad">AD-26</span></td><td>Geo set matchable-only; absence is not staleness</td><td>Over-fetching ineligible candidates — and capturing every ride after a restart</td></tr>
           <tr><td class="num"><span class="ad">AD-27</span></td><td>Redis is a cache, configured as one</td><td>Clustering a single hot key, and fsync on the hottest path</td></tr>
+          <tr><td class="num"><span class="ad">AD-60</span></td><td>Pings are one telemetry stream — one producer, one topic, independent consumer groups, columnar-only with an evicting ceiling</td><td>The system's largest data stream having no owner, no store and no ceiling, on a path from which every other rule had removed all durable writes</td></tr>
 
           <tr class="grp"><td colspan="3">Events and messaging</td></tr>
           <tr><td class="num"><span class="ad">AD-28</span></td><td>Transactional outbox; heartbeats excluded</td><td>The dual-write split — committed state with a lost event, or the reverse</td></tr>
@@ -758,11 +817,12 @@ index (next_attempt_at, id) WHERE dead_at IS NULL</pre>
           <tr><td class="num"><span class="ad">AD-43</span></td><td>Two strategies at two layers; no-op confined to pre-payment phases</td><td>Auto-authorising during an outage, dispatching against funds nobody holds</td></tr>
           <tr><td class="num"><span class="ad">AD-44</span></td><td>Terminal rides never leave an outstanding hold</td><td>A hold stranded when cancellation lands mid-authorisation</td></tr>
           <tr><td class="num"><span class="ad">AD-50</span></td><td>Payment state machine</td><td>Four services reading payment outcomes with four vocabularies</td></tr>
+          <tr><td class="num"><span class="ad">AD-61</span></td><td>The rider's payment outcome is read from the owner, never from the admission projection</td><td>A rider being told whether their money moved by a read model that is advisory, authoritative for nothing, and fail-open</td></tr>
 
           <tr class="grp"><td colspan="3">Time, capacity and operations</td></tr>
           <tr><td class="num"><span class="ad">AD-45</span></td><td>Bound outcomes, never a wait for external truth</td><td>A timeout manufacturing a hold storm against a rate-limited provider</td></tr>
           <tr><td class="num"><span class="ad">AD-46</span></td><td>Time constants as one set with fixed ordering</td><td>Intervals that interact badly — including a salvage path unreachable in every case</td></tr>
-          <tr><td class="num"><span class="ad">AD-47</span></td><td>Capacity derived, not guessed</td><td>Oversized pools relocating queueing into the database</td></tr>
+          <tr><td class="num"><span class="ad">AD-47</span></td><td>Capacity derived, not guessed — storage included</td><td>Oversized pools relocating queueing into the database, and a dimension sized by instinct because the rule never claimed it</td></tr>
           <tr><td class="num"><span class="ad">AD-48</span></td><td>Off exactly when behind an event boundary</td><td>Discovering under pressure which components are load-bearing</td></tr>
           <tr><td class="num"><span class="ad">AD-49</span></td><td>Declarative deployment reconciled from git</td><td>Cluster state drifting from the repository with no signal</td></tr>
           <tr><td class="num"><span class="ad">AD-51</span></td><td>Push is a third transport, fanned out and filtered locally</td><td>An offer reaching a replica that does not hold that driver's socket</td></tr>
@@ -789,7 +849,7 @@ index (next_attempt_at, id) WHERE dead_at IS NULL</pre>
       <table>
         <thead><tr><th>Deferred</th><th>Why it can wait</th></tr></thead>
         <tbody>
-          <tr><td>Concrete capacity values</td><td>The derivation method is fixed; the numbers come from measurement, and guessing them now would be fiction</td></tr>
+          <tr><td>Concrete capacity values — pools, replicas, partitions, bounds, and the <strong>storage ceilings</strong></td><td>The derivation method is fixed, storage included: rate × window with headroom. The numbers come from measurement, and guessing them now would be fiction</td></tr>
           <tr><td>Per-cell geo partitioning</td><td>The last scaling lever, and only pays when cells are substantially larger than the search radius</td></tr>
           <tr><td>Eager staleness sweep</td><td>Lazy removal suffices until lingering ghosts are shown to matter</td></tr>
           <tr><td>Log-based change capture</td><td>Polling teaches the pattern; a log-based relay is an upgrade with its own infrastructure cost</td></tr>
@@ -805,8 +865,8 @@ index (next_attempt_at, id) WHERE dead_at IS NULL</pre>
   </section>
 
   <footer>
-    Companion to ARCHITECTURE-SPINE.md · 59 decisions · reviewed by rubric, currency and
-    adversarial lenses · identifiers stable for downstream citation
+    Companion to ARCHITECTURE-SPINE.md · 61 decisions · reviewed by rubric, currency and
+    adversarial lenses · identifiers stable for downstream citation · regenerated 2026-08-16
   </footer>
 </div>
 </html>

@@ -81,12 +81,11 @@ metrics (FR-50, FR-46)
 **When** the rest of the system runs
 **Then** nothing breaks — it is Tier 3 (AD-48)
 
-> **Open question — how the dashboard is reached.** AD-5 lists exactly four gateway routes:
-> `rider-service`, `driver-service`, the Stripe webhook, and audit's query API. The dashboard is not
-> among them. The consistent reading is that it is reached directly, as Prometheus and Grafana are,
-> rather than through the gateway — but AD-5 predates it, so either that reading is confirmed or
-> AD-5's route list gains a fifth entry. Settle it when this story is detailed rather than by
-> whichever way it is first wired.
+**Given** the dashboard
+**When** it is reached
+**Then** it is **not** a gateway route — the gateway carries actor-facing traffic only, and operator
+and observability surfaces are reached directly inside the cluster, as Prometheus and Grafana are
+**And** that is a *stronger* boundary than a route, not a looser one (AD-5)
 
 ### Story 7.3: The Simulator drives synthetic load against the running system
 

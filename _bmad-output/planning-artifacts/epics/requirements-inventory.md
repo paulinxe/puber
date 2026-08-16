@@ -1,5 +1,12 @@
 ## Requirements Inventory
 
+> **Reconciled against the corrected PRD and spine, 2026-08-16.** A validation pass found the PRD had
+> never been reconciled against the architecture run; eleven requirements — FR-6, FR-10, FR-12, FR-26,
+> FR-27, FR-45, FR-46, FR-51, NFR-3, NFR-4 and NFR-10 — were recorded here the spine's way while the
+> PRD still described something different. **The PRD, spine and SPEC have since been corrected and now
+> agree with these entries.** Where an entry cites an AD, that citation is the mechanism binding it,
+> not a divergence.
+
 ### Functional Requirements
 
 **A. Rider Requests & Reads**
@@ -9,17 +16,17 @@ FR-2: Rider requests a ride with pickup/dropoff coordinates and a payment-method
 FR-3: A rider cannot hold two simultaneous active rides — a new request is rejected while one is in `REQUESTED`/`WAITING_MATCH`/`OFFERED`/`MATCHED`/`IN_PROGRESS`.
 FR-4: Rider can look up their current active ride by rider identity alone, without the ride identifier; returns at most one ride, or nothing.
 FR-5: Rider can read a single ride by its identifier, returning current state and details.
-FR-6: While a ride is `MATCHED`, the rider can see the assigned driver's display identity, their current position, and an ETA to pickup that updates as the driver moves.
+FR-6: While a ride is `MATCHED`, the rider can see the assigned driver's **display name — never their identifier** (AD-39) — their current position, and an ETA to pickup that updates as the driver moves.
 FR-7: Rider can see the payment outcome on a finished ride — final fare and whether it was captured, refunded, or left uncaptured (`CAPTURE_FAILED`) on a `COMPLETED` ride, or that authorization was declined on a `PAYMENT_FAILED` one. A capture still retrying is not yet an outcome.
 FR-8: Rider can query ride history, most recent first, bounded by a result-size limit.
-FR-51: A ride request is refused while the rider has money outstanding, in two cases beyond FR-3: (a) their most recent ride is terminal but its payment is still `INITIATED`/`AUTHORIZED`; (b) their most recent payment reached `CAPTURE_FAILED` less than 30 minutes ago. Both refusals and FR-3's are distinguishable by the caller and counted separately by reason. The window is self-clearing on wall clock from a recorded `capture_failed_at`.
+FR-51: A ride request is refused while the rider has money outstanding, in two cases beyond FR-3. Both read **one anchor — the rider's most recent ride, ordered by the `rides` identity bigint — and its single payment row**, and are evaluated in fixed order after FR-3: **(a) unsettled delivered trip** — the anchor ride is `COMPLETED` with its payment still `AUTHORIZED`; refused until the payment settles **or until the session-expiry bound lapses measured from `capture_requested_at`, whichever comes first**. A `CANCELLED`, `NO_DRIVER` or `PAYMENT_FAILED` anchor **never** refuses, since its hold is being voided rather than captured. **(b) capture cooldown** — the anchor ride's payment reached `CAPTURE_FAILED` less than 30 minutes ago, measured on wall clock from a recorded `capture_failed_at`. All three refusals are distinguishable by the caller and counted separately by reason.
 
 **B. Matching, Fares & Ride State**
 
 FR-9: No driver is dispatched until the fare is authorized. A ride persists as `REQUESTED` (meaning *awaiting authorization*, nothing else); the hold is placed asynchronously; the ride moves to `WAITING_MATCH` on success or terminal `PAYMENT_FAILED` on decline.
-FR-10: System matches each ride to the nearest available driver within a 5km radius; unmatched rides retry continuously until matched or given up on. Matching reads only `WAITING_MATCH`.
+FR-10: System matches each ride to the nearest **matchable** driver — declared `AVAILABLE` **and** heartbeat fresh (AD-21) — within a 5km radius; unmatched rides retry continuously until matched or given up on. Matching reads only `WAITING_MATCH`.
 FR-11: An offered driver has a bounded window to accept, during which the ride sits in `OFFERED`. On timeout or explicit decline the ride returns to `WAITING_MATCH` and is offered to the next-nearest driver. A driver who declined or timed out is never re-offered that ride.
-FR-12: If no driver is found for a `WAITING_MATCH` ride within a bounded overall window, it becomes terminal `NO_DRIVER`, retrying stops, and the hold is released. The rider is never charged.
+FR-12: If no driver is found for a `WAITING_MATCH` ride within a bounded **seeking budget — accumulated time in `WAITING_MATCH` only, never time spent `OFFERED` or `MATCHED`** (AD-46) — it becomes terminal `NO_DRIVER`, retrying stops, and the hold is released. The rider is never charged.
 FR-13: If the driver holding a `MATCHED` ride goes silent past a staleness window before starting the trip, the ride returns to `WAITING_MATCH` (never to `REQUESTED`) and the silent driver is released.
 FR-14: If the driver on an `IN_PROGRESS` ride goes silent past a staleness window, the system auto-completes the ride, captures the locked fare through the normal payment path, and releases the driver. The ride records `completed_by = SYSTEM` and the audit trail records `SYSTEM` as actor.
 FR-15: Full ride state machine: `REQUESTED → WAITING_MATCH → OFFERED → MATCHED → IN_PROGRESS → COMPLETED`, plus terminals `CANCELLED`, `NO_DRIVER`, `PAYMENT_FAILED`. `REQUESTED` is entered exactly once and never returned to.
@@ -39,8 +46,8 @@ FR-25: Driver can query their own completed ride history, most recent first, bou
 
 **D. Driver Location Tracking**
 
-FR-26: Drivers report location via a heartbeat; the system tracks current position and availability status.
-FR-27: Location updates persist to a durable history (position audit trail).
+FR-26: Drivers report location via a heartbeat; the system tracks current position. Declared availability is a **separate fact owned by dispatch** (FR-29, AD-3, AD-21) and is never written by a heartbeat.
+FR-27: Location updates are retained durably in the **columnar store only** — never in Postgres, and never in the audit trail, which covers state transitions alone (AD-26, AD-28, AD-53, AD-60). The history begins with the Kafka topic and is never backfilled.
 FR-28: Location reads are served from a fast path (sub-second) decoupled from durable slow-path persistence.
 FR-29: Declared availability and observed reachability are separate facts. A driver is matchable only when declared `AVAILABLE` **and** their heartbeat is fresh. Loss of signal never writes to declared status; a returning driver becomes matchable on their next heartbeat.
 FR-30: An **idle** driver unreachable far longer than any staleness window is set `OFFLINE`, recorded as a `SYSTEM` action, and must explicitly go online again. Never applies to a driver holding a ride.
@@ -70,8 +77,8 @@ FR-44: Aggregate analytics computed from data already collected — distance tra
 
 **H. Real-Time & Deployment**
 
-FR-45: Drivers receive a live push channel (WebSocket) rather than polling, carrying ride offers and the state changes a driver must react to — rider cancelled, offer withdrawn or expired, ride auto-completed.
-FR-46: All services expose health and metrics; dashboards show live operational KPIs. Fixed definitions: **match latency** is request → driver accepting, reported alongside time-to-first-offer; **drivers online** counts only *matchable* drivers. Money gauges: **capture loss** (count and summed amount of `CAPTURE_FAILED`, zero in health) and **age of the oldest capture still retrying**. **Refused ride requests counted by reason**, never as one total. Also surfaced: ride throughput, current surge multiplier, payment success rate, audit ingest rate, rides awaiting authorization, undelivered-event backlog age.
+FR-45: Drivers receive a live push channel (WebSocket) rather than **only** polling — push **accelerates** the polling path of FR-21, which remains permanently in place as the correctness-bearing route (AD-51, AD-46) — carrying ride offers and the state changes a driver must react to — rider cancelled, offer withdrawn or expired, ride auto-completed.
+FR-46: All services expose health and metrics; dashboards show live operational KPIs. Fixed definitions: **match latency** is request → driver accepting, reported alongside time-to-first-offer; **drivers online** counts only *matchable* drivers. Money gauges: **capture loss** (count and summed amount of `CAPTURE_FAILED`, zero in health) and **age of the oldest capture still retrying**. **Refused ride requests counted by reason**, never as one total, over the closed set: active ride, **most recent completed ride not yet paid**, and cooldown after `CAPTURE_FAILED` (AD-54 — these tokens must match FR-51's arms exactly). Also surfaced: ride throughput, current surge multiplier, payment success rate, audit ingest rate, rides awaiting authorization, undelivered-event backlog age.
 FR-47: All services deploy to a local Kubernetes cluster.
 
 **I. Identity & Simulation**
@@ -87,14 +94,14 @@ FR-50: A lightweight custom web UI shows live counts of system state — drivers
 
 NFR-1 (Concurrency correctness): Matching must be race-safe under concurrent load — no double-booked drivers, no lost updates — proven via concurrent test scenarios, not code review.
 NFR-2 (Scale ambition, phased): Functionally proven at fixture scale (~30 drivers) through the core phases; the Simulator must ramp to a stress scale of roughly 20k drivers and 200k riders as a late-phase milestone, surfacing real bottlenecks (connection pools, index gaps, Kafka partition throughput, cache hot-key contention). The operating area is a scenario parameter, not a constant. Payments is excluded from this stress test (see NFR-8).
-NFR-3 (Resilience): Kafka producers/consumers and Stripe API calls apply retry-with-jitter and circuit-breaking; failures degrade gracefully via dead-letter queue rather than cascading.
-NFR-4 (Idempotency & consistency): Delivery is at-least-once throughout, so duplicate processing is normal. Every event consumer and externally-triggered handler must be idempotent, deduplicating on a stable event identifier. Ride and payment state machines reject invalid transitions.
+NFR-3 (Resilience): Kafka producers/consumers and Stripe API calls apply retry-with-jitter and circuit-breaking; failures degrade gracefully via dead-letter queue rather than cascading — **except the settlement pursuit of FR-37, which carries no retry cap and therefore no dead-letter path**; its visibility is the oldest-retrying-capture gauge instead (AD-55, AD-58).
+NFR-4 (Idempotency & consistency): Delivery is at-least-once throughout, so duplicate processing is normal. Every event consumer and externally-triggered handler must be idempotent — **either by deduplicating on a stable event identifier, or by a guarded state transition that supplies idempotency structurally** (AD-36, AD-41), so no dedupe table is required where a guard already does the work. Ride and payment state machines reject invalid transitions.
 NFR-5 (Observability): Every service exposes health and metrics from day one; dashboards make match latency, throughput and error rates visible without log-diving. Money is watched separately from throughput. Refused ride requests are counted split by reason, never as one total.
 NFR-6 (Data retention & queryability): Audit data in Postgres retained for a bounded window — 12-month revisable default, dropped by partition — with the same logical history preserved indefinitely in ClickHouse.
 NFR-7 (Deployability, local only): Every service builds and runs in Docker with no host JDK dependency. The final deployment target is a **local** Kubernetes cluster; no cloud vendor at any point.
 NFR-8 (Payments scale boundary): Payments correctness is proven at normal/small concurrent scale, not at NFR-2 volume. The exclusion is achieved by **swapping the payment provider, not by skipping the payment path** — the payment service and its state machine still run; only the outbound Stripe call is replaced. The same swap enables running before payments exist and CI without credentials.
 NFR-9 (Determinism & time control): Simulator runs are reproducible — same seed, same sequence. Every bounded time window must be exercisable under a controlled clock rather than by waiting. Elapsed durations and deadlines use a **monotonic** clock; recorded facts use **wall clock**; a durable deadline crossing processes or services uses wall clock too.
-NFR-10 (Payment data handling): Payment-method tokens are never logged, echoed in API responses, or persisted beyond what the provider integration requires; provider API keys live in environment configuration, never in source or fixtures.
+NFR-10 (Payment data handling): Payment-method tokens are never logged, echoed in API responses, or **persisted at all** (AD-42); provider API keys live in environment configuration, never in source or fixtures.
 
 ### Additional Requirements
 
