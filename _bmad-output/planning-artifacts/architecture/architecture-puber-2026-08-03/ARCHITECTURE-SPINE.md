@@ -467,6 +467,7 @@ graph LR
 | Logging | Structured, one correlation id from the gateway through every hop. Payment tokens and provider keys never logged. |
 | Configuration | Environment variables; secrets never in source, fixtures, or manifests. |
 | Testing | Real Postgres, Redis and Kafka from the Compose stack; truncate and reseed per test class; sequential. Seeded, reproducible Simulator runs from a reset stack. Time advanced through the clock abstraction, never by sleeping. |
+| Container runtime | No container this project builds runs as `root`. Service images declare a numeric non-root `USER`, so a `runAsNonRoot` check can verify it without resolving a name; containers that mount the repository take the host UID/GID from environment configuration. Stock datastore images keep their own entrypoint's user handling. |
 
 ## Stack
 

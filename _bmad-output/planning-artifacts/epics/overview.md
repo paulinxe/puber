@@ -46,4 +46,8 @@ detail is easy to get wrong:
 - Any lost race maps to `ABORTED`, is retried internally, and is **never surfaced to the caller** (AD-38).
 - Any consumer or externally-triggered handler is **idempotent on a stable event identifier** (NFR-4,
   AD-36) — binding from Epic 4 onward, where such handlers first exist.
+- Any container **this project builds** runs as a **non-root** user — service images declaring it
+  numerically, and any container mounting the repository taking the host UID/GID from environment
+  (NFR-7, Container runtime convention). Stock datastore images keep their own entrypoint's user
+  handling.
 

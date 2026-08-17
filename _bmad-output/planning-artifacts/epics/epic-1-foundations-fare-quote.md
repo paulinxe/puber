@@ -28,9 +28,12 @@ So that I can start the system, confirm it is alive, and trust that every later 
 **And** its Prometheus endpoint exposes metrics in Prometheus text format (AD-54)
 
 **Given** a running service
-**When** its Postgres is stopped and then restarted
-**Then** health reports DOWN while the datastore is unreachable and UP once it returns
+**When** its Postgres is unreachable
+**Then** health reports DOWN **within a bounded time short enough to serve a Kubernetes readiness
+probe**, rather than blocking on a default connection timeout
 **And** this is proven by an integration test rather than by inspection
+**And** the UP case needs no test of its own — every other integration test boots against a live
+Postgres and fails if health is not UP
 
 **Given** a first start
 **When** Flyway runs
@@ -81,14 +84,11 @@ never from multiple hooks
 
 **Given** a commit touching one service
 **When** `pre-commit` runs
-**Then** it runs that service's **unit tests only**, so the gate stays fast enough to be tolerated
+**Then** it runs that service's **static analysis and nothing else** — no tests, so the gate costs
+approximately nothing and is never worth bypassing
 **And** a failure **blocks the commit**
-
-**Given** a commit touching the versioned contracts directory
-**When** `pre-commit` runs
-**Then** it runs **every** service's unit tests
-**And** this is because those `.proto` and event-schema files are copied into all services at build
-time, so a change there is a change to all of them (AD-52)
+**And** every test in the project runs at `pre-push` instead, where waiting is cheap and being wrong
+is expensive
 
 **Given** a push
 **When** `pre-push` runs
@@ -113,44 +113,72 @@ where the gate actually has to hold
 one versioned configuration source copied in at build time rather than a shared build plugin that
 couples the services
 
-**Given** the `pre-commit` hook
-**When** it runs
-**Then** the fast static checks run alongside the unit tests, since they cost approximately nothing
+**Given** every container this project builds — the service image, the build container and the test runner
+**When** any of them runs
+**Then** none of them runs as `root`
+**And** the service image declares its user **numerically** (`USER <uid>:<gid>`), because Kubernetes'
+`runAsNonRoot` verifies a numeric UID and cannot resolve a name (AD-49)
+**And** containers that mount the repository run as the **host user's UID and GID, supplied by
+environment variables**, so nothing they write into the working tree is owned by `root` (NFR-7)
+**And** this is proven by a check that no root-owned file exists after a full build and test run
 
-> **Investigate when this story is detailed: which analyzers, and whether they run on Java 25.** The
-> rules to enforce are **already written** across Stories 1.1 and 1.2 — this is a question of what
-> executes them, not what they should be:
+> **Resolved at story-detailing time (2026-08-17): ArchUnit + Spotless, and nothing else.** The rules
+> to enforce were **already written** across Stories 1.1 and 1.2 — this was only ever a question of
+> what executes them, not what they should be:
 >
-> | Rule already specified | What would enforce it |
-> | --- | --- |
-> | AD-8 one-way dependency: `model` imports nothing framework-flavoured, `service` imports Strategy interfaces but no implementation, nothing imports `controller` | **ArchUnit** is the Java ecosystem's standard for asserting package dependency rules as ordinary tests, and is the strongest candidate here |
-> | AD-7 package structure, and `model` never named `entity` | ArchUnit |
-> | AD-57 Liskov: no caller inspects a Strategy's concrete type | ArchUnit — assert no `instanceof` against strategy implementations |
-> | NFR-9 / AD-58: no `Instant.now()`, `System.currentTimeMillis()`, or SQL `now()` outside the `Clock` | ArchUnit, or a compile-time checker such as Error Prone with a custom rule |
-> | NFR-10 / AD-42: tokens never logged, provider keys never in source | A secret scanner over the repository, plus a rule that the masked token type is never passed to a logger |
+> | Rule already specified | Enforced by | Lands in |
+> | --- | --- | --- |
+> | AD-8 one-way dependency: `model` imports nothing framework-flavoured, `service` imports Strategy interfaces but no implementation, nothing imports `controller` | **ArchUnit** | Story 1.1 |
+> | AD-7 package structure, and `model` never named `entity` | ArchUnit | Story 1.1 |
+> | AD-57 Liskov: no caller inspects a Strategy's concrete type | ArchUnit — assert no `instanceof` against strategy implementations | Once strategies exist |
+> | NFR-9 / AD-58: no `Instant.now()`, `System.currentTimeMillis()`, or SQL `now()` outside the `Clock` | ArchUnit — a "no class calls this method" rule | Story 1.2 |
+> | NFR-10 / AD-42: tokens never logged, provider keys never in source | A secret scanner over the repository, plus a rule that the masked token type is never passed to a logger | Epic 5 |
 >
-> Broader candidates worth a look while there: **SpotBugs**, **Error Prone**, **PMD**, **Checkstyle**,
-> **Spotless** (formatting), **NullAway**, and **OWASP Dependency-Check**.
+> **Versions are pinned and were verified against upstream release data rather than assumed** — the
+> same discipline the spine applied to its own Stack table. **ArchUnit `1.5.0`, artifact
+> `archunit-junit6`**: `1.5.0` is a *floor* rather than merely the latest, because Boot 4.1.0 manages
+> JUnit Jupiter `6.0.3` and ArchUnit's `junit6` module first appears in `1.5.0`. Java 25 class-file
+> support (major version 69) is in. **Spotless `8.10.0`**, which selects a JVM-25-compatible formatter
+> automatically. Neither tool needs `--add-exports` flags.
 >
-> **Verify Java 25 and Spring Boot 4.1 support rather than assuming it.** The stack pins very recent
-> versions, and analyzer support for a new JDK routinely lags by months — the same discipline the
-> spine applied to its own Stack table, whose versions were *"verified against upstream release data
-> at authoring, not asserted from memory."* An analyzer that cannot parse Java 25 is not a candidate,
-> however good it is.
+> **SpotBugs, Error Prone, PMD, Checkstyle, NullAway, OWASP Dependency-Check and SonarQube are
+> deliberately excluded here.** Bug-finders need bugs, and a ruleset written against a service holding
+> no business logic is guesswork; Error Prone additionally couples to javac internals, which is the
+> worst bet on a JDK this new. **Checkstyle is the natural addition around Epic 3**, when there is real
+> logic for `AGENTS.md`'s house rules to govern. Full reasoning is recorded in the story file.
 
 > **Why the split, recorded so it is not "simplified" later.** The gate exists because a suite that
 > runs only when someone remembers it eventually stops being run — AD-56 names flaky concurrency
 > tests *"the worst possible failure here"* precisely because people *"learn to re-run and ignore"*
-> them. That same reasoning is why the **full** suite is not on `pre-commit`: by Epics 5–6 it runs
-> sequentially against Postgres, Kafka, Redis and ClickHouse, and a multi-minute gate on every commit
-> is one that gets bypassed with `--no-verify` inside a week. A bypassed hook protects nothing while
-> reporting success, which is worse than no hook. Fast checks where commits are frequent, the full
+> them. That same reasoning is why **no tests at all** sit on `pre-commit`: by Epics 5–6 the suite
+> runs sequentially against Postgres, Kafka, Redis and ClickHouse, and a multi-minute gate on every
+> commit is one that gets bypassed with `--no-verify` inside a week. A bypassed hook protects nothing
+> while reporting success, which is worse than no hook. **Every test invocation also runs in a
+> throwaway container with no surviving Gradle daemon**, so even a single service's unit tests pay
+> container, JVM and Gradle startup on every commit — which is what rules them out of the commit gate
+> rather than any judgement about their value. Static analysis where commits are frequent; the whole
 > suite where it is cheap to wait and expensive to be wrong.
+>
+> **`pre-push` is now the only gate, and that is deliberate.** With no CI server it is the last line
+> before the PR to `dev`. If it ever becomes intolerable, the answer is **faster tests, not moving the
+> gate again**.
+
+> **A contracts change is a change to every service, even though no hook now says so.** `.proto` and
+> event-schema files in `contracts/` are copied into every service at build time (AD-52), so editing
+> one edits all of them. `pre-commit` no longer expresses this — it runs no tests — and `pre-push`
+> runs every service's suite regardless of what changed, so the rule is enforced by the full gate
+> rather than by a special case.
 
 > **Note on ordering.** The truncate-and-reseed discipline of AD-56 is deliberately *not* here: with
 > no owned tables and no seed data yet, it would assert over an empty set. It is introduced in Story
 > 1.3 against `fare_rules` — the first seeded state — and extended in Story 2.1 to the fixture
 > drivers AD-56 actually cites as the cross-test-interference risk.
+
+> **Stock images are out of scope of the non-root rule, deliberately.** The rule binds containers
+> **this project builds**. `matching-postgres` and every later datastore run stock images whose
+> entrypoints already drop privileges themselves; forcing a `user:` onto them can break first-start
+> initialisation. Use a named volume rather than a bind mount and there is no host-ownership problem
+> to solve. The rule is "our containers do not run as root", not "every container gets a `user:` line".
 
 ### Story 1.2: Time is injectable and never read directly
 

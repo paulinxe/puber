@@ -1,5 +1,5 @@
 # generated: 2026-08-17
-# last_updated: 2026-08-17
+# last_updated: 2026-08-17 (PUB-1 → ready-for-dev; epic-1 → in-progress)
 # project: puber
 # project_key: PUB
 # tracking_system: file-system
@@ -67,8 +67,8 @@ story_location: "{project-root}/_bmad-output/implementation-artifacts"
 
 development_status:
   # Epic 1: Foundations & Fare Quote
-  epic-1: backlog
-  PUB-1-containerized-service-proven-against-the-real-stack: backlog  # Story 1.1
+  epic-1: in-progress
+  PUB-1-containerized-service-proven-against-the-real-stack: ready-for-dev  # Story 1.1
   PUB-2-time-is-injectable-and-never-read-directly: backlog  # Story 1.2
   PUB-3-fares-are-computed-from-configurable-rules: backlog  # Story 1.3
   PUB-4-rider-gets-a-fare-quote-through-the-gateway: backlog  # Story 1.4
