@@ -1,0 +1,20 @@
+# Team overrides for the bmad-sprint-planning skill.
+# Committed to the repo — applies to every developer on the project.
+#
+# Why this file exists: the skill's SKILL.md hardcodes `project_key = NOKEY`
+# and story keys of the form `{epic}-{story}-{title}`. Puber uses PUB- ticket
+# keys instead. Without these facts, a re-run of /bmad-sprint-planning would
+# regenerate sprint-status.yaml with `1-1-*` keys, orphaning every story file
+# already named `PUB-*.md`.
+
+[workflow]
+
+persistent_facts = [
+  "Puber's project_key is PUB, not NOKEY. Always write `project_key: PUB` in sprint-status.yaml (both the comment header and the YAML field).",
+  "Story keys in sprint-status.yaml are tickets of the form PUB-{n}-{kebab-title}, where {n} is a FLAT sequence across the entire backlog — not per-epic. Numbers are allocated epic by epic in story order, so PUB-1 is the first story of Epic 1 and the sequence continues unbroken into Epic 2 and beyond.",
+  "A ticket number is permanent identity. When regenerating sprint-status.yaml, read the existing file first and preserve each story's existing PUB-{n} number by matching on its title slug. Never renumber, reorder, or reuse a number, even if stories are added, removed, or reordered in the epic files.",
+  "New stories take the next number after the highest PUB-{n} present in the existing sprint-status.yaml, regardless of which epic they belong to.",
+  "Because the flat ticket number does not encode the epic, every story line carries a trailing `# Story {epic}.{story}` comment mapping it back to planning-artifacts/epics/. Always emit these comments.",
+  "Epic and retrospective keys are structural and must NOT be given PUB- ticket numbers. They stay as `epic-{n}` and `epic-{n}-retrospective`, because bmad-sprint-status and bmad-retrospective classify entries by the literal `epic-` prefix and `-retrospective` suffix.",
+  "Story files are named `{story-key}.md`, i.e. `PUB-{n}-{kebab-title}.md`, in the implementation-artifacts folder.",
+]
