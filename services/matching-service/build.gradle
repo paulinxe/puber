@@ -17,6 +17,77 @@ repositories {
 	mavenCentral()
 }
 
+// ---------------------------------------------------------------------------
+// Static analysis (AC16, AC17, AD-52)
+//
+// There is no root build and no shared Gradle plugin. The project's single
+// analyzer configuration source lives in `static-analyzers/` at the repository
+// root and is copied into this service's build output by `make build`,
+// immediately before this wrapper is invoked. Applying it from build output
+// keeps the source single and the copies obviously disposable.
+//
+// The copy cannot be a Gradle `Copy` task: `apply from:` resolves at
+// configuration time, while a `Copy` task runs at execution time, so the file
+// would not exist yet when Gradle needs it.
+// ---------------------------------------------------------------------------
+def analyzerConfig = layout.buildDirectory.file('static-analyzers/spotless.gradle').get().asFile
+if (!analyzerConfig.exists()) {
+	throw new GradleException(
+			"""
+			Static-analysis configuration is missing:
+			  ${analyzerConfig}
+
+			Run `make build` from the repository root. It copies static-analyzers/ into
+			each service's build output before invoking that service's Gradle wrapper
+			(AD-52). Invoking ./gradlew directly inside a service bypasses that copy.
+			""".stripIndent())
+}
+apply from: analyzerConfig
+
+// ---------------------------------------------------------------------------
+// Integration tests: a second group of tests with a Gradle task of their own.
+//
+// This declares `src/integrationTest/java` -- compiled separately from
+// `src/test/java` and run by `./gradlew integrationTest` rather than
+// `./gradlew test`. That is what makes `make test-unit` and `make test-integration`
+// two commands. `make test` runs both.
+//
+// WHY NOT JUST PUT THEM IN src/test/java
+//
+// `make build` runs `./gradlew build` with `--no-deps`, meaning no Postgres
+// container is started. `build` includes `check`, and `check` includes `test` -- so
+// a database test living in `src/test/java` would fail every single build. A
+// separate source set makes these a separate task that `build` never runs.
+//
+// ---------------------------------------------------------------------------
+testing {
+	suites {
+		integrationTest(JvmTestSuite) {
+			// A JvmTestSuite adds a JUnit Jupiter dependency of its OWN, and if left to its
+			// default that version WINS the conflict against Boot's BOM: it silently
+			// downgrades org.junit.jupiter:junit-jupiter from Boot's managed 6.0.3 to
+			// Gradle's bundled 5.x, while junit-platform-engine stays at 6.0.3 -- a JUnit 5
+			// API running on a JUnit 6 engine. Reading the version back out of the BOM keeps
+			// Boot the single owner of it, so a Boot upgrade still moves it.
+			useJUnitJupiter(dependencyManagement.managedVersions['org.junit.jupiter:junit-jupiter'])
+
+			dependencies {
+				// The service's own main classes. `project()` is the suite equivalent of
+				// adding sourceSets.main.output to the classpath by hand.
+				implementation project()
+			}
+		}
+	}
+}
+
+// Everything the unit tests get, the integration tests get too -- declared once rather
+// than listed twice. The suite creates these configurations under its own name, so
+// extending them works exactly as it did with a hand-rolled source set.
+configurations {
+	integrationTestImplementation.extendsFrom implementation, testImplementation
+	integrationTestRuntimeOnly.extendsFrom runtimeOnly, testRuntimeOnly
+}
+
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.boot:spring-boot-starter-flyway'
@@ -25,13 +96,55 @@ dependencies {
 	implementation 'org.flywaydb:flyway-database-postgresql'
 	runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
 	runtimeOnly 'org.postgresql:postgresql'
+
+	// Boot 4.x splits the test starters; there is deliberately no monolithic
+	// spring-boot-starter-test. Add the matching `-test` starter when a new
+	// capability starter is added.
 	testImplementation 'org.springframework.boot:spring-boot-starter-actuator-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-flyway-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-jdbc-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-micrometer-metrics-test'
+	// Boot 4 relocated TestRestTemplate here and no longer registers it off the back of
+	// webEnvironment=RANDOM_PORT alone -- tests opt in with @AutoConfigureTestRestTemplate.
+	// Boot 4 also modularized the blocking REST clients, so TestRestTemplate's own
+	// RestTemplateBuilder is a second, separate module rather than part of the web starter.
+	testImplementation 'org.springframework.boot:spring-boot-resttestclient'
+	testImplementation 'org.springframework.boot:spring-boot-restclient'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+	// `archunit-junit6`, not `junit5`: Boot 4.1.0 manages JUnit Jupiter 6, and the
+	// junit6 module first appears in ArchUnit 1.5.0. Not BOM-managed, so pinned here.
+	testImplementation 'com.tngtech.archunit:archunit-junit6:1.5.0'
 }
 
-tasks.named('test') {
+// AD-56: tests run sequentially against one shared database.
+tasks.withType(Test).configureEach {
 	useJUnitPlatform()
+	maxParallelForks = 1
+	systemProperty 'junit.jupiter.execution.parallel.enabled', 'false'
+	testLogging {
+		// Assignment syntax, not the space form: Gradle 9 deprecates
+		// `propName value` in the Groovy DSL and removes it in Gradle 10.
+		events = ['passed', 'skipped', 'failed']
+		exceptionFormat = 'full'
+	}
+}
+
+// Coming from org.springframework.boot, setting a explicitly named artifact to avoid collisions.
+tasks.named('bootJar') {
+	archiveFileName = 'matching-service.jar'
+}
+
+// Integration tests are compiled by `check` even though they are not RUN by it: the
+// datastore they need is unreachable during an image build, but a compile error in
+// src/integrationTest has no such excuse. Without this it survives `make build` and
+// `pre-commit` and first appears deep inside `pre-push`, after the stack is already up.
+tasks.named('check') {
+	dependsOn 'compileIntegrationTestJava'
+}
+
+tasks.named('integrationTest') {
+	description = 'Runs integration tests against the real Compose stack (AD-56).'
+	shouldRunAfter tasks.named('test')
 }

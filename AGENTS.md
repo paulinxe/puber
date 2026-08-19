@@ -1,5 +1,11 @@
 # Agent Instructions
 
+> **Project rules live in [`project-context.md`](project-context.md).** Build and test entry points,
+> package layout, the analyzer set, the hook policy, the non-root container rules, and the Boot 4.1 /
+> Java 25 gotchas are recorded there and are binding. This file covers **coding style only**.
+>
+> The rules are deliberately in one place and not copied here: two files holding the same rules drift.
+
 ## Coding Principles
 
 ### SOLID
