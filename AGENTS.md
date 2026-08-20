@@ -1,5 +1,11 @@
 # Agent Instructions
 
+> **Project rules live in [`project-context.md`](project-context.md).** Build and test entry points,
+> package layout, the analyzer set, the hook policy, the non-root container rules, and the Boot 4.1 /
+> Java 25 gotchas are recorded there and are binding. This file covers **coding style only**.
+>
+> The rules are deliberately in one place and not copied here: two files holding the same rules drift.
+
 ## Coding Principles
 
 ### SOLID
@@ -37,6 +43,27 @@ All code in this project must follow **SOLID** principles. The following rules a
 - Every numeric literal with business meaning must be a `private static final` constant with a descriptive name.
 - Examples: `MAX_MATCHING_RADIUS_KM`, `AVERAGE_SPEED_KMH`, `SCHEDULER_INTERVAL_MS`, `OFFER_TIMEOUT_SECONDS`.
 
+### Comments
+
+Comment the **why**, not the **what** — the code already says what it does.
+
+- Write one only if a reader would otherwise be surprised, or would "fix" something that is correct on
+  purpose. If deleting the comment costs nothing, delete it.
+- Two lines is usually enough. If it needs a paragraph, the explanation belongs in
+  `project-context.md` or the story file — leave a short pointer in the code instead.
+- Plain English, short sentences. Do not restate architecture decisions that are written down
+  elsewhere.
+- **Do not state facts you have not checked** — library defaults, version behaviour, "X must be lower
+  than Y". Nothing tests a comment, so a wrong one outlives wrong code. If a fact earns its place, say
+  where you confirmed it.
+- A comment naming a file, task, or setting has to move when that thing moves. A stale pointer is
+  worse than no pointer.
+
+```
+Bad   # set the connection timeout to 2 seconds     <- repeats the line below it
+Good  # Hikari defaults to 30s, too slow for a readiness probe.
+```
+
 ### Service Naming
 
 - Service names must express the **action** they perform, not the entity they touch.
@@ -49,6 +76,15 @@ All code in this project must follow **SOLID** principles. The following rules a
 - Every feature is validated by `@SpringBootTest(webEnvironment = RANDOM_PORT)` + `TestRestTemplate` + real Postgres.
 - No mocked repositories in feature tests. Mock only cross-service HTTP clients when the callee service is not running in the same JVM.
 
----
+### Test Naming and Placement
 
-*Created after Week 3 ticket definition. Updated whenever architectural constraints change.*
+- Unit tests: `*Test` in `src/test/java`. No database, no Spring context.
+- Integration tests: `*IntegrationTest` in `src/integrationTest/java`. Real Postgres from the Compose
+  stack.
+- **The directory decides which suite a test belongs to, not the name.** `./gradlew test` runs one
+  source set and `./gradlew integrationTest` the other, so a misnamed file still runs in the suite its
+  folder puts it in. Name it correctly anyway — the name is what you read in a failure line.
+- Not `*IT`. That suffix comes from Maven's Failsafe plugin, where it is the selector; here it selects
+  nothing and only looks like it does.
+
+---

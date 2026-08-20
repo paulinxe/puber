@@ -1,0 +1,87 @@
+name: puber
+
+services:
+  matching-postgres:
+    image: postgres:18.6
+    environment:
+      POSTGRES_DB: matching
+      POSTGRES_USER: matching
+      POSTGRES_PASSWORD: ${MATCHING_SERVICE_DB_PASSWORD:?missing infra/.env -- run `make build` or `make test`, which generate it}
+    volumes:
+      # Mounted at /var/lib/postgresql, NOT .../data -- Postgres 18+ refuses to start with the
+      # older path. Most Compose examples still show .../data; do not "fix" this back.
+      - matching-postgres-data:/var/lib/postgresql
+    # `-h 127.0.0.1` forces a TCP check. Without it pg_isready uses the Unix socket, which
+    # already exists during the first-start initdb, so the container is marked healthy before
+    # Postgres accepts TCP. Symptom: the suite fails once after `make clean`, then passes.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U matching -d matching"]
+      # TODO(Epic 4): these timings are conventional guesses, not measured. Revisit with the
+      # resilience work. See _bmad-output/implementation-artifacts/deferred-work.md.
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  matching-service:
+    build:
+      context: ../services/matching-service
+      target: runtime
+    image: puber/matching-service:0.0.1-SNAPSHOT
+    depends_on:
+      matching-postgres:
+        condition: service_healthy
+    environment:
+      MATCHING_SERVICE_DB_URL: jdbc:postgresql://matching-postgres:5432/matching
+      MATCHING_SERVICE_DB_USER: matching
+      MATCHING_SERVICE_DB_PASSWORD: ${MATCHING_SERVICE_DB_PASSWORD:?missing infra/.env -- run `make build` or `make test`, which generate it}
+    ports:
+      - "8080:8080"
+    # So that `docker compose up --wait` (and therefore `make run`) means "serving",
+    # not merely "process started". Without it the stack reports ready while Spring is
+    # still booting, and the first request after `make run` races the application.
+    #
+    # This probes /actuator/health for real rather than just checking the port, so a
+    # service that is listening but reports DOWN (unreachable Postgres, AD-1) is
+    # correctly unhealthy. It uses bash's /dev/tcp because the runtime image is a JRE
+    # with no curl, wget, or nc -- and deliberately stays that way: adding a HTTP
+    # client purely for a Compose probe would widen the runtime surface AC18 exists to
+    # narrow, and Epic 7's Kubernetes probes do the GET themselves and need nothing in
+    # the image. CMD (not CMD-SHELL) because /bin/sh here is dash, which has no
+    # /dev/tcp.
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf ''GET /actuator/health HTTP/1.0\r\nHost: localhost\r\n\r\n'' >&3 && head -1 <&3 | grep -q " 200"'
+      interval: 2s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  # Not a service -- a command runner the Makefile invokes with `docker compose run --rm`.
+  # The `tools` profile keeps `docker compose up` from ever starting it.
+  # Built from the `build` stage (JDK, Gradle, sources), not `runtime` (JRE and one jar).
+  tests:
+    profiles: ["tools"]
+    build:
+      context: ../services/matching-service
+      target: build
+    image: puber/matching-service-build:0.0.1-SNAPSHOT
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    working_dir: /workspace/services/matching-service
+    volumes:
+      - ..:/workspace
+    environment:
+      HOME: /workspace/.gradle-home
+      GRADLE_USER_HOME: /workspace/.gradle-home
+      MATCHING_SERVICE_DB_URL: jdbc:postgresql://matching-postgres:5432/matching
+      MATCHING_SERVICE_DB_USER: matching
+      MATCHING_SERVICE_DB_PASSWORD: ${MATCHING_SERVICE_DB_PASSWORD:?missing infra/.env -- run `make build` or `make test`, which generate it}
+    depends_on:
+      matching-postgres:
+        condition: service_healthy
+
+volumes:
+  matching-postgres-data:
