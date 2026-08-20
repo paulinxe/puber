@@ -1,5 +1,5 @@
 # generated: 2026-08-17
-# last_updated: 2026-08-17 (PUB-1 → ready-for-dev; epic-1 → in-progress)
+# last_updated: 2026-08-18 (PUB-1 → in-progress; code review applied 22 patches, 1 deferred)
 # project: puber
 # project_key: PUB
 # tracking_system: file-system
@@ -59,7 +59,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-08-17
-last_updated: 2026-08-17
+last_updated: 2026-08-18
 project: puber
 project_key: PUB
 tracking_system: file-system
@@ -68,7 +68,7 @@ story_location: "{project-root}/_bmad-output/implementation-artifacts"
 development_status:
   # Epic 1: Foundations & Fare Quote
   epic-1: in-progress
-  PUB-1-containerized-service-proven-against-the-real-stack: ready-for-dev  # Story 1.1
+  PUB-1-containerized-service-proven-against-the-real-stack: in-progress  # Story 1.1
   PUB-2-time-is-injectable-and-never-read-directly: backlog  # Story 1.2
   PUB-3-fares-are-computed-from-configurable-rules: backlog  # Story 1.3
   PUB-4-rider-gets-a-fare-quote-through-the-gateway: backlog  # Story 1.4
@@ -152,3 +152,24 @@ development_status:
   PUB-58-deployment-is-reconciled-from-git: backlog  # Story 7.5
   PUB-59-the-stress-run-produces-the-capacity-numbers: backlog  # Story 7.6
   epic-7-retrospective: optional
+
+action_items:
+  - id: AI-1
+    status: open
+    raised_by: PUB-1
+    raised_on: 2026-08-19
+    target: epic-4
+    summary: >-
+      PostgreSQL JDBC socketTimeout is unset (0 = infinite), so a partition mid-query hangs a request
+      thread forever; Hikari's connection-timeout does not cover it. Detail is in the Story 4.4 note in
+      planning-artifacts/epics/epic-4-event-backbone-resilience-operational-visibility-v0-1.md
+  - id: AI-2
+    status: open
+    raised_by: PUB-1
+    raised_on: 2026-08-19
+    target: epic-7
+    summary: >-
+      /actuator/health/readiness reports UP with Postgres stopped, because the default readiness group
+      excludes the db contributor. A k8s readinessProbe on the documented path would keep a broken pod
+      in service. Detail is in the Story 7.4 note in
+      planning-artifacts/epics/epic-7-real-time-live-dashboard-local-kubernetes-v1-0.md

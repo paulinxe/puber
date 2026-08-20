@@ -1,8 +1,12 @@
+---
+baseline_commit: 485e5716274f8ec08fb6dfae3a6bbc0f682ab3ee
+---
+
 # Story 1.1: Containerized service, proven against the real stack
 
 Ticket: PUB-1
 Epic: 1 — Foundations & Fare Quote
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -84,8 +88,9 @@ Do not add GitHub Actions, GitLab CI, or any pipeline file.
 **Given** the service directory
 **When** its structure is inspected
 **Then** it carries its own Gradle wrapper (9.x) and build file with **no root build** (AD-52)
-**And** packages are `controller` / `service` / `repository` / `model` / `strategy` / `config`
+**And** the package set is drawn from `controller` / `service` / `repository` / `model` / `strategy` / `config`, **each created only once it has content** — an empty package scaffolded to match a diagram is a violation of this AC, not a satisfaction of it (amended by code review 2026-08-18; see Review Findings)
 **And** the domain package is named `model`, never `entity` (AD-7)
+**And** the naming constraint binds every package that does come to exist, and is enforced by ArchUnit rather than by inspection
 
 **AC7 — Dependency direction is enforced by a test**
 **Given** the layered structure
@@ -129,7 +134,10 @@ Do not add GitHub Actions, GitLab CI, or any pipeline file.
 **AC13 — pre-commit runs static analysis only**
 **Given** a commit touching one service
 **When** `pre-commit` runs
-**Then** it runs that service's **static analysis and nothing else** — no tests, so the gate costs approximately nothing and is never worth bypassing
+**Then** it runs that service's **static analysis and nothing else** — no tests, so the gate stays cheap enough never to be worth bypassing
+**And** the measured cost is **~5.7s on a warm machine** (median of 3, `matching-service`, one staged file), **~22s** when the `tests` image is absent but Docker's layer cache is warm, and **~65s** for the very first commit on a fresh clone (44s image build with `--no-cache` + 21s first Gradle run against an empty `GRADLE_USER_HOME`) — measured at code review 2026-08-18; see Review Findings
+**And** ~5.7s is the number that matters, because it is what every commit after the first pays. It is a container start plus a daemonless JVM plus Gradle configuration, which is the floor for any containerized check under NFR-7 — not slack to be reclaimed
+**And** **if that figure regresses, the fix is a faster check, never moving work to `pre-push`** — re-measure before changing anything here
 **And** a failure **blocks the commit**
 **And** every test in the project runs at `pre-push` instead, where waiting is cheap and being wrong is expensive
 
@@ -173,77 +181,77 @@ Do not add GitHub Actions, GitLab CI, or any pipeline file.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Repository skeleton and versioned configuration sources** (AC: 6, 10, 17)
-  - [ ] Create the fixed source tree: `infra/`, `deploy/`, `services/`, `static-analyzers/`, `.githooks/`
-  - [ ] `deploy/` holds no manifests in this story. Create **`deploy/README.md`** — not a `.gitkeep` — carrying one line: *"Kubernetes manifests, reconciled from git by Argo CD (AD-49). Arrives in Epic 7 (Stories 7.4, 7.5); deliberately empty until then."* Git does not track empty directories, and a bare `.gitkeep` leaves the next person to guess why the folder exists
-  - [ ] Do **not** create a root `build.gradle`, root `settings.gradle`, or root `gradlew` — their absence is asserted by AC6
-  - [ ] Create `static-analyzers/` holding the single versioned static-analysis configuration source — a Gradle snippet carrying the Spotless configuration — copied into each service at build time (never a shared Gradle plugin, convention plugin, or `buildSrc`)
-  - [ ] Add `.gitignore` entries for build output (`services/*/build/`, `services/*/.gradle/`) **and for the copied analyzer config** — the copy is a generated artifact and must never be committed (see Dev Notes → "The copy lands in build output")
+- [x] **Task 1 — Repository skeleton and versioned configuration sources** (AC: 6, 10, 17)
+  - [x] Create the fixed source tree: `infra/`, `deploy/`, `services/`, `static-analyzers/`, `.githooks/`
+  - [x] `deploy/` holds no manifests in this story. Create **`deploy/README.md`** — not a `.gitkeep` — carrying one line: *"Kubernetes manifests, reconciled from git by Argo CD (AD-49). Arrives in Epic 7 (Stories 7.4, 7.5); deliberately empty until then."* Git does not track empty directories, and a bare `.gitkeep` leaves the next person to guess why the folder exists
+  - [x] Do **not** create a root `build.gradle`, root `settings.gradle`, or root `gradlew` — their absence is asserted by AC6
+  - [x] Create `static-analyzers/` holding the single versioned static-analysis configuration source — a Gradle snippet carrying the Spotless configuration — copied into each service at build time (never a shared Gradle plugin, convention plugin, or `buildSrc`)
+  - [x] Add `.gitignore` entries for build output (`services/*/build/`, `services/*/.gradle/`) **and for the copied analyzer config** — the copy is a generated artifact and must never be committed (see Dev Notes → "The copy lands in build output")
 
-- [ ] **Task 2 — Verify and reshape the seeded Gradle project** (AC: 1, 6, 10)
-  - [ ] **`services/matching-service/` arrives pre-seeded from Spring Initializr** — wrapper, build file and application class already exist. **Do not regenerate it.** Run the verification checklist in Dev Notes → "Seeded from Spring Initializr" before writing any code
-  - [ ] Confirm `gradle/wrapper/gradle-wrapper.properties` pins Gradle **9.x** (AD-52) — if the seed shipped an 8.x wrapper, upgrade it via the wrapper itself inside the build container
-  - [ ] Confirm the Boot version is **4.1.x** and the Java toolchain is **25**; add the toolchain block if the seed omitted it
-  - [ ] Confirm no JPA/Hibernate/Liquibase/Testcontainers/`spring-boot-docker-compose` dependency is present, and remove any that is (AD-10, AD-56, no-ORM convention)
-  - [ ] Reshape the flat seeded package into `com.puber.matching` with `config/` and `shared/`; move the application class to `com.puber.matching` (see Dev Notes → "Package layout: how AD-7 and AD-9 compose")
-  - [ ] **Create layer packages only where they have content.** Do not scaffold empty `controller`/`service`/`repository`/`model`/`strategy` directories under `shared` — it will never hold a controller or a repository
-  - [ ] Delete the seed's placeholder context-loads test if it duplicates the real integration coverage, or keep it as the smoke test — do not leave both
-  - [ ] Delete Initializr's generated `HELP.md` — it is boilerplate links, not project documentation
+- [x] **Task 2 — Verify and reshape the seeded Gradle project** (AC: 1, 6, 10)
+  - [x] **`services/matching-service/` arrives pre-seeded from Spring Initializr** — wrapper, build file and application class already exist. **Do not regenerate it.** Run the verification checklist in Dev Notes → "Seeded from Spring Initializr" before writing any code
+  - [x] Confirm `gradle/wrapper/gradle-wrapper.properties` pins Gradle **9.x** (AD-52) — if the seed shipped an 8.x wrapper, upgrade it via the wrapper itself inside the build container
+  - [x] Confirm the Boot version is **4.1.x** and the Java toolchain is **25**; add the toolchain block if the seed omitted it
+  - [x] Confirm no JPA/Hibernate/Liquibase/Testcontainers/`spring-boot-docker-compose` dependency is present, and remove any that is (AD-10, AD-56, no-ORM convention)
+  - [ ] ~~Reshape the flat seeded package into `com.puber.matching` with `config/` and `shared/`~~; move the application class to `com.puber.matching` (see Dev Notes → "Package layout: how AD-7 and AD-9 compose") — **deliberately not done, accepted at code review 2026-08-18.** This bullet contradicts the one directly below it, and `project-context.md`'s "never scaffold empty" rule governs. Nothing belongs in `config/` before Story 1.2's `Clock`, and nothing in `shared/` before Story 1.3's Money/Coordinates. The application class was already at `com.puber.matching`, so the move was a no-op. AC6 has been amended to match. **Left unchecked on purpose: this box previously read `[x]` for work the Completion Notes state was skipped, which is the false completion signal the review flagged.**
+  - [x] **Create layer packages only where they have content.** Do not scaffold empty `controller`/`service`/`repository`/`model`/`strategy` directories under `shared` — it will never hold a controller or a repository
+  - [x] Delete the seed's placeholder context-loads test if it duplicates the real integration coverage, or keep it as the smoke test — do not leave both
+  - [x] Delete Initializr's generated `HELP.md` — it is boilerplate links, not project documentation
 
-- [ ] **Task 3 — Dockerfile and Compose stack** (AC: 1, 2, 18)
-  - [ ] Multi-stage `Dockerfile` in `services/matching-service/`: build stage and runtime stage both on a **pinned, digest-or-tag-pinned Temurin 25** image
-  - [ ] **The runtime stage runs as a non-root user, declared numerically** (`USER 10001:10001`) so Kubernetes' `runAsNonRoot` can verify it in Epic 7 — see Dev Notes → "Containers never run as root"
-  - [ ] `infra/docker-compose.yml` (Compose spec 3.9 / Compose v2): `matching-postgres` (Postgres 18.6, private to this service) and `matching-service`
-  - [ ] Configure the service's datasource entirely from environment variables (Configuration convention — no secrets in source)
-  - [ ] Wire `depends_on` with a Postgres healthcheck so start ordering is deterministic
+- [x] **Task 3 — Dockerfile and Compose stack** (AC: 1, 2, 18)
+  - [x] Multi-stage `Dockerfile` in `services/matching-service/`: build stage and runtime stage both on a **pinned, digest-or-tag-pinned Temurin 25** image
+  - [x] **The runtime stage runs as a non-root user, declared numerically** (`USER 10001:10001`) so Kubernetes' `runAsNonRoot` can verify it in Epic 7 — see Dev Notes → "Containers never run as root"
+  - [x] `infra/docker-compose.yml` (Compose spec 3.9 / Compose v2): `matching-postgres` (Postgres 18.6, private to this service) and `matching-service`
+  - [x] Configure the service's datasource entirely from environment variables (Configuration convention — no secrets in source)
+  - [x] Wire `depends_on` with a Postgres healthcheck so start ordering is deterministic
 
-- [ ] **Task 4 — Health and metrics from the first commit** (AC: 2, 3)
-  - [ ] Add `spring-boot-starter-actuator` and `micrometer-registry-prometheus`
-  - [ ] Expose `/actuator/health` and `/actuator/prometheus`; confirm the Prometheus endpoint returns `text/plain` in Prometheus exposition format
-  - [ ] Ensure the datastore health contributor is active so health is UP only once Postgres is reachable (AD-1, AD-54)
-  - [ ] Cap the connection/validation timeout so an unreachable datastore returns DOWN promptly instead of hanging the health probe
+- [x] **Task 4 — Health and metrics from the first commit** (AC: 2, 3)
+  - [x] Add `spring-boot-starter-actuator` and `micrometer-registry-prometheus`
+  - [x] Expose `/actuator/health` and `/actuator/prometheus`; confirm the Prometheus endpoint returns `text/plain` in Prometheus exposition format
+  - [x] Ensure the datastore health contributor is active so health is UP only once Postgres is reachable (AD-1, AD-54)
+  - [x] Cap the connection/validation timeout so an unreachable datastore returns DOWN promptly instead of hanging the health probe
 
-- [ ] **Task 5 — Flyway baseline** (AC: 5)
-  - [ ] Add Flyway (**managed version from the Boot BOM — never pin it independently**)
-  - [ ] Create `V1__baseline.sql` recording that `matching-service` owns no tables at this story (see Dev Notes → "What V1 contains")
-  - [ ] **No dedicated Flyway test.** Fold two assertions into an integration test that already boots the context (the AC3 health test is the natural home): the schema-history table holds exactly one successful row, and no second version was applied. See Dev Notes → "Why AC5 gets no test of its own"
+- [x] **Task 5 — Flyway baseline** (AC: 5)
+  - [x] Add Flyway (**managed version from the Boot BOM — never pin it independently**)
+  - [x] Create `V1__baseline.sql` recording that `matching-service` owns no tables at this story (see Dev Notes → "What V1 contains")
+  - [x] **No dedicated Flyway test.** Fold two assertions into an integration test that already boots the context (the AC3 health test is the natural home): the schema-history table holds exactly one successful row, and no second version was applied. See Dev Notes → "Why AC5 gets no test of its own"
 
-- [ ] **Task 6 — Running tests inside a container** (AC: 8, 9, 18)
-  - [ ] **There is no separate test-runner image.** Tests run in **the build stage image, as a throwaway container** joined to the Compose network — see Dev Notes → "Running tests inside a container (AD-56)"
-  - [ ] Declare it in `docker-compose.yml` **behind a Compose `profiles:` gate**, so `docker compose up` never starts it, and invoke it with `docker compose run --rm`. The declaration exists only to hold the network, mount, env and user settings in one place rather than repeating flags in every Makefile target
-  - [ ] **No `/var/run/docker.sock` mount** — the container must never have a Docker socket of its own (AD-56)
-  - [ ] Run it as `user: "${HOST_UID:-1000}:${HOST_GID:-1000}"` and set a writable `GRADLE_USER_HOME` inside the mounted workspace, so build output is host-owned rather than root-owned (AC18)
-  - [ ] Point integration tests at the Compose service name (`matching-postgres`), never `localhost`
-  - [ ] Force sequential execution: `maxParallelForks = 1`, JUnit parallel execution disabled
-  - [ ] Forbid H2/HSQLDB/embedded-Postgres/Testcontainers dependencies anywhere in the dependency graph (AD-10, AD-56)
+- [x] **Task 6 — Running tests inside a container** (AC: 8, 9, 18)
+  - [x] **There is no separate test-runner image.** Tests run in **the build stage image, as a throwaway container** joined to the Compose network — see Dev Notes → "Running tests inside a container (AD-56)"
+  - [x] Declare it in `docker-compose.yml` **behind a Compose `profiles:` gate**, so `docker compose up` never starts it, and invoke it with `docker compose run --rm`. The declaration exists only to hold the network, mount, env and user settings in one place rather than repeating flags in every Makefile target
+  - [x] **No `/var/run/docker.sock` mount** — the container must never have a Docker socket of its own (AD-56)
+  - [x] Run it as `user: "${HOST_UID:-1000}:${HOST_GID:-1000}"` and set a writable `GRADLE_USER_HOME` inside the mounted workspace, so build output is host-owned rather than root-owned (AC18)
+  - [x] Point integration tests at the Compose service name (`matching-postgres`), never `localhost`
+  - [x] Force sequential execution: `maxParallelForks = 1`, JUnit parallel execution disabled
+  - [x] Forbid H2/HSQLDB/embedded-Postgres/Testcontainers dependencies anywhere in the dependency graph (AD-10, AD-56)
 
-- [ ] **Task 7 — Dependency-direction test** (AC: 7)
-  - [ ] Add `com.tngtech.archunit:archunit-junit6:1.5.0` (test scope) — **`junit6`, not `junit5`**, and **1.5.0 minimum**; see Dev Notes → "Analyzer selection" for why both matter
-  - [ ] Write the AD-8 rules: `model` imports nothing framework-flavoured; `service` depends on Strategy interfaces, never implementations; nothing imports `controller`
-  - [ ] Add the AD-7 rule: no package named `entity` anywhere
-  - [ ] Add the AD-9 rule: **`shared` depends on no feature package** — it is the bottom of `shared ← fare ← ride ← dispatch ← quote`, and this rule is what stops it becoming a dumping ground
-  - [ ] Smoke-check that ArchUnit reads Java 25 class files (major version 69) before building the full rule set on it
+- [x] **Task 7 — Dependency-direction test** (AC: 7)
+  - [x] Add `com.tngtech.archunit:archunit-junit6:1.5.0` (test scope) — **`junit6`, not `junit5`**, and **1.5.0 minimum**; see Dev Notes → "Analyzer selection" for why both matter
+  - [x] Write the AD-8 rules: `model` imports nothing framework-flavoured; `service` depends on Strategy interfaces, never implementations; nothing imports `controller`
+  - [x] Add the AD-7 rule: no package named `entity` anywhere
+  - [x] Add the AD-9 rule: **`shared` depends on no feature package** — it is the bottom of `shared ← fare ← ride ← dispatch ← quote`, and this rule is what stops it becoming a dumping ground
+  - [x] Smoke-check that ArchUnit reads Java 25 class files (major version 69) before building the full rule set on it
 
-- [ ] **Task 8 — Health reports DOWN promptly** (AC: 4)
-  - [ ] Cap `connectionTimeout` and the validation timeout in configuration so an unreachable datastore yields DOWN quickly — this matters in production, not only under test
-  - [ ] Add an integration test: a context pointed at an **unreachable address** reports health DOWN **within a small, explicit time budget**. Roughly fifteen lines; no forwarder, no proxy, no extra Compose service
-  - [ ] Disable actuator health caching for that test, or the assertion passes for the wrong reason
-  - [ ] **Do not** build a TCP forwarder or add Toxiproxy — see Dev Notes → "AC4 — a bounded-time DOWN assertion" for what was rejected and why
+- [x] **Task 8 — Health reports DOWN promptly** (AC: 4)
+  - [x] Cap `connectionTimeout` and the validation timeout in configuration so an unreachable datastore yields DOWN quickly — this matters in production, not only under test
+  - [x] Add an integration test: a context pointed at an **unreachable address** reports health DOWN **within a small, explicit time budget**. Roughly fifteen lines; no forwarder, no proxy, no extra Compose service
+  - [x] Disable actuator health caching for that test, or the assertion passes for the wrong reason
+  - [x] **Do not** build a TCP forwarder or add Toxiproxy — see Dev Notes → "AC4 — a bounded-time DOWN assertion" for what was rejected and why
 
-- [ ] **Task 9 — Static analysis wired into the build** (AC: 16, 17)
-  - [ ] **The analyzer set is decided: ArchUnit + Spotless, nothing else** (Dev Notes → "Analyzer selection"). Do not add Checkstyle, PMD, SpotBugs, Error Prone, or Sonar
-  - [ ] Apply Spotless in `services/matching-service/build.gradle`, reading the config snippet copied from `static-analyzers/` at build time
-  - [ ] Use **Spotless 8.10.0**, which selects a JVM-25-compatible google-java-format automatically. **Do not add `--add-exports` flags** — Spotless isolates the formatter and the changelog explicitly tells users to remove them
-  - [ ] Bind them to the `check`/`build` lifecycle so a violation **fails the build**
-  - [ ] Confirm they run inside the build container with no host JDK and no IDE plugin
-  - [ ] Record the analyzer decision and its Java 25 verification in the Completion Notes (the epic explicitly defers this investigation to this story)
+- [x] **Task 9 — Static analysis wired into the build** (AC: 16, 17)
+  - [x] **The analyzer set is decided: ArchUnit + Spotless, nothing else** (Dev Notes → "Analyzer selection"). Do not add Checkstyle, PMD, SpotBugs, Error Prone, or Sonar
+  - [x] Apply Spotless in `services/matching-service/build.gradle`, reading the config snippet copied from `static-analyzers/` at build time
+  - [x] Use **Spotless 8.10.0**, which selects a JVM-25-compatible google-java-format automatically. **Do not add `--add-exports` flags** — Spotless isolates the formatter and the changelog explicitly tells users to remove them
+  - [x] Bind them to the `check`/`build` lifecycle so a violation **fails the build**
+  - [x] Confirm they run inside the build container with no host JDK and no IDE plugin
+  - [x] Record the analyzer decision and its Java 25 verification in the Completion Notes (the epic explicitly defers this investigation to this story)
 
-- [ ] **Task 10 — Makefile** (AC: 10, 11, 18)
-  - [ ] `make build`: for each directory under `services/`, **copy `static-analyzers/` into that service's build output first**, then run its own `./gradlew build` **inside a container**; never aggregate them into a root Gradle build
-  - [ ] Do the copy in the Makefile, **not** as a Gradle `Copy` task — `apply from:` resolves at configuration time and would not see a file produced at execution time (Dev Notes → "The copy lands in build output")
-  - [ ] Make a direct `./gradlew build` inside a service fail with a message naming `make build` when the copied config is absent
-  - [ ] Export `HOST_UID`/`HOST_GID` from `id -u` / `id -g` so every container that mounts the repo runs as the host user — **not** the shell's `UID`/`GID`, which are unreliable to export
-  - [ ] Provide this target set. **`build`, `run` and `test` are the three canonical entry points** — a newcomer should need no other command, and no documented preamble:
+- [x] **Task 10 — Makefile** (AC: 10, 11, 18)
+  - [x] `make build`: for each directory under `services/`, **copy `static-analyzers/` into that service's build output first**, then run its own `./gradlew build` **inside a container**; never aggregate them into a root Gradle build
+  - [x] Do the copy in the Makefile, **not** as a Gradle `Copy` task — `apply from:` resolves at configuration time and would not see a file produced at execution time (Dev Notes → "The copy lands in build output")
+  - [x] Make a direct `./gradlew build` inside a service fail with a message naming `make build` when the copied config is absent
+  - [x] Export `HOST_UID`/`HOST_GID` from `id -u` / `id -g` so every container that mounts the repo runs as the host user — **not** the shell's `UID`/`GID`, which are unreliable to export
+  - [x] Provide this target set. **`build`, `run` and `test` are the three canonical entry points** — a newcomer should need no other command, and no documented preamble:
 
         | Target | Does |
         | --- | --- |
@@ -254,25 +262,25 @@ Do not add GitHub Actions, GitLab CI, or any pipeline file.
         | `test-unit` | Unit tests only — what `pre-commit` invokes |
         | `test-integration` | Integration tests only |
 
-  - [ ] **`test` must be self-sufficient**: it brings up whatever it needs (the datastores) rather than assuming `make run` was called first, so `make test` works on a fresh clone
-  - [ ] `test` is exactly `test-unit` + `test-integration`; the split exists because the hooks need it (`pre-commit` = unit only, `pre-push` = everything) and must not drift from `test`
-  - [ ] Every target executes in Docker, and none runs as root (NFR-7, AC18)
-  - [ ] `make build` installs the git hooks as a side effect (AC11)
-  - [ ] Write the loop so a new service directory is picked up with **no Makefile edit**
+  - [x] **`test` must be self-sufficient**: it brings up whatever it needs (the datastores) rather than assuming `make run` was called first, so `make test` works on a fresh clone
+  - [x] `test` is exactly `test-unit` + `test-integration`; the split exists because the hooks need it (`pre-commit` = unit only, `pre-push` = everything) and must not drift from `test`
+  - [x] Every target executes in Docker, and none runs as root (NFR-7, AC18)
+  - [x] `make build` installs the git hooks as a side effect (AC11)
+  - [x] Write the loop so a new service directory is picked up with **no Makefile edit**
 
-- [ ] **Task 11 — Git hooks** (AC: 11, 12, 13, 14, 15)
-  - [ ] Author `.githooks/pre-commit` and `.githooks/pre-push` as tracked files
-  - [ ] Install via `git config core.hooksPath .githooks` from the build target (tracked source, idempotent, nothing copied into `.git/hooks`)
-  - [ ] `pre-commit`: derive touched services from `git diff --cached --name-only`; run **only those services' static analysis — no tests at all**; non-zero exit blocks the commit
-  - [ ] **`pre-commit` must stay near-instant.** If it starts feeling slow, the fix is a faster check, never moving work off the hook — a gate people bypass protects nothing while reporting success
-  - [ ] `pre-push`: run the **entire** suite — every service's unit **and** integration tests against the Compose stack, regardless of what changed; non-zero exit blocks the push
-  - [ ] **No contracts special case is needed.** `pre-push` runs everything anyway, so a `contracts/` change is covered without a rule of its own (see Dev Notes → "Git hooks")
-  - [ ] Both hooks invoke work **only** through containers — no `java`, no `javac`, no host `gradle` anywhere in either script
-  - [ ] Verify both gates actually block: make a deliberately mis-formatted commit and a deliberately failing push
+- [x] **Task 11 — Git hooks** (AC: 11, 12, 13, 14, 15)
+  - [x] Author `.githooks/pre-commit` and `.githooks/pre-push` as tracked files
+  - [x] Install via `git config core.hooksPath .githooks` from the build target (tracked source, idempotent, nothing copied into `.git/hooks`)
+  - [x] `pre-commit`: derive touched services from `git diff --cached --name-only`; run **only those services' static analysis — no tests at all**; non-zero exit blocks the commit
+  - [x] **`pre-commit` must stay near-instant.** If it starts feeling slow, the fix is a faster check, never moving work off the hook — a gate people bypass protects nothing while reporting success
+  - [x] `pre-push`: run the **entire** suite — every service's unit **and** integration tests against the Compose stack, regardless of what changed; non-zero exit blocks the push
+  - [x] **No contracts special case is needed.** `pre-push` runs everything anyway, so a `contracts/` change is covered without a rule of its own (see Dev Notes → "Git hooks")
+  - [x] Both hooks invoke work **only** through containers — no `java`, no `javac`, no host `gradle` anywhere in either script
+  - [x] Verify both gates actually block: make a deliberately mis-formatted commit and a deliberately failing push
 
-- [ ] **Task 12 — Record the conventions this story establishes** (no AC — house requirement)
-  - [ ] Create **`project-context.md` at the repository root** (the `bmad-generate-project-context` skill produces it, or hand-write it). **This is not optional housekeeping:** every BMad workflow loads `{project-root}/**/project-context.md` as `persistent_facts` at activation, so rules recorded there reach every future `create-story`, `dev-story` and `code-review` run automatically. Rules left only in this story file are lost the moment the next story starts
-  - [ ] Capture the conventions PUB-1 establishes that the four following services inherit:
+- [x] **Task 12 — Record the conventions this story establishes** (no AC — house requirement)
+  - [x] Create **`project-context.md` at the repository root** (the `bmad-generate-project-context` skill produces it, or hand-write it). **This is not optional housekeeping:** every BMad workflow loads `{project-root}/**/project-context.md` as `persistent_facts` at activation, so rules recorded there reach every future `create-story`, `dev-story` and `code-review` run automatically. Rules left only in this story file are lost the moment the next story starts
+  - [x] Capture the conventions PUB-1 establishes that the four following services inherit:
     - Package layout — feature-first, layer-inside; **layer packages created only as they gain content**, never scaffolded empty
     - **What belongs in `shared`** — cross-cutting types encoding a *convention* (Money, Coordinates, `Clock`, the error vocabulary); never domain behaviour, and never "two features happen to use it". `shared` has no `controller` and no `repository`, and depends on no feature package
     - No root build; each service independently buildable via its own wrapper (AD-52)
@@ -283,14 +291,104 @@ Do not add GitHub Actions, GitLab CI, or any pipeline file.
     - `make build` / `run` / `test` as the canonical entry points
     - **`contracts/` is the versioned cross-service contract directory** (AD-52) — Story 1.4 creates the first `.proto` there
     - **Hook policy** — `pre-commit` runs static analysis only; **every test runs at `pre-push`**, which is the project's only gate since there is no CI server
-  - [ ] Add a **pointer** from `AGENTS.md` to `project-context.md` — **do not copy the rules across.** Two files holding the same rules drift, which is the failure this whole story keeps designing against
-  - [ ] Keep it to rules that are **not** derivable from the code, the spine, or the epics — `project-context.md` is for what a fresh agent would otherwise get wrong, not a summary of the architecture
+  - [x] Add a **pointer** from `AGENTS.md` to `project-context.md` — **do not copy the rules across.** Two files holding the same rules drift, which is the failure this whole story keeps designing against
+  - [x] Keep it to rules that are **not** derivable from the code, the spine, or the epics — `project-context.md` is for what a fresh agent would otherwise get wrong, not a summary of the architecture
 
-- [ ] **Task 13 — Prove the whole thing end to end** (AC: all)
-  - [ ] From a clean clone on a machine with no JDK: `make build` → stack up → health UP → metrics served → integration suite green
-  - [ ] Assert **no root-owned files were produced**: `find . -user root -print -quit` outputs nothing after a full build and test run
-  - [ ] Confirm the running service container is not root: `docker compose exec matching-service id -u` returns a non-zero UID
-  - [ ] Verify the hooks actually fire and actually block by making a deliberately failing commit and a deliberately failing push
+- [x] **Task 13 — Prove the whole thing end to end** (AC: all)
+  - [x] From a clean clone on a machine with no JDK: `make build` → stack up → health UP → metrics served → integration suite green
+  - [x] Assert **no root-owned files were produced**: `find . -user root -print -quit` outputs nothing after a full build and test run
+  - [x] Confirm the running service container is not root: `docker compose exec matching-service id -u` returns a non-zero UID
+  - [x] Verify the hooks actually fire and actually block by making a deliberately failing commit and a deliberately failing push
+
+### Review Findings
+
+Code review 2026-08-18. Three layers (Blind Hunter, Edge Case Hunter, Acceptance Auditor), all
+completed; every finding below was re-verified against the working tree before rating.
+
+**Decisions needed** — the correct fix is not determinable without a human call:
+
+- [x] [Review][Decision→Patched] AC4's unreachable-datastore test could pass vacuously — RESOLVED 2026-08-18. `HealthReportsDownPromptlyIntegrationTest` rested on the Javadoc claim that `192.0.2.0/24` (TEST-NET-1) is "guaranteed not to route". That is an assumption about the network the suite runs on, not a guarantee, and the whole method depends on it: only a *hanging* TCP connect makes Hikari's `connection-timeout` the thing that ends the wait, and only then does a bound on the response time say anything about that setting. Measured in the review sandbox: `192.0.2.1:5432` **accepted a connection in 0.8ms**, so the Postgres handshake failed at once, health reported DOWN in milliseconds, and the class stayed green with `connection-timeout` deleted outright — the exact regression it exists to catch. **Resolution:** added `theUnreachableAddressMustNotAnswer()`, a `@BeforeAll` precondition that probes the address for `CONNECT_MUST_STILL_BE_PENDING_AFTER` (2s, matching the configured `connection-timeout`) and fails the class with a full diagnosis unless the connect is still pending — a fast accept *or* a fast refusal both fail it. Host and port are now constants shared by the probe and the datasource URL so they cannot drift. The assertion is unchanged; only the experiment's validity is now checked. Verified: the precondition fires correctly in the sandbox (`accepted a TCP connection after 2ms`) and the class compiles Spotless-clean. **On the developer laptop, where TEST-NET-1 is expected to be dropped, this is a silent no-op and AC4 becomes genuinely proven — confirm with one `make test-integration` run there.** [services/matching-service/src/integrationTest/java/com/puber/matching/HealthReportsDownPromptlyIntegrationTest.java:103]
+- [x] [Review][Decision→Resolved] AC6's layer-package clause was unimplemented and Task 2's checkbox was ticked anyway — RESOLVED 2026-08-18, deviation accepted. `src/main/java/com/puber/matching/` holds exactly one file; no `config/`, no `shared/`, no layer package. AC6 and Task 2 conflicted with `project-context.md` ("Create layer packages only as they gain content. Never scaffold five empty directories upfront"), and Task 2 conflicted with *itself* — the bullet requiring `config/` and `shared/` sits directly above one forbidding empty layer packages. The dev resolved it in favour of "never scaffolded empty", which is correct: `config/` is earned by Story 1.2's `Clock` and `shared/` by Story 1.3's Money/Coordinates. **Resolution:** AC6 amended to require the package set be drawn from the fixed layer names and each created only once it has content, with an empty scaffolded package explicitly a violation; Task 2's bullet struck through, unchecked, and annotated. No code change — the implementation was right and the documents were wrong.
+- [x] [Review][Decision→Patched] AC5's "a second start applies nothing" was never exercised, and its assertions were absolute against a machine-wide volume — RESOLVED 2026-08-18, both fixed. **(a)** `HealthMetricsAndSchemaIntegrationTest` was the only Flyway-enabled context in the suite (`HealthReportsDownPromptlyIntegrationTest` sets `spring.flyway.enabled=false`; the seed's `contextLoads` test was deleted), so migrations ran exactly once per `make test` and the old assertion measured a *first* start. The class Javadoc's justification — "every class after the first is a subsequent start" — did not survive what shipped, and would have depended on class execution order, which JUnit does not guarantee. Replaced with `aSecondStartAppliesNoMigrations()`, which injects the `Flyway` bean, calls `migrate()` again against the already-migrated database and asserts `migrationsExecuted == 0` and `success` — AC5's clause proven directly, in one class, in any order. **(b)** `history.size() == 1` became a query scoped to V1 (later versions no longer make it fail), and `tables.isEmpty()` now routes its failure through `attribute()`, which checks the schema history for migrations beyond `HIGHEST_VERSION_THIS_STORY_OWNS` and distinguishes "stale shared volume from another branch — run `make clean`" from a real V1 defect. `matching-postgres-data` is shared by every checkout on the machine, so the two causes had identical symptoms and opposite responses. Story 1.3 now edits one constant rather than rewriting three tests. Verified against the real stack: all six tests in the class pass. [services/matching-service/src/integrationTest/java/com/puber/matching/HealthMetricsAndSchemaIntegrationTest.java:137]
+- [x] [Review][Decision→Resolved] `pre-commit`'s cost was asserted, never measured — RESOLVED 2026-08-18, measured and AC13 amended. AC13 claimed the gate "costs approximately nothing", which is an adjective, not a bound, and the story leans on it hard: it is the stated reason even one service's unit tests are banned from this hook, and the defence against `--no-verify` within a week. Measured on this machine (`matching-service`, one staged file, `.githooks/pre-commit` invoked directly):
+
+  | Case | Cost |
+  | --- | --- |
+  | Warm — image present, `GRADLE_USER_HOME` populated (median of 3: 5.8 / 5.8 / 5.5s) | **~5.7s** |
+  | `tests` image absent, Docker layer cache warm | **~22s** |
+  | Fresh clone — `--no-cache` image build (44.3s) + first Gradle run on an empty `GRADLE_USER_HOME` (21.1s) | **~65s** |
+
+  **Finding partially corrected:** the review relayed "multi-minute" for the fresh-clone case; the measurement says ~65s on a fast link with the Temurin base image already pulled. Slower networks will be worse, since that path re-resolves every dependency (see the separate patch on the discarded Gradle cache, which is what makes the 21s figure recur after every `make clean`).
+
+  **Resolution:** no code change. AC13 now states the measured figures instead of the adjective, names ~5.7s as the number that governs, notes it is the floor for any containerized check under NFR-7 rather than reclaimable slack, and requires a re-measure before anyone touches the gate. The Gradle daemon is never reusable across runs ("1 incompatible and 5 stopped Daemons could not be reused") because each invocation is a throwaway container, so the JVM start is paid every time by design. [.githooks/pre-commit:39]
+
+**Patches** — unambiguous fixes:
+
+- [x] [Review][Patch] `forbidSubstituteDatastores` — the mechanical enforcement of AD-10/AC9 — never runs at either git gate [services/matching-service/build.gradle:166]
+- [x] [Review][Patch] `pre-commit` analyses the working tree, not the staged content, so what is gated is not what is committed [.githooks/pre-commit:36]
+- [x] [Review][Patch] The substitute/ORM ban misses `org.hibernate.orm` (Hibernate 6/7's actual group), `spring-boot-testcontainers`, and every compile-side classpath [services/matching-service/build.gradle:126]
+- [x] [Review][Patch] `pg_isready` without `-h` reports healthy during first-run `initdb`, so dependants connect before Postgres listens on TCP [infra/docker-compose.yml:31]
+- [x] [Review][Patch] `healthIncludesTheDatastoreContributor` passes when health is DOWN — it cannot fail for the reason its `@DisplayName` names [services/matching-service/src/integrationTest/java/com/puber/matching/HealthMetricsAndSchemaIntegrationTest.java:58]
+- [x] [Review][Patch] `make build` builds and tags the shippable runtime image before any static analysis or test runs [Makefile:92]
+- [x] [Review][Patch] `management.endpoint.health.show-details=always` is set in the main properties baked into the runtime image, on an unauthenticated port bound to every interface [services/matching-service/src/main/resources/application.properties:30]
+- [x] [Review][Patch] `check` never compiles `src/integrationTest`, so a compile error there survives `make build` and `pre-commit` and surfaces only mid-`pre-push` [services/matching-service/build.gradle:113]
+- [x] [Review][Patch] `assertTimeout` does not abort — a genuinely hung health endpoint hangs the suite and the push instead of failing [services/matching-service/src/integrationTest/java/com/puber/matching/HealthReportsDownPromptlyIntegrationTest.java:65]
+- [x] [Review][Patch] AC18's "no root-owned file exists" check lives only in the Completion Notes prose; nothing in the repo asserts it, and `sudo make` silently yields `user: "0:0"` [Makefile:21]
+- [x] [Review][Patch] `infra/.env` and the Postgres volume desynchronise silently, and the generated file's own instructions ("delete it and the volume together: make clean") are false — `clean` never removes it [Makefile:58]
+- [x] [Review][Patch] `infra/.env` is a make target with no `.DELETE_ON_ERROR`, so an interrupted or failed write leaves a cached empty password and an error telling the user to run the command that will not fix it [Makefile:58]
+- [x] [Review][Patch] `make stop` fails on a fresh clone and `make clean` silently skips teardown — neither declares `$(ENV_FILE)`, and `clean`'s leading `-` swallows the failure while reporting success [Makefile:102]
+- [x] [Review][Patch] No `.NOTPARALLEL:` — `make -j test` runs both suites concurrently against the one shared database, defeating the explicit `maxParallelForks = 1` mandate [Makefile:129]
+- [x] [Review][Patch] `V1__baseline.sql` is comment-only, so Flyway's checksum is the checksum of its prose — a typo fix breaks `validate` against every already-migrated volume [services/matching-service/src/main/resources/db/migration/V1__baseline.sql:1]
+- [x] [Review][Patch] The Gradle cache warmed into the build image is discarded by the runner's `GRADLE_USER_HOME` override, so every fresh clone and every `make clean` re-downloads the distribution with `retries=0` [infra/docker-compose.yml:107]
+- [x] [Review][Patch] `.claude/settings.local.json` is untracked, unignored, absent from the File List, and carries one developer's absolute home paths and permission grants into the shared repo [.gitignore:5]
+- [x] [Review][Patch] `pre-commit` runs nothing at all when the change touches `static-analyzers/`, the `Makefile`, `infra/`, or the hooks themselves — the arbiter of `services/*` is ungated [.githooks/pre-commit:26]
+- [x] [Review][Patch] `pre-commit` swallows a failing `git diff` through the pipe (`#!/bin/sh`, no `pipefail`) and treats the failure as "nothing to check", exiting 0 having analysed nothing [.githooks/pre-commit:25]
+- [x] [Review][Patch] `analyzer-config` has no `|| exit 1` (a failed copy for one service is masked by a later success) and runs a bare `cp <dest>` when the glob matches nothing, dying with a `cp` usage error that never reaches build.gradle's carefully worded message [Makefile:75]
+- [x] [Review][Patch] `SERVICES := $(notdir $(wildcard services/*))` matches files as well as directories, so a `services/README.md` becomes a service [Makefile:29]
+- [x] [Review][Patch] `COPY /workspace/build/libs/*.jar` to a non-directory destination breaks the moment the build stage emits a second jar [services/matching-service/Dockerfile:56]
+
+#### Patch application — 2026-08-18
+
+All 21 patch findings applied and verified end to end from a clean state (`make clean` → `make build`
+→ `make test`). Notes on the ones that changed more than a line:
+
+- **Datastore guard** — now runs on `test` and `integrationTest` as well as `check`, so it sits on the
+  `pre-push` path. Matcher rewritten to `group == banned || group.startsWith("${banned}.")`, and the
+  scan widened from three hardcoded runtime configurations to every resolvable one. **Mutation-tested:**
+  injecting `org.hibernate.orm:hibernate-core` and a `compileOnly` H2 now fails the build, catching
+  `org.hibernate.orm`, its sub-group `org.hibernate.models`, and H2 on `compileClasspath` — all three
+  of which the old matcher passed clean.
+- **`pre-commit`** — materialises the index with `git checkout-index --all --prefix=.pre-commit-tree/`
+  and analyses that, via a new `TREE` variable threaded through `make static-analysis` and
+  `analyzer-config`. No stash, so there is no work to lose if the hook is killed. **Verified both
+  directions:** staged-bad + working-tree-good now blocks (previously passed — the dangerous case), and
+  staged-good + working-tree-dirty now passes (previously blocked). A change to `static-analyzers/`,
+  `Makefile`, `infra/` or `.githooks/` now analyses every service instead of none.
+- **`make build`** — reordered so static analysis and tests run before the runtime image is tagged, and
+  it ends with a `verify-no-root-owned-files` target implementing AC18's previously prose-only check.
+  Running make as root is now refused outright. (The `ALLOW_ROOT=1` escape hatch added here was
+  removed on 2026-08-20 as speculative -- nothing asked for it.)
+- **Health details** — `show-details` moved from `always` to `when-authorized` in the main properties;
+  `HealthMetricsAndSchemaIntegrationTest` turns it on for itself. The AC2 test now asserts HTTP 200 and the `db`
+  contributor's own `status`, parsed rather than substring-matched.
+- **`V1__baseline.sql`** — prose moved to a sibling `README.md`; the migration keeps a short
+  do-not-edit header. Flyway checksums the file byte for byte, so the old comment-only migration made
+  its own documentation immutable. This changed V1's checksum, so any existing volume must be dropped
+  (`make clean`) — done as part of verification.
+- **Two Boot 4.1 traps found while patching**, both added to `project-context.md`: Boot 4.1 manages
+  **Jackson 3** (`tools.jackson.databind.*`) and Jackson 2's `com.fasterxml.jackson.databind` is not on
+  the classpath at all; and a Postgres healthcheck must probe TCP (`pg_isready -h 127.0.0.1`) or it
+  passes against the bootstrap server during `initdb`.
+
+**Suite state after patching:** `make build` green from clean; unit tests green; five of six integration
+tests green. `HealthReportsDownPromptlyIntegrationTest` fails its new precondition **in this sandbox only**, because
+the egress path accepts connections to TEST-NET-1 — that is the AC4 finding surfacing, not a regression.
+**Confirm on the developer laptop with one `make test-integration` run**; the precondition is a silent
+no-op where TEST-NET-1 is dropped.
+
+**Deferred:**
+
+- [x] [Review][Defer] All six ArchUnit rules backing AC7 are currently vacuous, and the `model` rule is a blocklist rather than the stated constraint [services/matching-service/src/test/java/com/puber/matching/rules/ArchitectureRulesTest.java:34] — deferred: no `model`/`service`/`controller`/`strategy` package exists yet, so every rule carries `allowEmptyShould(true)` over an empty set and none has ever evaluated a class. The story anticipates and endorses this. Two things to revisit when packages arrive in Stories 1.2/1.3: the rules' correctness is unproven (a fixture with an inverted assertion would prove they can fire), and `modelDependsOnNothingFrameworkFlavoured` enumerates nine banned packages rather than expressing "nothing framework-flavoured" — `org.slf4j`, `lombok`, `org.hibernate` and anything future all pass it.
 
 ## Dev Notes
 
@@ -1031,16 +1129,191 @@ installed here gate the eventual PR to `dev`.
 
 ### Agent Model Used
 
-_To be filled by the dev agent._
+claude-opus-5 (Claude Opus 5), via the BMad `dev-story` workflow.
 
 ### Debug Log References
 
+Five real failures were hit and fixed during implementation. All are Boot 4.1 / Java 25 / Postgres 18
+behaviour that contradicts current mainstream guidance, so each is recorded in `project-context.md`
+rather than only here.
+
+1. **`apply plugin: 'com.diffplug.spotless'` inside the copied config script failed** with "Plugin
+   with id 'com.diffplug.spotless' not found", despite the `buildscript` block resolving. A script
+   plugin resolves a plugin *id* against the **target project's** script classpath, not against its
+   own `buildscript` block. Fixed by applying the plugin **by class**
+   (`apply plugin: com.diffplug.gradle.spotless.SpotlessPlugin`), which resolves against the script's
+   own compile classpath. This matters for AC17: it is what lets the version live in the single shared
+   config source instead of being repeated per service.
+2. **`org.springframework.boot.test.web.client.TestRestTemplate` does not exist in Boot 4.1.** It
+   moved to `org.springframework.boot.resttestclient.TestRestTemplate`.
+3. **`TestRestTemplate` is no longer registered by `webEnvironment = RANDOM_PORT` alone** -- all six
+   integration tests failed with `NoSuchBeanDefinitionException`. It needs
+   `@AutoConfigureTestRestTemplate`, plus **two** separately-modularized Boot artifacts:
+   `spring-boot-resttestclient` and `spring-boot-restclient` (the latter carries
+   `RestTemplateBuilder`; without it the context fails with `ClassNotFoundException`).
+4. **`/actuator/prometheus` returned 404 under test while working correctly in the running service.**
+   Boot disables metrics **exporters** inside `@SpringBootTest` by default. Fixed with
+   `@AutoConfigureMetrics` (Boot 4 path:
+   `org.springframework.boot.micrometer.metrics.test.autoconfigure`, from
+   `spring-boot-starter-micrometer-metrics-test`). Worth flagging: the pre-fix state was a test that
+   would have *proved the opposite of what it claims* had it been written to tolerate the 404.
+5. **Postgres 18.6 refused to start** with the conventional `/var/lib/postgresql/data` mount:
+   18+ images keep data in a major-version-specific subdirectory so `pg_upgrade --link` works without
+   crossing a mount boundary. The volume must mount at **`/var/lib/postgresql`**. Nearly every
+   existing Compose example still shows `.../data`.
+
+Also fixed: Gradle 9's space-assignment deprecation (`exceptionFormat 'full'`), which removed the
+"incompatible with Gradle 10" warning. `./gradlew check --warning-mode all` now reports zero
+deprecations -- worth keeping that way rather than starting the project with a known future break.
+
 ### Completion Notes List
 
-- The analyzer set is already decided (ArchUnit + Spotless). Record here the **versions** landed on,
-  **how Java 25 compatibility was verified**, and which Spotless formatter engine was used. The epic
-  deferred this investigation to this story and expects its answer written down.
-- Record how AC4's outage test was implemented, since the approach is non-obvious and the next person
-  to touch the health path will need it.
+**Analyzer selection -- the investigation the epic deferred to this story.**
+
+- **ArchUnit `com.tngtech.archunit:archunit-junit6:1.5.0`.** Re-verified against Maven Central at
+  implementation time: `1.5.0` is the **only** published `archunit-junit6` version, which confirms the
+  story's claim that the module first appears there -- taking "the latest 1.4.x" would have left no
+  JUnit 6 support against a Boot version that ships Jupiter 6.0.3.
+- **Spotless `8.10.0`** with **`googleJavaFormat()` left unpinned**, so Spotless selects a
+  JVM-25-compatible formatter itself. `8.10.0` is the latest published version. **No `--add-exports`
+  flags were needed for either tool**, as the story predicted.
+- **Java 25 compatibility was verified by execution, not by inspection.** Rather than trusting release
+  notes, `ArchUnitReadsJava25ClassFilesTest` asserts (a) that `MatchingServiceApplication.class` really
+  carries class-file **major version 69**, and (b) that ArchUnit imports it *and resolves its members*.
+  Without (b) a silently-empty import would leave every rule in `ArchitectureRulesTest` passing while
+  asserting nothing -- a green suite proving the opposite of its claim. Spotless's Java 25 support is
+  proven continuously by `spotlessCheck` running over Java 25 sources on every build.
+- Nothing else was added: no Checkstyle, PMD, SpotBugs, Error Prone, or Sonar.
+- **`./gradlew staticAnalysis`** was added to the shared config as the stable per-service entry point
+  the `pre-commit` hook calls, so the hook never names a specific analyzer and needs no edit when one
+  is added.
+
+**How AC4's outage test was implemented** (recorded because the approach is non-obvious and the next
+person to touch the health path will need it).
+
+`HealthReportsDownPromptlyIntegrationTest` boots a second Spring context whose datasource points at
+**`192.0.2.1`** -- TEST-NET-1 (RFC 5737), reserved and guaranteed not to route -- so the connection
+attempt hangs in exactly the way the AC describes, with no Docker socket, no forwarder, no proxy and
+no extra Compose service. It then asserts the **bound** rather than the outage, via
+`assertTimeout(Duration.ofSeconds(5), ...)`, and asserts HTTP **503** plus `"status":"DOWN"`.
+
+Three details are load-bearing and will break the test silently if changed:
+- `spring.flyway.enabled=false` for that context only -- migrations against an unreachable datastore
+  fail context startup before the health surface can be exercised.
+- `management.endpoint.health.cache.time-to-live=0`, or the assertion passes on a cached answer.
+- `spring.datasource.hikari.initialization-fail-timeout=-1` in the main configuration, so the service
+  **starts** with Postgres unreachable and reports DOWN rather than crashing (AD-1, AC2).
+- `connection-timeout=2000` / `validation-timeout=1000` are set in `application.properties`, not in the
+  test -- the point is that this matters in production. Hikari's 30s default blows straight through the
+  5s budget, which is the regression this test exists to catch.
+
+`assertTimeout` was chosen over manual `System.nanoTime()` arithmetic so the test reads no clock at
+all, which keeps it clear of Story 1.2's `Clock` discipline.
+
+**Deviation from the task list, deliberate and flagged for review.** Task 2 says to reshape the seeded
+package "with `config/` and `shared/`", but the same task -- and the Dev Notes, twice -- say to
+**create layer packages only where they have content** and never scaffold empty directories. Nothing
+belongs in either package at this story: health, metrics, Flyway and the datasource are entirely
+properties-driven, and `shared`'s first real inhabitant is Story 1.2's `Clock`. Since git does not
+track empty directories, creating them would have produced nothing committable anyway. **The
+"never scaffolded empty" rule was treated as governing and neither package was created.** The
+architecture is still enforced rather than merely documented: the AD-9 rules in
+`ArchitectureRulesTest` are written now and carry `allowEmptyShould(true)`, so they bind the moment
+those packages appear.
+
+**A gap found and closed after the first verification pass.** `make run` returned before the service
+was serving: `docker compose up --wait` only waits for "running" when a service declares no
+healthcheck, so the first request after `make run` raced Spring's startup. The story's definition of
+done says bringing the stack up must yield a healthy service without an undocumented manual step, and
+"poll until it answers" is exactly such a step. `matching-service` now declares a healthcheck that
+performs a real `GET /actuator/health` and requires a 200, so a container that is listening but
+reports DOWN (unreachable Postgres, AD-1) is correctly unhealthy.
+
+It is implemented with **bash's `/dev/tcp`**, because the runtime image is a JRE with no `curl`,
+`wget` or `nc` -- and deliberately stays that way: adding an HTTP client purely for a Compose probe
+would widen the runtime surface AC18 exists to narrow, and Epic 7's Kubernetes probes perform the GET
+themselves and need nothing in the image. It uses `CMD` rather than `CMD-SHELL` because `/bin/sh` in
+the Temurin image is dash, which has no `/dev/tcp`. Verified: after the change, `make run` blocks
+until ready and the very first request with no polling returns `UP`.
+
+**Verification performed** (Task 13, all from a `make clean` state):
+- `make build` from no build output: green, hooks installed, static analysis + 8 unit tests run.
+- `make test`: 8 unit + 6 integration tests green against the real Postgres 18.6 on the Compose
+  network.
+- `make run` then a live check: `/actuator/health` returns `UP` with a `db` contributor reporting
+  `PostgreSQL`; `/actuator/prometheus` returns **200** with
+  `text/plain;version=0.0.4;charset=utf-8` and 258 lines of exposition output.
+- **AC18:** `docker compose exec matching-service id` -> `uid=10001(app) gid=10001(app)`;
+  `find . -user root -print -quit` outputs **nothing** after a full build and test run; build output
+  and `.gradle-home/` are host-owned. The runtime image has **no `javac`** (JRE only).
+- **AC16 was demonstrated, not just configured:** the first `make build` failed on Spotless
+  violations in the newly written integration tests, which is the intended behaviour.
+- **Both hooks were proven to block, and to allow** -- four cases, not two:
+  - `pre-commit` with a deliberately misformatted staged file: `git commit` exited **1**, `HEAD`
+    unchanged. Same file after `spotlessApply`: exited **0**, commit landed.
+  - `pre-push` with a deliberately failing unit test: `git push` exited **1** and the remote received
+    **no refs**. With the failing test removed: exited **0**, branch pushed.
+  - The push tests used a throwaway local bare repository in a scratch directory, so nothing left the
+    machine. All scaffolding was removed and the temporary commit reset afterwards; `HEAD` is back at
+    `485e571` with the story's work left uncommitted for review.
+
+**One environment note that is not part of the deliverable.** This machine reaches the network only
+through an HTTP proxy, which Gradle inside a container needs in order to resolve dependencies. That
+was configured **outside the repository**, in `~/.docker/config.json`'s `proxies` block, so Docker
+injects it into every build and container automatically. **No project file mentions a proxy**, and the
+Dockerfile, Compose file, Makefile and hooks are all clean of machine-specific configuration.
+
+### Change Log
+
+| Date | Change |
+| --- | --- |
+| 2026-08-19 | Removed `forbidSubstituteDatastores` at the repo owner's decision. It covered one of AD-10's three clauses in 56 lines and could not cover the other two (Mockito arrives transitively via every `-test` starter). The rule now lives in `project-context.md` as a convention two maintainers uphold. |
+| 2026-08-19 | Integration tests moved from a hand-rolled source set to a `JvmTestSuite`; 4-space indentation (`googleJavaFormat().aosp()`). |
+| 2026-08-18 | `matching-service` healthcheck added so `docker compose up --wait` (and `make run`) blocks until the service actually serves. |
+| 2026-08-18 | Story implemented. Repository skeleton (`infra/`, `deploy/`, `static-analyzers/`, `.githooks/`, `Makefile`); seeded Gradle project verified and reshaped; multi-stage non-root Dockerfile; Compose stack with private Postgres 18.6 and a profile-gated containerized test runner; health, metrics and Flyway baseline; ArchUnit + Spotless wired to fail the build; 8 unit and 6 integration tests; `project-context.md` recorded and pointed to from `AGENTS.md`. Status -> review. |
 
 ### File List
+
+**Added**
+
+- `Makefile`
+- `project-context.md`
+- `.githooks/pre-commit`
+- `.githooks/pre-push`
+- `static-analyzers/spotless.gradle`
+- `infra/docker-compose.yml`
+- `deploy/README.md`
+- `services/matching-service/Dockerfile`
+- `services/matching-service/.dockerignore`
+- `services/matching-service/src/main/resources/db/migration/V1__baseline.sql`
+- `services/matching-service/src/test/java/com/puber/matching/rules/ArchitectureRulesTest.java`
+- `services/matching-service/src/test/java/com/puber/matching/rules/ArchUnitReadsJava25ClassFilesTest.java`
+- `services/matching-service/src/integrationTest/java/com/puber/matching/HealthMetricsAndSchemaIntegrationTest.java`
+- `services/matching-service/src/integrationTest/java/com/puber/matching/HealthReportsDownPromptlyIntegrationTest.java`
+
+**Modified**
+
+- `.gitignore` -- per-service build output, the copied analyzer config, `.gradle-home/`, `infra/.env`
+- `AGENTS.md` -- pointer to `project-context.md` (pointer only; rules deliberately not copied)
+- `services/matching-service/build.gradle` -- analyzer config application with a `make build`-naming
+  failure, `integrationTest` source set, sequential test execution, ArchUnit and the Boot 4 test
+  modules (the `forbidSubstituteDatastores` dependency-graph check was added during review and then
+  removed by decision -- see the Change Log)
+- `services/matching-service/src/main/resources/application.properties` -- environment-driven
+  datasource, capped Hikari timeouts, actuator health/prometheus exposure
+- `services/matching-service/src/main/java/com/puber/matching/MatchingServiceApplication.java` --
+  reformatted by Spotless (no behavioural change)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` -- `PUB-1` -> `in-progress` -> `review`
+
+**Deleted**
+
+- `services/matching-service/src/test/java/com/puber/matching/MatchingServiceApplicationTests.java` --
+  the seed's `contextLoads` placeholder, superseded by `HealthMetricsAndSchemaIntegrationTest`, which boots the same
+  context against the real datastore. The story requires one or the other, not both.
+- `services/matching-service/HELP.md` -- Initializr boilerplate (was gitignored, never tracked)
+
+**Generated, not committed** (gitignored)
+
+- `infra/.env` -- local datastore password, created by `make`
+- `services/matching-service/build/static-analyzers/spotless.gradle` -- the mechanical copy (AD-52)
+- `.gradle-home/` -- `GRADLE_USER_HOME` for the containerized runner

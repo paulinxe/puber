@@ -1,0 +1,46 @@
+// The one static-analysis config for every service (AD-52). `make build` copies it into
+// each service's build output, and that service's build file applies it from there.
+//
+// The plugin version lives here too, not in each build.gradle -- otherwise services could
+// drift on the analyzer version while sharing these rules.
+
+buildscript {
+  repositories {
+    gradlePluginPortal()
+  }
+  dependencies {
+    // Picks a google-java-format that matches the running JVM. Do not add `--add-exports`
+    // flags: Spotless isolates the formatter itself.
+    classpath 'com.diffplug.spotless:spotless-plugin-gradle:8.10.0'
+  }
+}
+
+// By class, not by id: a script plugin resolves an *id* against the target project's
+// classpath, not the buildscript block above, so the id form fails with "plugin not found".
+apply plugin: com.diffplug.gradle.spotless.SpotlessPlugin
+
+spotless {
+  java {
+    target 'src/*/java/**/*.java'
+    // 4 spaces, never tabs. `.aosp()` is the only way to get that: google-java-format
+    // exposes no options, so the style variant is the setting.
+    googleJavaFormat().aosp()
+    removeUnusedImports()
+    trimTrailingWhitespace()
+    endWithNewline()
+  }
+}
+
+// AC16: a violation fails the build rather than producing a report nobody reads.
+tasks.named('check') {
+  dependsOn 'spotlessCheck'
+}
+
+// What `pre-commit` invokes, so the hook never names a specific analyzer -- add one here
+// and the commit gate picks it up. No tests: ArchUnit rules are tests and run at
+// `pre-push`. A commit gate slow enough to bypass protects nothing.
+tasks.register('staticAnalysis') {
+  description = 'Static analysis only -- no tests. What the pre-commit hook runs.'
+  group = 'verification'
+  dependsOn 'spotlessCheck'
+}

@@ -1,0 +1,14 @@
+#!/bin/sh
+# AC14, AC15 -- the push gate, and the only gate this project has.
+#
+# It runs the ENTIRE suite -- every service's unit and integration
+set -eu
+
+cd "$(git rev-parse --show-toplevel)"
+
+printf '==> pre-push: running the full suite (unit + integration)\n'
+
+if ! make --no-print-directory test; then
+	printf '\npre-push: the suite failed -- push blocked.\n' >&2
+	exit 1
+fi

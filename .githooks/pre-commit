@@ -1,0 +1,82 @@
+#!/bin/sh
+# AC12, AC13 -- the commit gate.
+# This runs static analysis and nothing else so committing is fast.
+
+# -e: stop on the fist error instead of continuing
+# -u: fail on unset variables
+set -eu
+
+cd "$(git rev-parse --show-toplevel)"
+
+# We only analyse the INDEX (what `git add` staged) not the files on disk
+# In TREE, we will keep a copy of the INDEX
+TREE=.pre-commit-tree
+staged_paths=""
+
+# We register the removal of the copies on EXIT
+cleanup() {
+	rm -rf "$TREE"
+	[ -n "$staged_paths" ] && rm -f "$staged_paths" || true
+}
+trap cleanup EXIT
+# INT and TERM get their own handlers that exit non-zero. A shell signal handler runs and
+# then CONTINUES execution, so with one combined trap an interrupted hook can carry on and
+# reach `exit 0` which leads us to committing when we shouldn't.
+# 130 = SIGINT, 143 = SIGTERM, by the usual 128+signal convention.
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
+
+# Write git's output to a file rather than piping it. In a pipeline only the LAST
+# command's exit status counts, so `$(git diff | sed | sort)` reports sort's success even
+# when git failed: `set -e` sees nothing wrong, the staged list comes back empty, and the
+# hook exits 0 having analysed nothing. `set -o pipefail` would fix that but is not
+# portable across every /bin/sh. With a plain redirect, git's own failure stops the hook.
+staged_paths=$(mktemp)
+git diff --cached --name-only --diff-filter=ACMR -z >"$staged_paths"
+
+paths=$(tr '\0' '\n' <"$staged_paths")
+
+touched_services=$(printf '%s\n' "$paths" | sed -n 's|^services/\([^/]*\)/.*$|\1|p' | sort -u)
+
+# Some inputs are not owned by any one service but govern all of them:
+# static-analyzers/ is the single source of every service's analysis rules (AD-52),
+# the Makefile is what copies it into place and invokes each wrapper, and these hooks
+# are the gates themselves. A change to any of them is a change to every service, so
+# it analyses all of them rather than none -- which is what the old services/-only
+# dispatch did, leaving the arbiter of services/* the one thing nothing checked.
+if printf '%s\n' "$paths" | grep -qE '^(static-analyzers/|Makefile$|infra/|\.githooks/)'; then
+	printf '==> pre-commit: a shared build input changed -- analysing every service\n'
+	touched_services=$(
+		for wrapper in services/*/gradlew; do
+			[ -f "$wrapper" ] || continue
+			dirname "$wrapper" | sed 's|^services/||'
+		done
+	)
+fi
+
+if [ -z "$touched_services" ]; then
+	exit 0
+fi
+
+# Materialise the index. `git checkout-index` writes exactly what is staged, with no
+# stash to lose work in and nothing to restore if this hook is killed mid-run.
+mkdir -p "$TREE"
+git checkout-index --all --force --prefix="$TREE/"
+
+status=0
+for service in $touched_services; do
+	[ -d "$TREE/services/$service" ] || continue
+	printf '==> pre-commit static analysis: %s\n' "$service"
+	if ! make --no-print-directory static-analysis SERVICE="$service" TREE="$TREE"; then
+		status=1
+	fi
+done
+
+if [ "$status" -ne 0 ]; then
+	printf '\npre-commit: static analysis failed -- commit blocked.\n' >&2
+	printf 'Run `make format`, then `git add` the fix\n' >&2
+	printf 'If the failure is a missing Gradle task rather than a violation, the staged tree is\n' >&2
+	printf 'incomplete -- stage the build files your sources need.\n' >&2
+fi
+
+exit "$status"

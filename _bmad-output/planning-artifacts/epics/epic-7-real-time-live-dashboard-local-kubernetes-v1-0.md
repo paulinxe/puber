@@ -178,6 +178,31 @@ and the dashboard
 target is a **local** cluster
 **And** no cloud vendor is used at any point in the project (NFR-7)
 
+> **Carried in from Story 1.1 (PUB-1), 2026-08-19 — the readiness group excludes the datastore.**
+>
+> PUB-1 set `management.endpoint.health.probes.enabled=true`, which creates
+> `/actuator/health/liveness` and `/actuator/health/readiness`. Spring's own documentation points
+> Kubernetes probes at those paths — but **the default readiness group contains only
+> `readinessState`, not `db`.** Measured on the running service with Postgres stopped:
+>
+> | endpoint | result |
+> | --- | --- |
+> | `/actuator/health` | **HTTP 503, DOWN**, `db: DOWN` |
+> | `/actuator/health/readiness` | **HTTP 200, UP** |
+>
+> So a `readinessProbe` on the documented path keeps the pod in the Service's endpoint list while it
+> cannot reach its own database — the opposite of what Story 1.1's AC2 asks for. PUB-1's Compose
+> healthcheck avoids this by hitting the aggregate `/actuator/health`; the manifests must not simply
+> follow the Spring documentation here.
+>
+> The fix is one property, and it belongs to **readiness only**:
+> `management.endpoint.health.group.readiness.include=readinessState,db`
+>
+> **Do not add `db` to the liveness group.** Liveness failure restarts the container, and restarting a
+> pod because a database is unreachable fixes nothing while guaranteeing a crash loop. Note the
+> trade-off even for readiness: every replica loses its database at once, so all of them go not-ready
+> together and the Service empties. Decide deliberately between "serve nothing" and "serve errors".
+
 ### Story 7.5: Deployment is reconciled from git
 
 As an operator,

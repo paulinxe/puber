@@ -247,6 +247,27 @@ dependency costs a handful of attempts rather than a backlog's worth (AD-34)
 **When** they are observed
 **Then** they are tracked by their own gauge which alerts, rather than being deleted (AD-34, AD-35)
 
+> **Carried in from Story 1.1 (PUB-1), 2026-08-19 — datasource socket timeouts are unset.**
+>
+> PUB-1 capped HikariCP's `connection-timeout` (2s) and `validation-timeout` (1s), but left the
+> PostgreSQL JDBC driver's own timeouts at their defaults: `connectTimeout=10` seconds and
+> **`socketTimeout=0`, meaning no timeout at all.**
+>
+> Those bound different things. Hikari's `connection-timeout` bounds *acquiring* a connection, not
+> *using* one. If a partition happens mid-query on an already-established connection, the socket read
+> blocks forever: no Hikari setting covers it, and the request thread hangs indefinitely. PUB-1's AC4
+> proved "cannot connect" reports DOWN promptly; nothing covers "connected, then the network vanished",
+> which is the failure that actually shows up in a cluster.
+>
+> It lands here rather than in PUB-1 for two reasons. Choosing a `socketTimeout` needs a view of the
+> slowest legitimate query, which did not exist when the service had no queries. And this epic already
+> needs controllable failure injection to prove retry, dead-lettering and the breaker — PUB-1
+> explicitly deferred Toxiproxy to Epic 4 for that reason — which is also exactly what makes a stalled
+> established connection testable rather than asserted.
+>
+> Set `socketTimeout` deliberately, and align `connectTimeout` with Hikari's acquisition window; today
+> the driver keeps trying for up to 10s after Hikari has already given up at 2s.
+
 ### Story 4.5: The outbox sheds when its backlog ages
 
 As an operator,
