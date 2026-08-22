@@ -6,7 +6,7 @@ baseline_commit: 485e5716274f8ec08fb6dfae3a6bbc0f682ab3ee
 
 Ticket: PUB-1
 Epic: 1 — Foundations & Fare Quote
-Status: in-progress
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -1267,6 +1267,8 @@ Dockerfile, Compose file, Makefile and hooks are all clean of machine-specific c
 
 | Date | Change |
 | --- | --- |
+| 2026-08-21 | AC4 confirmed on the developer laptop: `make test-integration` green, so `HealthReportsDownPromptlyIntegrationTest`s TEST-NET-1 precondition is the silent no-op it was designed to be there and the bounded-DOWN assertion is genuinely proven. Nothing outstanding on this story. |
+| 2026-08-21 | Status -> done. Code review complete, all patches applied and verified, one finding deferred to Stories 1.2/1.3, two forward action items filed in `sprint-status.yaml`. |
 | 2026-08-19 | Removed `forbidSubstituteDatastores` at the repo owner's decision. It covered one of AD-10's three clauses in 56 lines and could not cover the other two (Mockito arrives transitively via every `-test` starter). The rule now lives in `project-context.md` as a convention two maintainers uphold. |
 | 2026-08-19 | Integration tests moved from a hand-rolled source set to a `JvmTestSuite`; 4-space indentation (`googleJavaFormat().aosp()`). |
 | 2026-08-18 | `matching-service` healthcheck added so `docker compose up --wait` (and `make run`) blocks until the service actually serves. |

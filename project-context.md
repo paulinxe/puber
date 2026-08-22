@@ -33,6 +33,27 @@ installed, it is wrong. Neither hook script may contain `java`, `javac`, `gradle
 + `test-integration` and brings up its own datastores, so it works on a fresh clone. `make build` also
 installs the git hooks.
 
+## Before you call it done, run `make build` and `make test`
+
+Both, in that order, and read the output.
+
+**Not `make test-unit`.** It does not run Spotless, so a formatting violation that blocks
+`make build` stays invisible — which is exactly how PUB-2's review left the build red while
+reporting the suite green. `spotlessCheck` runs under `make build`, `make static-analysis` and
+`pre-commit`; `make test-unit` runs neither it nor the integration suite.
+
+This is the gate on a **status change** — anything moving to `review` or `done`, in the story file or
+in `sprint-status.yaml`. A status is a claim that the work is finished, so it carries the same burden
+as any other claim here (`CLAUDE.md` → "Prove it, don't reason about it"). Do not set it from a
+partial run, and do not set it from a run you did before the last edit.
+
+Which workflow enforces this, and when, is wired in `_bmad/custom/*.toml`. The rule lives here
+because it binds whoever does the work, not only the workflows that happen to be in use.
+
+Report what you saw, including a failure you did not cause. A known environmental red — PUB-1's
+`HealthReportsDownPromptlyIntegrationTest` precondition is the current one — is named, not omitted
+and not quietly treated as green.
+
 ## Package layout: feature outside, layer inside
 
 AD-7 fixes the layers (`controller` / `service` / `repository` / `model` / `strategy` / `config`);
@@ -44,7 +65,8 @@ com.puber.matching
 ```
 
 - **Create layer packages only as they gain content.** Never scaffold empty ones to match a diagram.
-  This is why `config/` and `shared/` do not exist yet — Story 1.2's `Clock` is the first inhabitant.
+  `config/` and `shared/` exist because Story 1.2's `Clock` gave them content; every other layer and
+  feature package arrives with the story that first needs it.
 - **The domain package is `model`, never `entity`** (AD-7): `entity` implies an ORM, and there is none.
 - **Java packages are suffix-free** (AD-12): `com.puber.matching`. Directories and containers keep the
   `<role>-service` suffix.
@@ -60,6 +82,56 @@ Domain behaviour belongs to a feature. *"Two features happen to use it"* is not 
 
 `shared` has no `controller` and no `repository`. Do not duplicate its contents per feature either —
 four private `Coordinate` types in one JVM is a convention nobody can enforce.
+
+## Reading time (AD-10, NFR-9)
+
+Every read goes through the `Clock` strategy. `ArchitectureRulesTest.timeIsReadOnlyThroughTheClock`
+fails the build on any other Java read and `DatabaseNeverReadsTimeTest` on any SQL one — `SystemClock`
+excepted. `theRealClockIsOnlyEverInjected` closes the other half: only `config` may name
+`SystemClock`, because a class that constructs its own reads a clock no test can advance.
+
+- **`Clock.wallClockNow()` is wall clock, for recorded facts only.** A duration or a deadline never
+  comes from arithmetic over two of its readings — wall clock moves when the host is corrected. Use
+  `deadlineIn(...)`, or add a *monotonic* elapsed accessor when a caller first needs one, and do not
+  give that accessor a `now()`-shaped name either; the verbosity is what puts the semantics at the
+  call site. The one deadline that is wall clock: a durable one that outlives the process or crosses
+  a service (AD-46's cooldown, AD-58's `next_attempt_at`).
+- **`java.time.Clock` collides with ours, and an IDE auto-imports the JDK one first.** A production
+  class that imports it by accident is caught only if it also calls a banned factory, so read the
+  imports in any file touching both.
+- **A deadline is read back through the clock, never the other way round** —
+  `clock.hasReached(deadline)`, not `deadline.hasExpired(clock)`. A monotonic origin belongs to the
+  clock that took it, so only that clock can judge its own deadline; and `Deadline` importing `Clock`
+  put a cycle between `shared.model` and `shared.strategy`.
+
+### Never let the database tell the time
+
+**No SQL that asks the server what time it is — not in a migration, not in a query, not as a column
+default.** Every timestamp is a **bind parameter from the `Clock`**. This is AD-58's rule for the
+settlement worker (*"every `now()` in a claim or backoff predicate is a bind parameter from the AD-10
+`Clock` strategy, never SQL `now()`"*) applied everywhere, and the reason is the same: a time the
+database produced is a time no test can advance, so the window it guards can only be tested by
+waiting — which the Testing convention forbids, which means the test that would catch a broken
+predicate never gets written.
+
+`DEFAULT now()` on a column is the most tempting form and the worst one: it reads the clock in the
+one place nothing can reach.
+
+Postgres has more ways to say this than anyone expects, and `DatabaseNeverReadsTimeTest` covers all of
+them — but **read the list, because the scanner is a net and not a proof**:
+
+- Functions: `now()`, `clock_timestamp()`, `transaction_timestamp()`, `statement_timestamp()`,
+  `timeofday()`
+- Bare keywords, no brackets: `current_timestamp`, `current_date`, `current_time`, `localtimestamp`,
+  `localtime`
+- **Special input literals**, which is the group everyone forgets: `'now'`, `'today'`, `'yesterday'`,
+  `'tomorrow'`, `'allballs'` — as in `DEFAULT 'now'::timestamptz`, which reads the clock and contains
+  no bracket to anchor a search on
+
+The scanner is a **text** scan over `src/main/**/*.sql` and `src/main/**/*.java`. That is a real
+limit: it reads one line at a time, so SQL split across lines or assembled by string concatenation
+gets past it, and it only ever sees `matching-service`. **It is a backstop for the rule, not the
+rule.** The rule is the paragraph above, and it is on whoever writes the SQL and whoever reviews it.
 
 ## Static analysis: ArchUnit + Spotless, nothing else
 
@@ -159,7 +231,12 @@ Each looks like a mistake to anyone working from Boot 3 documentation. None is.
   credentials are generated by `make` into a gitignored `infra/.env`.
 - **SQL** — explicit SQL via `JdbcTemplate`. No ORM, no JPA, no Hibernate, ever. Do not add the JPA
   starter "just for the datasource".
-- **Timestamps** — `TIMESTAMPTZ`, UTC. **Transactions** — `READ COMMITTED`.
+- **Timestamps** — `TIMESTAMPTZ`, UTC, at every boundary and not only at rest. No `LocalDateTime` or
+  `LocalDate` in a signature, a column mapping or a DTO, and nothing reads the JVM or container
+  default zone — `ZoneId.systemDefault()` and `TimeZone.getDefault()` fail the build alongside the
+  time reads, and do not "fix" the underlying problem with `TZ=UTC`, since code that never asks the
+  question cannot be given a wrong answer. Rendering an instant in a local zone is for the presentation edge, with the
+  zone passed in explicitly. **Transactions** — `READ COMMITTED`.
 - **Migrations are expand-only**: additive, nullable, no backfill in the same migration. Never edit an
   applied one.
 - **Metrics** — in-process counters for events; durable state read from the owning table. Never persist

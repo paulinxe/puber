@@ -1,0 +1,23 @@
+# Team override for bmad-dev-story.
+#
+# Only the keys below are set; everything else falls through to the skill's own
+# customize.toml. Arrays append, so project-context.md stays loaded.
+
+[workflow]
+
+persistent_facts = [
+  "file:{project-root}/AGENTS.md",
+]
+
+on_complete = """
+Run `make build`, then `make test`, from the repository root. Read both outputs -- do not infer the
+result. This is required by project-context.md -> "Before you call it done, run `make build` and
+`make test`". `make test-unit` does not satisfy it: it runs neither Spotless nor the integration
+suite, so a formatting violation that blocks `make build` stays invisible.
+
+If either command fails because of work done in this run, set the status back to `in-progress` in both
+the story file and sprint-status.yaml, say so plainly, and quote the failing output.
+
+If the only failure is a known environmental one, name it and show that it is pre-existing -- `git log
+-1` on the failing file. Never report it as green and never leave it unmentioned.
+"""

@@ -122,6 +122,9 @@ dependencies {
 tasks.withType(Test).configureEach {
 	useJUnitPlatform()
 	maxParallelForks = 1
+	// Gradle caches a passing test task, so a second `make test`
+	// prints BUILD SUCCESSFUL having run nothing.
+	outputs.upToDateWhen { false }
 	systemProperty 'junit.jupiter.execution.parallel.enabled', 'false'
 	testLogging {
 		// Assignment syntax, not the space form: Gradle 9 deprecates
