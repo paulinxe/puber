@@ -19,7 +19,15 @@ Items raised by a workflow, real but not actionable at the time they were found.
   endorses writing them early; `ArchUnitReadsJava25ClassFilesTest` proves ArchUnit parses Java 25 bytecode, but
   not that any rule can produce a violation.
 
-  Revisit when the packages arrive (Stories 1.2 / 1.3):
+  **Story 1.2 has now landed and this item did not close.** It created `shared` and `config`, so
+  `modelDependsOnNothingFrameworkFlavoured` governs its first real class (`Deadline`) — but it is
+  still the enumerate-a-blocklist shape, and the other five rules still govern packages that do not
+  exist. PUB-2 deliberately scoped itself to proving its own new time rules (which it does, and its
+  code review then made the proof derive from the rule's own table so it cannot outgrow it). **1.3 is
+  now the target**: `fare/` arrives with `model`, `service` and `strategy` content together, which is
+  the first point all five remaining rules have something to bite on.
+
+  Revisit when the packages arrive (Story 1.3):
   - Add fixture classes under `src/test/java/.../rules/fixtures` with an inverted assertion, so each rule is shown
     to be capable of failing.
   - `modelDependsOnNothingFrameworkFlavoured` enumerates nine banned packages rather than expressing "nothing
@@ -100,3 +108,17 @@ Items raised by a workflow, real but not actionable at the time they were found.
 
   Recorded here only; not routed to the epic file or `action_items`. Nothing is broken today — the
   numbers are generous rather than tight, and the `# TODO` sits beside them.
+
+## Deferred from: code review of PUB-2-time-is-injectable-and-never-read-directly (2026-08-21)
+
+- **The rules that stop code reading the clock exist only in `matching-service`.** Four of them:
+  `timeIsReadOnlyThroughTheClock`, `theRealClockIsOnlyEverInjected` and
+  `theLegacyDateApiIsNotUsedAtAll` in `ArchitectureRulesTest`, plus `DatabaseNeverReadsTimeTest`.
+
+  They are test code, so every new service needs its own copy. That is the intended design, and they
+  were written to copy cleanly — no `matching`-specific names in any of them. The gap is that nothing
+  reminds anyone to do it: forget the copy and the new service can read the clock however it likes,
+  and nothing anywhere turns red.
+
+  Revisit in **Story 1.4**, which stands up the gateway and is the first service that has to copy
+  them.
