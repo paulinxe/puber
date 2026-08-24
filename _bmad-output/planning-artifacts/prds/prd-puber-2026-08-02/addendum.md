@@ -13,7 +13,7 @@ These predate the architecture run and survived it unchanged.
 | No registration/auth; drivers seeded via fixtures; rider identity passed per-request | Auth is a multi-week detour that teaches nothing on the target syllabus |
 | No `riders` table; `rides.rider_id` is a plain UUID with no FK | Keeps schema minimal — see the deferral reasoning below for why this held even when a debtor flag was proposed |
 | Fare calculated at request time, not trip end | Matches real ride-hailing UX (price shown upfront); simpler than post-trip calculation |
-| ETA formula: `haversine(pickup, driver) / 8.33 m/s` (~30 km/h) | Simplicity over routing-API realism |
+| ETA formula: `haversine(pickup, driver) / 30 km/h`, i.e. 2 min/km — the same speed also derives trip duration for the fare | Simplicity over routing-API realism |
 | Surge: static multiplier initially, later derived from the requested/available ratio | Defers complexity while keeping the schema ready |
 | Audit scope = state transitions only, never location heartbeats | Heartbeats would turn the audit log into a location log at roughly 1.3M events/day — the wrong story to tell; state transitions run closer to ~10k/day at simulator load |
 | Audit storage: partitioned Postgres first, then ClickHouse, keeping both | The migration narrative is deliberately part of the learning goal — columnar vs. row-oriented learned viscerally rather than from a book |

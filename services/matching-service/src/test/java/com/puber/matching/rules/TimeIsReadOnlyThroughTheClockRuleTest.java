@@ -4,9 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.puber.matching.config.ClockConfiguration;
 import com.puber.matching.rules.fixtures.ConvertsTimeWithoutReadingIt;
 import com.puber.matching.rules.fixtures.ReadsTimeDirectly;
 import com.puber.matching.rules.fixtures.UsesTheLegacyDateApi;
+import com.puber.matching.rules.fixtures.service.ServiceThatDependsOnAConcreteStrategy;
 import com.puber.matching.shared.strategy.NeighbourStrategyThatReadsTimeDirectly;
 import com.puber.matching.shared.strategy.SystemClock;
 import com.tngtech.archunit.core.domain.JavaClasses;
@@ -21,14 +23,14 @@ class TimeIsReadOnlyThroughTheClockRuleTest {
 
     @Test
     @DisplayName("AC1: every direct time read in the fixture is rejected, so the rule can fail")
-    void rejectsEveryDirectTimeRead() {
+    void rejects_every_direct_time_read() {
         assertEveryDeclaredMethodIsReported(
                 ArchitectureRulesTest.timeIsReadOnlyThroughTheClock, ReadsTimeDirectly.class);
     }
 
     @Test
     @DisplayName("AC1: every use of the legacy date API is rejected, conversions included")
-    void rejectsEveryUseOfTheLegacyDateApi() {
+    void rejects_every_use_of_the_legacy_date_api() {
         assertEveryDeclaredMethodIsReported(
                 ArchitectureRulesTest.theLegacyDateApiIsNotUsedAtAll, UsesTheLegacyDateApi.class);
     }
@@ -66,7 +68,7 @@ class TimeIsReadOnlyThroughTheClockRuleTest {
 
     @Test
     @DisplayName("AC1: the rule accepts converting a reading it did not take itself")
-    void acceptsConversionAndArithmetic() {
+    void accepts_conversion_and_arithmetic() {
         JavaClasses converter =
                 new ClassFileImporter().importClasses(ConvertsTimeWithoutReadingIt.class);
 
@@ -75,7 +77,7 @@ class TimeIsReadOnlyThroughTheClockRuleTest {
 
     @Test
     @DisplayName("AC1: SystemClock is exempt, and nothing beside it is")
-    void exemptsTheOneClassAllowedToReadTime() {
+    void exempts_the_one_class_allowed_to_read_time() {
         // Both at once, deliberately: SystemClock alone gives the rule nothing to check, which
         // ArchUnit rejects and which proves nothing about the exemption.
         JavaClasses clockAndViolator =
@@ -105,7 +107,7 @@ class TimeIsReadOnlyThroughTheClockRuleTest {
     @Test
     @DisplayName(
             "AC1: the exemption is by class -- a neighbour in the same package inherits nothing")
-    void doesNotExemptTheRestOfSystemClocksPackage() {
+    void does_not_exempt_the_rest_of_system_clocks_package() {
         JavaClasses neighbour =
                 new ClassFileImporter().importClasses(NeighbourStrategyThatReadsTimeDirectly.class);
 
@@ -114,5 +116,39 @@ class TimeIsReadOnlyThroughTheClockRuleTest {
                 () -> ArchitectureRulesTest.timeIsReadOnlyThroughTheClock.check(neighbour),
                 "the exemption covers all of shared.strategy, so every strategy added there may"
                         + " read time directly");
+    }
+
+    @Test
+    @DisplayName("AC1: config is the only package allowed to name the real clock")
+    void rejects_a_class_outside_config_that_constructs_the_real_clock() {
+        // One fixture, two rules: it is LayerRulesTest's concrete-Strategy violator, and a
+        // SystemClock built outside config is what this rule forbids. Imported together with the
+        // exempt class, because the rule carries no allowEmptyShould and an excluded-only set
+        // fails for the wrong reason.
+        JavaClasses configAndViolator =
+                new ClassFileImporter()
+                        .importClasses(
+                                ClockConfiguration.class,
+                                ServiceThatDependsOnAConcreteStrategy.class);
+
+        AssertionError rejection =
+                assertThrows(
+                        AssertionError.class,
+                        () ->
+                                ArchitectureRulesTest.theRealClockIsOnlyEverInjected.check(
+                                        configAndViolator),
+                        "a class outside config was allowed to construct the real clock, so it"
+                                + " reads a clock no test can advance");
+
+        assertTrue(
+                rejection.getMessage().contains("ServiceThatDependsOnAConcreteStrategy"),
+                () ->
+                        "the violation was not attributed to the violator: "
+                                + rejection.getMessage());
+        assertFalse(
+                rejection.getMessage().contains("ClockConfiguration"),
+                () ->
+                        "config was reported -- it is the one package that declares the bean: "
+                                + rejection.getMessage());
     }
 }

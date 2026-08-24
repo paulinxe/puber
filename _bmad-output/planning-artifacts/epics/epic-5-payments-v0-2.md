@@ -62,7 +62,9 @@ payment for the ride — never a background job added quietly (AD-50)
 
 **Given** monetary values
 **When** they are handled
-**Then** they are integer minor units in transit and `DECIMAL` at rest, never floating point (Money convention)
+**Then** they are integer minor units in the column, in Java and on the wire, never floating point
+**And** no conversion is needed at the Stripe boundary, which uses integer minor units itself (Money
+convention, FR-34)
 
 ### Story 5.2: Provider strategy and a stub that can produce every outcome
 
@@ -306,7 +308,8 @@ every "completed rides" query (AD-50)
 **When** it is exported
 **Then** it is `count(*)` and `sum(amount)` over `CAPTURE_FAILED`, read from the `payments` table
 rather than an in-process counter that resets with the pod
-**And** it is summed from the stored `DECIMAL` and exported in integer minor units
+**And** it is summed and exported in integer minor units, with no conversion between the column and
+the gauge
 **And** it is zero in a healthy system and alerts on its own (AD-54, Metrics convention)
 
 **Given** **the age of the oldest capture still retrying**

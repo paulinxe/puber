@@ -76,12 +76,82 @@ com.puber.matching
 `shared` is the bottom of `shared ← fare ← ride ← dispatch ← quote`: everything may depend on it, it
 may depend on no feature.
 
-**The test: does the type encode a convention?** Money (integer minor units in transit, `DECIMAL` at
-rest) and Coordinates (`DECIMAL(10,8)`/`DECIMAL(11,8)`, WGS84, longitude first) are conventions.
-Domain behaviour belongs to a feature. *"Two features happen to use it"* is not a reason.
+**The test: does the type encode a convention?** Money (integer minor units everywhere — `BIGINT` at
+rest, `long` in Java, integer on the wire) and Coordinates (`DECIMAL(10,8)`/`DECIMAL(11,8)`, WGS84,
+longitude first) are conventions. Domain behaviour belongs to a feature. *"Two features happen to use
+it"* is not a reason.
+
+**`BigDecimal` is for arithmetic, never for storage or transport, and never built from a `double`.**
+`new BigDecimal(0.1)` stores 0.1000000000000000055511151231257827; `BigDecimal.valueOf(0.1)` stores
+0.1. Both compile and look identical in review, which is why the rule is mechanical and not a habit.
+A calculation lifts `long` minor units into `BigDecimal`, rounds **once** at the end with `HALF_UP`,
+and returns minor units. Integer-only arithmetic is not an option: distance and time are fractional,
+so 120 minor-units/km x 5.327 km is 639.240. The discriminator is the type — `BIGINT` is money,
+`DECIMAL` is a coefficient and never an amount.
 
 `shared` has no `controller` and no `repository`. Do not duplicate its contents per feature either —
 four private `Coordinate` types in one JVM is a convention nobody can enforce.
+
+## Pricing a trip: the unit conversion (PUB-3)
+
+**The architecture side of this now lives in `ARCHITECTURE-SPINE.md` → AD-62** (haversine, the earth
+radius, the single-row `fare_rules` shape, the surge column) **and in the spine's Money convention**
+(rounding once, `HALF_UP`, `setScale(0)`, `longValueExact()`, no `MathContext`). Promoted there on
+2026-08-23 after PUB-3 landed, so do not restate any of it here — what follows is only the code shape
+those rules imply, which is not visible from reading either.
+
+**The rates are per kilometre and per minute; haversine returns metres.** A conversion is therefore
+unavoidable, and a missed one is silent — metres into the per-km term is 1000x, the wrong time unit is
+60x, and both still satisfy every acceptance criterion as written. Go to kilometres once, then to
+minutes **from kilometres, never from metres**:
+
+```java
+Distance distance     = pickup.distanceTo(dropoff);          // metres, inside the type
+BigDecimal kilometres = distance.inKilometres();
+BigDecimal minutes    = AssumedSpeed.minutesToCover(distance);
+```
+
+`Distance` exists for exactly this reason. `inKilometres()` is the only `BigDecimal` it hands out, so
+it is the only number a rate can multiply without a cast — `inMetres()` is private for that reason.
+The record component `metres()` is still public, because a record cannot hide one; it returns a
+`double`, so misusing it needs a visible conversion rather than being impossible. Do not add a
+metres-returning accessor to anything else, and do not write a bare `/ 1000` or `* 2` at a call
+site.
+
+**The assumed speed lives in `fare/model/AssumedSpeed` because `fare` is its only caller today.**
+AD-62 makes one speed serve both the trip duration and the driver-to-pickup ETA, so **Story 2.6
+(PUB-10) must move that constant into `shared`, not copy it** — two speed constants in one JVM is the
+same failure as four `Coordinate` types. Derive the 2 min/km from the speed; a hardcoded 2 lets the
+speed change without anyone seeing what depended on it.
+
+**Tuning `per_minute_rate` alone cannot make a price time-sensitive.** Because time is derived from
+distance at a fixed speed, the two rate terms are proportional, so `fare_rules` has three degrees of
+freedom and not four: `fare = (base + km x (per_km + 2 x per_minute)) x surge`. On the seeded values
+the effective rate is exactly `120 + 2 x 25 = 170` minor units per kilometre. Both columns stay
+because the contract specifies them and a real implementation needs them — in a real system the time
+term prices congestion, and there is no traffic here to price. One consequence for tests: a case that
+varies distance and time independently cannot be built from two coordinates, so assert on a
+`FareRule` directly.
+
+**"Never floating point" is enforced for declarations, and reviewed for the rest.** Know which half
+you are relying on.
+
+`floatingPointIsConfinedToDistance` fails the build on any `float`/`double`/`Float`/`Double` in a
+production field, return type or parameter — including an array component and a generic argument, so
+`double[]` and `List<Double>` are caught. `Distance` alone is exempt: it is the type that stores the
+trigonometric result, and every arithmetic caller takes a `BigDecimal` back out of it.
+
+**It does not read method bodies.** `Coordinates.distanceTo` therefore computes the haversine in ten
+`double` locals and passes — the trigonometry has to live somewhere, so that is intended, but it also
+means a class doing its money arithmetic in locals would pass. Proven on 2026-08-23 by planting a
+local-only method and watching the rule stay green. The exemption is on `Distance`; the haversine is
+in `Coordinates`. Do not read the rule as "there is no floating point in this service".
+
+`bigDecimalIsNeverBuiltFromADouble` fails on `new BigDecimal(double)` while leaving
+`BigDecimal.valueOf(double)` — the correct call — untouched.
+
+Both were proven by planting a violation in production code and watching them fire, and the array and
+generic clauses were proven by re-planting after they were added.
 
 ## Reading time (AD-10, NFR-9)
 
@@ -144,6 +214,11 @@ decision.
   if it looks necessary the diagnosis is wrong.
 - `static-analyzers/` is the one config source; `make build` copies it into each service's build
   output. Never commit a per-service copy. ArchUnit *rules* are test code and are not shared.
+- **There are two ArchUnit rule classes, and they cannot be merged.** `ArchitectureRulesTest` is
+  declared `DoNotIncludeTests` and governs production code; `TestNamingRulesTest` is declared
+  `OnlyIncludeTests` and governs test code. The import options are mutually exclusive, so a test-code
+  rule placed in the production class scans nothing and passes forever. Add a third only if a third
+  import option is genuinely needed.
 - `./gradlew staticAnalysis` is the per-service entry point `pre-commit` invokes.
 
 ## Hooks — `pre-push` is the only gate
@@ -178,6 +253,50 @@ not a tooling choice.
   `build.gradle` and nowhere else. A flaky concurrency test is indistinguishable from a real race.
 - **Never `sleep`** to wait out a window. Wait on a condition or a healthcheck.
 - **Tests ship with the feature.** No story exists solely to add tests, and none may be added later.
+
+## Test data: migrations are production, fixtures are tests
+
+Settled during PUB-3, before any table existed. Two tiers, and the boundary is not negotiable.
+
+| Tier | For | Where |
+| --- | --- | --- |
+| **Inline SQL in the test** | Data *this test* needs — a specific row, a specific state | The test method, beside its assertion |
+| **A `.sql` fixture** | The shared baseline every test assumes | `src/integrationTest/resources/fixtures/` |
+
+**`db/migration/` is production.** Production schema and production data, nothing else. Test-only data
+never goes there — AD-56's fixture drivers (Story 2.1) are the obvious case, and they must land in
+`fixtures/`, not in a migration.
+
+**A fixture does not read a migration file.** One exception, and it is narrow: a test whose *subject
+is the production seed* may execute that migration's statement, because the thing under test is the
+migration. PUB-3's AC3 test is the only instance so far.
+
+**A fixture and a migration may hold different values, and that is not drift.** They answer different
+questions — a fixture answers *"is the logic correct over known data"*, where any known data will do;
+a migration's seed answers *"what does a first start produce"*. Believing the values must match is
+what makes people couple the two and then freeze the fixture behind a migration checksum.
+
+**Tests must own their own seeding.** A versioned migration runs once, so the first `TRUNCATE` deletes
+a seeded row permanently — Flyway will not restore it. A repeatable `R__` does not rescue this either:
+it re-runs only when its checksum changes, and a `TRUNCATE` does not change a checksum. Truncate and
+reseed from the fixture, per test (`@BeforeEach`), opt in per class. **No base class** — the repo has
+none deliberately, and `HealthReportsDownPromptlyIntegrationTest` boots against an unreachable
+datasource with Flyway off, so a universal truncate breaks it for reasons unrelated to the test.
+
+**"Fixture" means two different things in this repository. Do not mix them up.**
+
+- `src/integrationTest/resources/fixtures/*.sql` — **test data**, the tier above.
+- `src/test/java/.../rules/fixtures/*.java` — **not test data.** Deliberate rule-violators
+  (`ReadsTimeDirectly`, `UsesTheLegacyDateApi`) that exist to be scanned by ArchUnit *as if they were
+  production code*, proving a rule can actually fail. They are production-shaped: `camelCase` methods,
+  no `@Test`, and they must stay that way or they stop representing the code they stand in for.
+
+  **A violator whose rule names an absolute package cannot live there.** `sharedDependsOnNoFeaturePackage`
+  and `featureDependenciesRunOneWay` are anchored on `com.puber.matching.shared..` and
+  `com.puber.matching.fare..`, so a fixture under `rules.fixtures` matches neither and the rule would
+  scan nothing and pass. Those fixtures sit in the production package they violate —
+  `SharedTypeThatDependsOnAFeature` in `shared.model`, and `NeighbourStrategyThatReadsTimeDirectly`
+  before it. Do not "tidy" them into `rules/fixtures/`; that silently disarms the rule.
 
 ## No container this project builds runs as root (AC18)
 

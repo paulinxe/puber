@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.IntStream;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.output.MigrateResult;
 import org.junit.jupiter.api.DisplayName;
@@ -32,8 +33,20 @@ import tools.jackson.databind.ObjectMapper;
         properties = "management.endpoint.health.show-details=always")
 class HealthMetricsAndSchemaIntegrationTest {
 
-    /** Story 1.3 adds V2 and bumps this, editing one constant instead of three tests. */
-    private static final int HIGHEST_VERSION_THIS_STORY_OWNS = 1;
+    /**
+     * The next story to add a migration bumps this, editing one constant instead of three tests.
+     *
+     * <p>It gates {@code every_migration_this_service_ships_applied_successfully} as well as the
+     * stale-volume attribution below. It used to appear only inside a failure message, so bumping
+     * it changed no assertion and a migration recorded as failed was invisible.
+     */
+    private static final int HIGHEST_VERSION_THIS_STORY_OWNS = 3;
+
+    /**
+     * Every table this service owns. Story 1.3 put the first one here; Story 3.1 adds {@code rides}
+     * and edits this list, not the assertion.
+     */
+    private static final List<String> TABLES_THIS_SERVICE_OWNS = List.of("fare_rules");
 
     @Autowired private TestRestTemplate restTemplate;
 
@@ -43,7 +56,7 @@ class HealthMetricsAndSchemaIntegrationTest {
 
     @Test
     @DisplayName("AC3: health reports UP once Postgres is reachable")
-    void healthReportsUp() {
+    void health_reports_up() {
         ResponseEntity<String> response =
                 restTemplate.getForEntity("/actuator/health", String.class);
 
@@ -56,7 +69,7 @@ class HealthMetricsAndSchemaIntegrationTest {
 
     @Test
     @DisplayName("AC2: health is UP because the datastore contributor says so, not despite it")
-    void healthIncludesTheDatastoreContributor() {
+    void health_includes_the_datastore_contributor() {
         ResponseEntity<String> response =
                 restTemplate.getForEntity("/actuator/health", String.class);
 
@@ -95,7 +108,7 @@ class HealthMetricsAndSchemaIntegrationTest {
 
     @Test
     @DisplayName("AC3: the Prometheus endpoint serves Prometheus text exposition format")
-    void prometheusEndpointServesPrometheusTextFormat() {
+    void prometheus_endpoint_serves_prometheus_text_format() {
         ResponseEntity<String> response =
                 restTemplate.getForEntity("/actuator/prometheus", String.class);
 
@@ -118,7 +131,7 @@ class HealthMetricsAndSchemaIntegrationTest {
 
     @Test
     @DisplayName("AC5: Flyway recorded the baseline, and it succeeded")
-    void flywayRecordedTheBaseline() {
+    void flyway_recorded_the_baseline() {
         List<Map<String, Object>> baselineRows =
                 jdbcTemplate.queryForList(
                         "select version, success from flyway_schema_history where version = '1'");
@@ -138,8 +151,34 @@ class HealthMetricsAndSchemaIntegrationTest {
     }
 
     @Test
+    @DisplayName("AC5: every migration this service ships is recorded, and every one succeeded")
+    void every_migration_this_service_ships_applied_successfully() {
+        List<Map<String, Object>> versioned =
+                jdbcTemplate.queryForList(
+                        "select version, success from flyway_schema_history"
+                                + " where version is not null order by version::int");
+
+        List<String> versions = versioned.stream().map(row -> (String) row.get("version")).toList();
+        assertEquals(
+                IntStream.rangeClosed(1, HIGHEST_VERSION_THIS_STORY_OWNS)
+                        .mapToObj(String::valueOf)
+                        .toList(),
+                versions,
+                () ->
+                        "the schema history is not the set of migrations this checkout ships: "
+                                + versions);
+
+        List<String> failed =
+                versioned.stream()
+                        .filter(row -> !Boolean.TRUE.equals(row.get("success")))
+                        .map(row -> (String) row.get("version"))
+                        .toList();
+        assertTrue(failed.isEmpty(), () -> "these migrations are recorded as failed: " + failed);
+    }
+
+    @Test
     @DisplayName("AC5: a second start applies no migrations and does not fail")
-    void aSecondStartAppliesNoMigrations() {
+    void a_second_start_applies_no_migrations() {
         // The context that booted this class already migrated. Migrating again against the same
         // database IS a second start, which is what AC5 asks about -- and it holds regardless of
         // which order JUnit ran the classes in, or whether any other class enables Flyway at all.
@@ -157,17 +196,17 @@ class HealthMetricsAndSchemaIntegrationTest {
     }
 
     @Test
-    @DisplayName("AC5: the baseline creates no tables -- matching-service owns none yet")
-    void baselineCreatesNoTables() {
+    @DisplayName("AC1: fare_rules exists, and it is the only table this service owns")
+    void the_schema_holds_exactly_the_tables_this_service_owns() {
         List<String> tables =
                 jdbcTemplate.queryForList(
                         "select table_name from information_schema.tables where table_schema = 'public'"
                                 + " and table_name <> 'flyway_schema_history' order by table_name",
                         String.class);
 
-        assertTrue(
-                tables.isEmpty(),
-                () -> "V1 is a baseline and creates nothing. " + attribute(tables));
+        // Exactly, not "contains": a table nobody declared is as much a defect as a missing one,
+        // and this is the assertion that catches a stale volume from another branch.
+        assertEquals(TABLES_THIS_SERVICE_OWNS, tables, () -> attribute(tables));
     }
 
     /**
@@ -175,9 +214,11 @@ class HealthMetricsAndSchemaIntegrationTest {
      * and the symptom is identical.
      *
      * <p>{@code matching-postgres-data} is a named volume shared by every checkout of this
-     * repository on the machine. Run a branch that adds {@code V2__fare_rules.sql}, switch back,
-     * and the table survives -- a failure that has nothing to do with V1. Without this attribution
-     * the message blames the baseline and the reader goes looking for a defect that is not there.
+     * repository on the machine. Run a branch that adds a migration -- Story 1.3 adds two, {@code
+     * V2__create_fare_rules.sql} and {@code V3__seed_fare_rules.sql} -- switch back, and its tables
+     * survive: a failure that has nothing to do with the migrations this checkout ships. Without
+     * this attribution the message blames them and the reader goes looking for a defect that is not
+     * there.
      */
     private String attribute(List<String> tables) {
         List<String> laterVersions =
@@ -196,10 +237,11 @@ class HealthMetricsAndSchemaIntegrationTest {
                     + " not a defect in V1 -- run `make clean` and re-run. (matching-postgres-data is shared"
                     + " by every checkout on this machine.)";
         }
-        return "fare_rules arrives in Story 1.3 and rides in Story 3.1, and the schema history shows"
-                + " nothing beyond V"
+        return "Expected exactly "
+                + TABLES_THIS_SERVICE_OWNS
+                + " (rides arrives in Story 3.1), and the schema history shows nothing beyond V"
                 + HIGHEST_VERSION_THIS_STORY_OWNS
-                + " -- so a migration this story owns created them. Found: "
+                + " -- so this is the migrations this checkout ships, not a stale volume. Found: "
                 + tables;
     }
 }

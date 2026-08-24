@@ -18,7 +18,7 @@ class SystemClockTest {
 
     @Test
     @DisplayName("AC3: the wall clock reads real time -- bracketed, never within a tolerance")
-    void wallClockReadsRealTime() {
+    void wall_clock_reads_real_time() {
         // Bracketed between two real readings, not a tolerance window: a tolerance would pass or
         // fail depending on how loaded the machine is.
         Instant before = Instant.now();
@@ -31,7 +31,7 @@ class SystemClockTest {
 
     @Test
     @DisplayName("AC3: monotonic readings never decrease")
-    void monotonicReadingsNeverDecrease() {
+    void monotonic_readings_never_decrease() {
         long first = clock.deadlineIn(Duration.ZERO).monotonicNanos();
         long second = clock.deadlineIn(Duration.ZERO).monotonicNanos();
 
@@ -40,7 +40,7 @@ class SystemClockTest {
 
     @Test
     @DisplayName("AC4: a deadline is evaluated against the monotonic source, in real time too")
-    void deadlinesAreEvaluatedAgainstElapsedMonotonicTime() {
+    void deadlines_are_evaluated_against_elapsed_monotonic_time() {
         assertTrue(
                 clock.hasReached(clock.deadlineIn(Duration.ZERO)),
                 "a zero-length deadline had not expired by the time it was read back");

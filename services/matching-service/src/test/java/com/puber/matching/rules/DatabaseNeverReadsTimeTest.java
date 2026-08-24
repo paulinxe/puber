@@ -63,7 +63,7 @@ class DatabaseNeverReadsTimeTest {
 
     @Test
     @DisplayName("AC1: no migration asks the database for the time")
-    void noMigrationAsksTheDatabaseForTheTime() throws IOException {
+    void no_migration_asks_the_database_for_the_time() throws IOException {
         ScanResult migrations = scan(MAIN_RESOURCES, SQL);
 
         // A check on the test, not on the code: a wrong root scans nothing, finds nothing, and
@@ -81,7 +81,7 @@ class DatabaseNeverReadsTimeTest {
 
     @Test
     @DisplayName("AC1: no Java file carries SQL that asks the database for the time")
-    void noJavaFileCarriesSqlThatAsksForTheTime() throws IOException {
+    void no_java_file_carries_sql_that_asks_for_the_time() throws IOException {
         ScanResult sources = scan(MAIN_JAVA, JAVA);
 
         assertTrue(
@@ -97,7 +97,7 @@ class DatabaseNeverReadsTimeTest {
 
     @Test
     @DisplayName("AC1: the scan reports the file, the line and the pattern of a planted violation")
-    void reportsWhereTheViolationIs(@TempDir Path plantedTree) throws IOException {
+    void reports_where_the_violation_is(@TempDir Path plantedTree) throws IOException {
         Path migration = plantedTree.resolve("V9__gives_a_column_a_default.sql");
         Files.write(
                 migration,
@@ -123,7 +123,8 @@ class DatabaseNeverReadsTimeTest {
 
     @Test
     @DisplayName("AC1: the clock reads with no brackets are caught too")
-    void catchesTheClockReadsThatCarryNoBracket(@TempDir Path plantedTree) throws IOException {
+    void catches_the_clock_reads_that_carry_no_bracket(@TempDir Path plantedTree)
+            throws IOException {
         // Four real Postgres clock reads, none containing `now(`.
         List<String> everyLineIsAViolation =
                 List.of(
@@ -151,7 +152,8 @@ class DatabaseNeverReadsTimeTest {
 
     @Test
     @DisplayName("AC1: the scan does not fire on our own method name or on ordinary prose")
-    void doesNotFireOnWhatOnlyLooksLikeAClockRead(@TempDir Path plantedTree) throws IOException {
+    void does_not_fire_on_what_only_looks_like_a_clock_read(@TempDir Path plantedTree)
+            throws IOException {
         Path source = plantedTree.resolve("NotAViolation.java");
         Files.write(
                 source,

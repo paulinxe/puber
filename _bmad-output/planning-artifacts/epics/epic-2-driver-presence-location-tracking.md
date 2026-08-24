@@ -203,7 +203,7 @@ So that I know both the price and the wait before I commit.
 **Given** at least one matchable driver within the matching radius of the pickup point
 **When** a quote is requested
 **Then** the response carries fare, distance **and** ETA
-**And** the ETA is haversine distance from the nearest matchable driver to pickup, divided by 8.33 m/s (FR-1)
+**And** the ETA is haversine distance from the nearest matchable driver to pickup, divided by 30 km/h — the same named constant Story 1.3 introduced, **moved** into `shared` rather than copied (FR-1)
 
 **Given** no matchable driver within the radius
 **When** a quote is requested
