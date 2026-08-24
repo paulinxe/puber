@@ -3,20 +3,35 @@ package com.puber.matching.rules;
 import static com.tngtech.archunit.base.DescribedPredicate.not;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.INTERFACES;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAnyPackage;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
+import com.puber.matching.shared.model.Distance;
 import com.puber.matching.shared.strategy.SystemClock;
 import com.tngtech.archunit.base.DescribedPredicate;
+import com.tngtech.archunit.core.domain.AccessTarget.ConstructorCallTarget;
 import com.tngtech.archunit.core.domain.JavaAccess;
+import com.tngtech.archunit.core.domain.JavaClass;
+import com.tngtech.archunit.core.domain.JavaCodeUnit;
+import com.tngtech.archunit.core.domain.JavaConstructorCall;
+import com.tngtech.archunit.core.domain.JavaField;
+import com.tngtech.archunit.core.domain.JavaParameterizedType;
+import com.tngtech.archunit.core.domain.JavaType;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
+import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
+import com.tngtech.archunit.lang.ConditionEvents;
+import com.tngtech.archunit.lang.SimpleConditionEvent;
 import com.tngtech.archunit.library.Architectures;
+import java.math.BigDecimal;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.List;
+import java.util.Set;
 import java.util.TimeZone;
 
 /**
@@ -44,6 +59,19 @@ class ArchitectureRulesTest {
 
     private static final DescribedPredicate<JavaAccess<?>> A_SYSTEM_TIME_SOURCE =
             DescribedPredicate.describe("a system time source", ArchitectureRulesTest::readsTime);
+
+    private static final Set<String> FLOATING_POINT_TYPE_NAMES =
+            Set.of("float", "double", "java.lang.Float", "java.lang.Double");
+
+    private static final DescribedPredicate<JavaClass> FLOATING_POINT =
+            DescribedPredicate.describe(
+                    "a floating-point type",
+                    type -> FLOATING_POINT_TYPE_NAMES.contains(componentOf(type).getName()));
+
+    private static final DescribedPredicate<JavaAccess<?>> A_BIG_DECIMAL_BUILT_FROM_A_DOUBLE =
+            DescribedPredicate.describe(
+                    "a BigDecimal constructed from a double",
+                    ArchitectureRulesTest::buildsABigDecimalFromADouble);
 
     /** NFR-9, AD-58: every reading of the current time comes from the {@code Clock} strategy. */
     @ArchTest
@@ -93,47 +121,24 @@ class ArchitectureRulesTest {
                     .allowEmptyShould(true);
 
     /**
-     * Does this call read the clock? Asked once for every method call in the service; a yes fails
-     * the build.
-     *
-     * <p>{@code owner} is the class being called and {@code member} the method name, so {@code
-     * Instant.now()} arrives here as {@code "java.time.Instant"} and {@code "now"}.
-     */
-    private static boolean readsTime(JavaAccess<?> access) {
-        String owner = access.getTargetOwner().getFullName();
-        String member = access.getTarget().getName();
-        return switch (owner) {
-            case "java.lang.System" ->
-                    member.equals("currentTimeMillis") || member.equals("nanoTime");
-            // Clock.fixed and Clock.offset are allowed: they read nothing.
-            case "java.time.Clock" -> member.startsWith("system") || member.startsWith("tick");
-            // Not the time, but banned with it. See project-context.md, Timestamps.
-            case "java.time.ZoneId" -> member.equals("systemDefault");
-            default -> owner.startsWith("java.time.") && member.equals("now");
-        };
-    }
-
-    /**
      * AD-8: the domain model is plain Java. Anything framework-flavoured reaching {@code model}
      * means persistence or transport concerns have leaked into the domain.
+     *
+     * <p>Expressed as what the model <em>may</em> depend on, not as a list of what it may not. The
+     * list form named {@code com.fasterxml.jackson..} -- Jackson 2, which is not on the classpath
+     * at all -- and did not name {@code tools.jackson..}, the Jackson 3 that is; so the one
+     * framework it called out for the domain was the one it could never meet. Every framework, and
+     * every framework added later, fails this form without anybody remembering to add it.
      */
     @ArchTest
     static final ArchRule modelDependsOnNothingFrameworkFlavoured =
-            noClasses()
+            classes()
                     .that()
                     .resideInAPackage("..model..")
                     .should()
-                    .dependOnClassesThat()
-                    .resideInAnyPackage(
-                            "org.springframework..",
-                            "jakarta..",
-                            "javax.persistence..",
-                            "com.fasterxml.jackson..",
-                            "org.flywaydb..",
-                            "org.postgresql..",
-                            "io.micrometer..",
-                            "org.apache.tomcat..",
-                            "com.zaxxer.hikari..")
+                    .onlyDependOnClassesThat(
+                            resideInAnyPackage("java..", "com.puber..")
+                                    .as("the JDK or this project"))
                     .because("AD-8: the domain model must not depend on the framework")
                     .allowEmptyShould(true);
 
@@ -233,4 +238,136 @@ class ArchitectureRulesTest {
                     .mayOnlyBeAccessedByLayers("ride", "dispatch", "quote")
                     .withOptionalLayers(true)
                     .because("AD-9: shared <- fare <- ride <- dispatch <- quote");
+
+    /**
+     * AC5: money is integer minor units, so no production type declares floating point. {@code
+     * Distance} is the single exemption, derived from the type rather than from a list: it is the
+     * one type that stores the trigonometric result, and every arithmetic caller takes a {@code
+     * BigDecimal} back out of it.
+     *
+     * <p><strong>Declarations only -- fields, return types and parameters, including array
+     * components and generic arguments.</strong> Method bodies are not read, so {@code
+     * Coordinates.distanceTo} computes the haversine in {@code double} locals and passes. That is
+     * intended (the trigonometry has to happen somewhere) but it is a limit, not a clean bill: a
+     * class doing its money arithmetic in locals would pass too. Proven by planting a local-only
+     * method and watching the rule stay green.
+     *
+     * <p>Nothing enforced this before. The old Money convention said "DECIMAL at rest", which a
+     * {@code double} field satisfies right up to the moment it is stored.
+     */
+    @ArchTest
+    static final ArchRule floatingPointIsConfinedToDistance =
+            classes()
+                    .that()
+                    .doNotBelongToAnyOf(Distance.class)
+                    .should(neverDeclareOrReturnFloatingPoint())
+                    .because(
+                            "AC5: money is integer minor units -- a float or a double in a"
+                                    + " declaration is where the rounding error gets in")
+                    .allowEmptyShould(true);
+
+    /**
+     * The clause the old convention could not express. {@code new BigDecimal(0.1)} stores
+     * 0.1000000000000000055511151231257827; {@code BigDecimal.valueOf(0.1)} stores 0.1. Both
+     * compile and look identical in review, so the rule has to be mechanical.
+     */
+    @ArchTest
+    static final ArchRule bigDecimalIsNeverBuiltFromADouble =
+            noClasses()
+                    .should()
+                    .accessTargetWhere(A_BIG_DECIMAL_BUILT_FROM_A_DOUBLE)
+                    .because(
+                            "AC5: new BigDecimal(double) carries the binary rounding error into an"
+                                    + " exact-decimal type -- BigDecimal.valueOf does not")
+                    .allowEmptyShould(true);
+
+    private static ArchCondition<JavaClass> neverDeclareOrReturnFloatingPoint() {
+        return new ArchCondition<>("never declare or return a floating-point type") {
+            @Override
+            public void check(JavaClass type, ConditionEvents events) {
+                for (JavaField field : type.getFields()) {
+                    reportIfFloatingPoint(events, field.getFullName(), field.getType());
+                }
+                for (JavaCodeUnit codeUnit : type.getCodeUnits()) {
+                    reportIfFloatingPoint(events, codeUnit.getFullName(), codeUnit.getReturnType());
+                    for (JavaType parameter : codeUnit.getParameterTypes()) {
+                        reportIfFloatingPoint(events, codeUnit.getFullName(), parameter);
+                    }
+                }
+            }
+        };
+    }
+
+    /**
+     * The generic type, not the erasure: a {@code List<Double>} field erases to {@code
+     * java.util.List} and hides its argument, which is how a boxed collection of doubles used to
+     * pass. Recursing over the arguments catches it, and {@code toErasure()} reduces a wildcard to
+     * the bound it is written against.
+     */
+    private static void reportIfFloatingPoint(
+            ConditionEvents events, String member, JavaType type) {
+        JavaClass erasure = type.toErasure();
+        if (FLOATING_POINT.test(erasure)) {
+            events.add(
+                    SimpleConditionEvent.violated(
+                            erasure,
+                            member
+                                    + " uses the floating-point type "
+                                    + componentOf(erasure).getName()));
+        }
+        if (type instanceof JavaParameterizedType parameterized) {
+            for (JavaType argument : parameterized.getActualTypeArguments()) {
+                reportIfFloatingPoint(events, member, argument);
+            }
+        }
+    }
+
+    /**
+     * Only the two constructors that take a {@code double}. {@code BigDecimal.valueOf(double)} is a
+     * method call, not a constructor, so it is untouched -- which it has to be, or the rule bans
+     * the correct call and gets switched off.
+     */
+    private static boolean buildsABigDecimalFromADouble(JavaAccess<?> access) {
+        if (!(access instanceof JavaConstructorCall call)) {
+            return false;
+        }
+        ConstructorCallTarget target = call.getTarget();
+        return target.getOwner().isEquivalentTo(BigDecimal.class)
+                && target.getRawParameterTypes().stream()
+                        .anyMatch(parameter -> parameter.isEquivalentTo(double.class));
+    }
+
+    /**
+     * Does this call read the clock? Asked once for every method call in the service; a yes fails
+     * the build.
+     *
+     * <p>{@code owner} is the class being called and {@code member} the method name, so {@code
+     * Instant.now()} arrives here as {@code "java.time.Instant"} and {@code "now"}.
+     */
+    private static boolean readsTime(JavaAccess<?> access) {
+        String owner = access.getTargetOwner().getFullName();
+        String member = access.getTarget().getName();
+        return switch (owner) {
+            case "java.lang.System" ->
+                    member.equals("currentTimeMillis") || member.equals("nanoTime");
+            // Clock.fixed and Clock.offset are allowed: they read nothing.
+            case "java.time.Clock" -> member.startsWith("system") || member.startsWith("tick");
+            // Not the time, but banned with it. See project-context.md, Timestamps.
+            case "java.time.ZoneId" -> member.equals("systemDefault");
+            default -> owner.startsWith("java.time.") && member.equals("now");
+        };
+    }
+
+    /**
+     * The element type of an array, however deeply nested; the type itself otherwise. An array does
+     * not report its own name as {@code double[]} -- it reports the JVM form -- so matching on the
+     * name alone missed every array of doubles.
+     */
+    private static JavaClass componentOf(JavaClass type) {
+        JavaClass element = type;
+        while (element.isArray()) {
+            element = element.getComponentType();
+        }
+        return element;
+    }
 }

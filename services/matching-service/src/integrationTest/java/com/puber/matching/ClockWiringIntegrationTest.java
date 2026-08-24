@@ -29,7 +29,7 @@ class ClockWiringIntegrationTest {
 
     @Test
     @DisplayName("AC4: the running context exposes exactly one Clock, and it is SystemClock")
-    void theRunningContextIsWiredWithTheRealClock() {
+    void the_running_context_is_wired_with_the_real_clock() {
         Map<String, Clock> clocks = context.getBeansOfType(Clock.class);
 
         assertEquals(
@@ -47,7 +47,7 @@ class ClockWiringIntegrationTest {
 
     @Test
     @DisplayName("AC4: the injected Clock reads real time")
-    void theInjectedClockReadsRealTime() {
+    void the_injected_clock_reads_real_time() {
         Instant before = Instant.now();
         Instant reading = clock.wallClockNow();
         Instant after = Instant.now();

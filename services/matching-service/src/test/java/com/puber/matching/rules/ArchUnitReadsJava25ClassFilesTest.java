@@ -33,7 +33,7 @@ class ArchUnitReadsJava25ClassFilesTest {
 
     @Test
     @DisplayName("this service really is compiled to Java 25 bytecode")
-    void compilesToJava25Bytecode() throws IOException {
+    void compiles_to_java25_bytecode() throws IOException {
         try (InputStream classFile =
                 getClass()
                         .getResourceAsStream(
@@ -52,7 +52,7 @@ class ArchUnitReadsJava25ClassFilesTest {
 
     @Test
     @DisplayName("ArchUnit parses that bytecode rather than importing an empty set")
-    void archUnitImportsJava25Classes() {
+    void arch_unit_imports_java25_classes() {
         JavaClasses imported = new ClassFileImporter().importPackages("com.puber.matching");
 
         assertFalse(

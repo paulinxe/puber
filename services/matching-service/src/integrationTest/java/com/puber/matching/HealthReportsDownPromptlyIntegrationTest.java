@@ -117,7 +117,7 @@ class HealthReportsDownPromptlyIntegrationTest {
 
     @Test
     @DisplayName("AC4: an unreachable datastore yields DOWN inside a readiness-probe budget")
-    void healthReportsDownWithinTheProbeBudget() {
+    void health_reports_down_within_the_probe_budget() {
         ResponseEntity<String> response =
                 assertTimeoutPreemptively(
                         READINESS_PROBE_BUDGET,

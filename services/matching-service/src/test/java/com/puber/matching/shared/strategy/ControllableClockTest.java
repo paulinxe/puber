@@ -27,7 +27,7 @@ class ControllableClockTest {
 
     @Test
     @DisplayName("AC3: advancing moves both sources; shifting the wall clock moves only that one")
-    void theTwoSourcesAreIndependent() {
+    void the_two_sources_are_independent() {
         ControllableClock clock = new ControllableClock();
         long monotonicAtStart = clock.deadlineIn(Duration.ZERO).monotonicNanos();
 
@@ -50,7 +50,7 @@ class ControllableClockTest {
 
     @Test
     @DisplayName("AC3: monotonic readings never decrease, whatever the wall clock does")
-    void monotonicReadingsNeverDecrease() {
+    void monotonic_readings_never_decrease() {
         ControllableClock clock = new ControllableClock();
         long previous = clock.deadlineIn(Duration.ZERO).monotonicNanos();
 
@@ -75,7 +75,7 @@ class ControllableClockTest {
     @Test
     @DisplayName(
             "advancing by a negative duration is rejected rather than rewinding the monotonic source")
-    void refusesToRewindTheMonotonicSource() {
+    void refuses_to_rewind_the_monotonic_source() {
         ControllableClock clock = new ControllableClock();
         Deadline deadline = clock.deadlineIn(WINDOW);
         clock.advance(WINDOW);
@@ -93,7 +93,7 @@ class ControllableClockTest {
 
     @Test
     @DisplayName("AC5: the same script run twice produces the same observations")
-    void theSameScriptReplaysIdentically() {
+    void the_same_script_replays_identically() {
         Function<ControllableClock, List<String>> script =
                 clock -> {
                     List<String> observed = new ArrayList<>();
@@ -116,7 +116,7 @@ class ControllableClockTest {
 
     @Test
     @DisplayName("AC3: readings are the same UTC instants whatever the JVM default zone is")
-    void readingsAreUtcRegardlessOfTheDefaultZone() {
+    void readings_are_utc_regardless_of_the_default_zone() {
         TimeZone originalDefault = TimeZone.getDefault();
         try {
             // getTimeZone(unknown) returns GMT instead of failing, so without this both "zones"

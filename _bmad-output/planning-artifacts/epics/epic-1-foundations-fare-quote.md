@@ -235,14 +235,17 @@ So that the price I am quoted is explainable and consistent rather than arbitrar
 
 **Given** a pickup and dropoff coordinate
 **When** distance and time are derived
-**Then** distance is haversine
-**And** time is `distance / 8.33 m/s`
+**Then** distance is haversine, in kilometres
+**And** time is `distance / 30 km/h` — the same fixed assumed speed the ETA uses, so exactly 2 minutes
+per kilometre
+**And** the speed is one named constant, never a per-call-site literal (AGENTS.md, No Magic Numbers)
 **And** no maps or routing API is called anywhere
 
 **Given** a monetary value
-**When** it crosses a boundary or is persisted
-**Then** it is integer minor units in transit and `DECIMAL` at rest
-**And** no floating-point type is used (Money convention)
+**When** it is persisted, computed with, or crosses a boundary
+**Then** it is integer minor units in every one of those places — `BIGINT` in the column, `long` in Java
+**And** no floating-point type is used, and no `BigDecimal` is constructed from a `double`
+**And** `BigDecimal` appears only inside a calculation, which rounds once at the end (Money convention)
 
 **Given** coordinates
 **When** they are persisted or passed to a geo call
@@ -306,6 +309,16 @@ and error response (AD-54)
 **Then** adding a field is safe, while removing, renaming, retyping or **changing what a field means**
 is breaking and requires a new message alongside the old
 **And** protobuf field numbers are never reused (AD-33)
+
+> **Carried from PUB-3:** this is the story where the `shared/model` value types first meet input
+> they did not write themselves, so it is where their constructors have to start rejecting it. Today
+> `new Distance(-5000)` prices a negative fare, `new Distance(Double.NaN)` throws
+> `NumberFormatException` out of `BigDecimal.valueOf` in the middle of the pricing arithmetic rather
+> than at construction, and a null latitude or a null surge throws from inside a range check or a
+> `multiply` with none of the field-naming those checks were written to give. None is reachable while
+> every construction is a literal in our own code and every column is `NOT NULL`. Building
+> `Coordinates` from a request body is what makes it reachable, and it is what decides whether a bad
+> quote request is a 400 or a 500 (AD-38).
 
 > **Scope boundary:** with no drivers in the system yet, only FR-1's no-driver branch is reachable
 > here, and it is fully delivered. The ETA-present branch lights up in Story 2.6 once driver

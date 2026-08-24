@@ -8,32 +8,6 @@ Items raised by a workflow, real but not actionable at the time they were found.
 > reads it: the epic file (loaded by `create-story`), `sprint-status.yaml` `action_items` (surfaced by
 > `sprint-status`), or `project-context.md` (loaded by every workflow).
 
-## Deferred from: code review of PUB-1-containerized-service-proven-against-the-real-stack (2026-08-18)
-
-- **All six ArchUnit rules backing AC7 are currently vacuous, and the `model` rule is a blocklist rather than the stated constraint**
-  (`services/matching-service/src/test/java/com/puber/matching/rules/ArchitectureRulesTest.java:34`)
-
-  No `model`, `service`, `controller`, `strategy`, `entity` or `shared` package exists yet — `com.puber.matching`
-  holds one class — so all five `noClasses()` rules carry `allowEmptyShould(true)` over an empty set and the
-  layered rule carries `withOptionalLayers(true)`. None has ever evaluated a class. The story anticipates and
-  endorses writing them early; `ArchUnitReadsJava25ClassFilesTest` proves ArchUnit parses Java 25 bytecode, but
-  not that any rule can produce a violation.
-
-  **Story 1.2 has now landed and this item did not close.** It created `shared` and `config`, so
-  `modelDependsOnNothingFrameworkFlavoured` governs its first real class (`Deadline`) — but it is
-  still the enumerate-a-blocklist shape, and the other five rules still govern packages that do not
-  exist. PUB-2 deliberately scoped itself to proving its own new time rules (which it does, and its
-  code review then made the proof derive from the rule's own table so it cannot outgrow it). **1.3 is
-  now the target**: `fare/` arrives with `model`, `service` and `strategy` content together, which is
-  the first point all five remaining rules have something to bite on.
-
-  Revisit when the packages arrive (Story 1.3):
-  - Add fixture classes under `src/test/java/.../rules/fixtures` with an inverted assertion, so each rule is shown
-    to be capable of failing.
-  - `modelDependsOnNothingFrameworkFlavoured` enumerates nine banned packages rather than expressing "nothing
-    framework-flavoured" as AC7 states — `org.slf4j`, `lombok`, `org.hibernate`, `com.google..` and any future
-    framework pass it unchallenged.
-
 ## Deferred from: PUB-1 implementation (2026-08-19)
 
 - **PostgreSQL JDBC `socketTimeout` is unset, so a partition mid-query hangs a request thread forever**

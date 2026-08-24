@@ -297,13 +297,13 @@ are in the banned table and fail the build; verified by planting both. Slip 1 (b
       drive the fixture's expectations off `BANNED_TIME_READS` so the table cannot outgrow its proof.
 - [x] [Review][Patch] **`ControllableClock.advance()` accepts a negative `Duration` and rewinds the
       monotonic source** [`shared/strategy/ControllableClock.java:40-43`] — undocumented and
-      untested; `monotonicReadingsNeverDecrease` only steps `ZERO`, `1ns` and `10s`, so nothing
+      untested; `monotonic_readings_never_decrease` only steps `ZERO`, `1ns` and `10s`, so nothing
       notices. `shiftWallClock` documents negatives as valid, so the asymmetry invites exactly this
       mistake, and `advance(target.minus(elapsed))` going negative is an ordinary way to reach it.
       Test-only blast radius, but it silently destroys the one invariant the type exists to provide,
       in the double every future timing test calls. One `if (duration.isNegative()) throw new
       IllegalArgumentException(...)`, plus a test.
-- [x] [Review][Patch] **`readingsAreUtcRegardlessOfTheDefaultZone` cannot fail**
+- [x] [Review][Patch] **`readings_are_utc_regardless_of_the_default_zone` cannot fail**
       [`shared/strategy/ControllableClockTest.java:88-115`] — `DEFAULT_START` is a `static final`
       resolved at class load, before the test moves the default zone, and `Instant.plus(Duration)`
       never consults a zone, so all three assertions hold by construction. Task 6 did ask for the
@@ -770,7 +770,7 @@ claude-opus-5 (Claude Code, `bmad-dev-story`)
 - Red before green, twice: `make test-unit` failed to compile `ControllableClock`/`DeadlineTest`
   against a `Clock` that did not exist yet, and again on `TimeIsReadOnlyThroughTheClockRuleTest`
   against a rule field that did not exist yet. Both then passed once the code was written.
-- `exemptsTheOneClassAllowedToReadTime` first failed with ArchUnit's *"failed to check any classes"*:
+- `exempts_the_one_class_allowed_to_read_time` first failed with ArchUnit's *"failed to check any classes"*:
   importing `SystemClock` alone leaves the rule's `that()` clause empty, which proves nothing about
   the exemption. Reformulated to import the exempt class and the violator together and assert the
   violation names `ReadsTimeDirectly.java` and not `SystemClock.java`.
@@ -797,7 +797,7 @@ claude-opus-5 (Claude Code, `bmad-dev-story`)
 - **`Deadline.hasExpired(Clock)` is how a deadline is read back**, rather than a third method on the
   interface. A zero-length deadline *is* the clock's current monotonic reading, so the two accessors
   are sufficient. Comparison is by difference (`reading - deadline >= 0`), never by absolute value,
-  and `survivesMonotonicWraparound` proves it with an origin one second before `Long.MAX_VALUE`:
+  and `survives_monotonic_wraparound` proves it with an origin one second before `Long.MAX_VALUE`:
   under an absolute comparison that deadline reads as already expired at t=0.
 - **AC1 is enforced by two mechanisms and proven by four tests.** The ArchUnit rule
   `timeIsReadOnlyThroughTheClock` is a predicate over owner-and-member pairs (not a package
@@ -814,7 +814,7 @@ claude-opus-5 (Claude Code, `bmad-dev-story`)
   no-op `shiftWallClock` could not leave the test green. The production path:
   `ClockWiringIntegrationTest` asserts the running context holds exactly one `Clock`, that it is
   `SystemClock`, and that its readings bracket two real `Instant.now()` calls.
-- **UTC is asserted, not assumed.** `readingsAreUtcRegardlessOfTheDefaultZone` moves the JVM default
+- **UTC is asserted, not assumed.** `readings_are_utc_regardless_of_the_default_zone` moves the JVM default
   zone to UTC+14 and UTC-11 around the readings (restored in a `finally`; the suite is sequential by
   `maxParallelForks = 1`) and asserts the instants are unchanged. Nothing in the code reads a
   default zone, and no `TZ`/`-Duser.timezone` was added to any manifest.

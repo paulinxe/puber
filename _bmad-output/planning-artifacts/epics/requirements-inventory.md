@@ -40,7 +40,7 @@ FR-14: If the driver on an `IN_PROGRESS` ride goes silent past a staleness windo
 FR-15: Full ride state machine: `REQUESTED → WAITING_MATCH → OFFERED → MATCHED → IN_PROGRESS → COMPLETED`, plus terminals `CANCELLED`, `NO_DRIVER`, `PAYMENT_FAILED`. `REQUESTED` is entered exactly once and never returned to.
 FR-16: Rider may cancel any time before the trip starts (`REQUESTED`, `WAITING_MATCH`, `OFFERED`, `MATCHED`); cancelling releases any assigned driver, withdraws any outstanding offer, and voids any hold — including one that lands *after* the cancellation. A mismatched rider identity is rejected without revealing whether the ride exists.
 FR-17: Matching is race-safe under concurrency — no driver is ever double-booked; a rider cancelling as a driver accepts resolves to exactly one winner, the loser rejected.
-FR-18: Fare is computed at request time from `(base + distance + time) × surge`.
+FR-18: Fare is computed at request time from `(base + per-km × distance + per-minute × time) × surge`, distance in kilometres and time in minutes.
 FR-19: Surge is a multiplier in configurable fare rules. Static `1.00` through early phases; from the event-backbone phase onward recomputed periodically from the ratio of outstanding requests to available drivers, and exposed as an operational metric.
 
 **C. Driver Session & Actions**
@@ -146,7 +146,7 @@ Epic 1 Story 1 work and cannot be satisfied by scaffolding a monorepo template.
 - **Tests run against the real Compose stack, truncate-and-reseed per test class, sequential** (AD-56) — no Testcontainers-style self-starting containers (fights the no-host-JDK constraint), no in-memory substitutes.
 - **Deployment is declarative and reconciled from git** (AD-49) — services generated from one template, not copied per service; provider secrets created out-of-band and excluded from reconciliation.
 - **Tiering is a design constraint, not a description** (AD-48) — Tier 1 (gateway, three ride-path services + stores, Redis, Kafka) required; Tier 2 (`payment-service`) degrades to rides stalling before dispatch; Tier 3 (audit, ClickHouse, Prometheus, Grafana, dashboard) disableable with nothing breaking.
-- **Conventions** — plural snake_case tables; `<entity>.<past-tense-action>` event names; UUID for domain entities and bigint identity only for internal ordering; `TIMESTAMPTZ` UTC; **integer minor units in transit, `DECIMAL` at rest, never floating point**; `DECIMAL(10,8)`/`DECIMAL(11,8)` WGS84 coordinates, longitude before latitude; expand-only migrations; explicit SQL via `JdbcTemplate`, no ORM; `READ COMMITTED`.
+- **Conventions** — plural snake_case tables; `<entity>.<past-tense-action>` event names; UUID for domain entities and bigint identity only for internal ordering; `TIMESTAMPTZ` UTC; **integer minor units everywhere — `BIGINT` at rest, never floating point, `DECIMAL` only for coefficients**; `DECIMAL(10,8)`/`DECIMAL(11,8)` WGS84 coordinates, longitude before latitude; expand-only migrations; explicit SQL via `JdbcTemplate`, no ORM; `READ COMMITTED`.
 - **Pinned stack versions** — Java (Temurin) 25, Spring Boot 4.1.x, Spring gRPC 1.1.0, Gradle 9.x, PostgreSQL 18.6, Flyway 12.4.x (must track Boot's managed version), Kafka (KRaft) 4.3.1, Redis 8.x, ClickHouse 26.3 LTS, HAProxy 3.2.x LTS, Prometheus 3.x, Grafana 13.x, **Resilience4j 2.4.0 (hard constraint — only release publishing a `spring-boot4` module)**, Stripe Java SDK 33.3.x, Docker Compose v2, Kubernetes (kind) 1.35.x, Argo CD 3.5.x.
 
 **Capability classification carried from `SPEC.md`** — this drives decomposition and is not optional:
@@ -191,7 +191,7 @@ capability whose mechanism lands early and whose full behaviour lands with a lat
 | FR-15 | 3 | Full ride state machine as an explicit transition table (AD-11, AD-13) |
 | FR-16 | **3** + **5** | E3: cancellation, driver release, offer withdrawal. E5: hold voided, including one landing after cancellation |
 | FR-17 | 3 | Race-safe matching; CAP-13 property suite |
-| FR-18 | 1 | Fare formula `(base + distance + time) × surge` |
+| FR-18 | 1 | Fare formula `(base + per-km × distance + per-minute × time) × surge` |
 | FR-19 | **1** + **4** | E1: static `1.00` in seeded `fare_rules`. E4: demand-derived recomputation + operational metric |
 | FR-20 | 2 | Driver-controlled availability; go-offline guard reads the ride's state |
 | FR-21 | **2** + **3** | E2: declared status + observed reachability. E3: pending offer and active ride added to the same response |

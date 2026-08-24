@@ -22,7 +22,7 @@ class DeadlineTest {
 
     @Test
     @DisplayName("AC2: a deadline expires at its boundary -- not before, and still after")
-    void expiresExactlyWhenItsWindowElapses() {
+    void expires_exactly_when_its_window_elapses() {
         ControllableClock clock = new ControllableClock();
         Deadline deadline = clock.deadlineIn(WINDOW);
 
@@ -40,7 +40,7 @@ class DeadlineTest {
 
     @Test
     @DisplayName("AC4: a wall-clock correction mid-window changes nothing about when it fires")
-    void aWallClockCorrectionNeitherFiresItEarlyNorStopsItFiring() {
+    void a_wall_clock_correction_neither_fires_it_early_nor_stops_it_firing() {
         ControllableClock clock = new ControllableClock();
         Deadline deadline = clock.deadlineIn(WINDOW);
         clock.advance(WINDOW.dividedBy(2));
@@ -73,7 +73,7 @@ class DeadlineTest {
 
     @Test
     @DisplayName("a deadline that wraps the monotonic origin still fires at its boundary")
-    void survivesMonotonicWraparound() {
+    void survives_monotonic_wraparound() {
         // A real timer starts anywhere and wraps. Compared by value rather than by difference,
         // this deadline reads as already expired at t=0.
         long oneSecondBeforeWrap = Long.MAX_VALUE - Duration.ofSeconds(1).toNanos();
