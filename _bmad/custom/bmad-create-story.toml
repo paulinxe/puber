@@ -1,0 +1,22 @@
+# Team override for bmad-create-story.
+#
+# Only the keys below are set; everything else falls through to the skill's own
+# customize.toml. Arrays append, so project-context.md stays loaded.
+#
+# Why AGENTS.md is here, when create-story writes no code:
+#
+# It writes the Tasks/Subtasks list, and that list decides what kind of test proves each
+# acceptance criterion. A story that says "unit tests for each rejection" gets unit tests --
+# dev-story implements the spec it is handed, and by then AGENTS.md's
+# "Integration tests by default" section is being read against a task list that already
+# contradicts it. The decision is made here, so the rule has to be in context here.
+#
+# This is the same failure CLAUDE.md records for PUB-2's comments, one workflow earlier:
+# nothing can make a test-shape rule fail a build, so being in context is the only gate it gets.
+# Recorded 2026-08-25, after PUB-4-1's first draft specified unit tests for value-type guards.
+
+[workflow]
+
+persistent_facts = [
+  "file:{project-root}/AGENTS.md",
+]
