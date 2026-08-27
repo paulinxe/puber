@@ -3,6 +3,7 @@
 build/*
 .gradle/
 
-# ... with one exception: the analyzer configuration `make build` copies into build
-# output is a genuine build input for the image (AD-52).
+# ... with two exceptions: the analyzer configuration and the contracts `make build`
+# copies into build output are genuine build inputs for the image (AD-52).
 !build/static-analyzers/
+!build/contracts/

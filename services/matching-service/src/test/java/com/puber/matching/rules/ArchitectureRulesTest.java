@@ -51,6 +51,13 @@ class ArchitectureRulesTest {
     private static final String MATCHING = "com.puber.matching.";
 
     /**
+     * The generated contract stubs. They live outside {@link #MATCHING} on purpose -- they belong
+     * to neither service -- so this scan does not import them; the name is here only to subtract
+     * them from what {@code model} may depend on.
+     */
+    private static final String CONTRACTS = "com.puber.contracts..";
+
+    /**
      * Exact types, not subtypes, on purpose: {@code java.sql.Timestamp} extends {@code
      * java.util.Date}, and a JDBC driver returning one is fine.
      */
@@ -138,7 +145,8 @@ class ArchitectureRulesTest {
                     .should()
                     .onlyDependOnClassesThat(
                             resideInAnyPackage("java..", "com.puber..")
-                                    .as("the JDK or this project"))
+                                    .and(not(resideInAPackage(CONTRACTS)))
+                                    .as("the JDK or this project, but never a generated contract"))
                     .because("AD-8: the domain model must not depend on the framework")
                     .allowEmptyShould(true);
 

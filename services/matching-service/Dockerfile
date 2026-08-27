@@ -25,6 +25,12 @@ COPY --chown=10001:10001 gradle gradle
 COPY --chown=10001:10001 build/static-analyzers build/static-analyzers
 RUN ./gradlew --no-daemon --console=plain dependencies --configuration runtimeClasspath > /dev/null
 
+# BELOW the dependency resolution above and above `COPY src`, so editing a .proto rebuilds
+# codegen and the sources but does not re-resolve the whole runtime classpath. Putting it
+# above the RUN -- which is where it started -- busts that layer on every one-character
+# contract edit.
+COPY --chown=10001:10001 build/contracts build/contracts
+
 COPY --chown=10001:10001 src src
 RUN ./gradlew --no-daemon --console=plain bootJar
 
@@ -48,5 +54,8 @@ COPY --from=build --chown=10001:10001 /workspace/build/libs/matching-service.jar
 # Numeric, not `USER app`: Kubernetes' runAsNonRoot can only verify a numeric UID (AD-49).
 USER 10001:10001
 
-EXPOSE 8080
+# Both listeners: 8080 is HTTP/actuator, 9090 is the gRPC surface (spring.grpc.server.port).
+# EXPOSE is metadata and gates nothing on a Compose network -- it is here so the image does
+# not understate what it serves.
+EXPOSE 8080 9090
 ENTRYPOINT ["java", "-jar", "/app/matching-service.jar"]
