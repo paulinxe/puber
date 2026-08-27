@@ -427,6 +427,15 @@ capture every in-flight ride at once (AD-26, AD-27)
 **Then** they are sub-second and decoupled from durable persistence (FR-28)
 **And** the rider's live position endpoint returns coordinates **and** ETA from a single Redis read (AD-40)
 
+**Carried from PUB-4-1** (raised 2026-08-26). **This is the first story that builds a `Distance`
+from something other than our own haversine.** PUB-3 deferred a negative/`NaN`/infinite guard on
+`Distance`, and PUB-4-1 did not add it: today `Distance` is only ever constructed by
+`Coordinates.distanceTo` over already range-checked points, and haversine's output is bounded to
+`[0, 20_015_087]` metres, so the failure cannot be reproduced and `project-context.md` → YAGNI
+forbids the guard. `GEOSEARCH` output is external, so add the guard here and prove it through
+whatever surface consumes the index. Detail: `implementation-artifacts/deferred-work.md` →
+"Deferred from: PUB-4-1 implementation".
+
 ### Story 4.8: Surge is recomputed from live demand
 
 As a rider,

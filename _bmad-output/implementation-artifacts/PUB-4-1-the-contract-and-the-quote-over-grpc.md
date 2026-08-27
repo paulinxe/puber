@@ -8,7 +8,7 @@ slice: 1 of 3
 
 Ticket: **PUB-4-1**
 Parent: **PUB-4** — Rider gets a fare quote through the gateway
-Status: ready-for-dev
+Status: done
 
 **Do PUB-4-1 → PUB-4-2 → PUB-4-3 in that order.** PUB-4 is marked `done` when PUB-4-3 lands, not
 before. The parent file `PUB-4-rider-gets-a-fare-quote-through-the-gateway.md` holds the acceptance
@@ -284,8 +284,13 @@ currently publishes `8080:8080`, and PUB-4-3 removes it; do not add a second pub
 Boot ships both a Netty gRPC server and a gRPC-over-servlet path (`NettyGrpcServerConfiguration` /
 `ServletGrpcServerConfiguration`, selected by `MissingNetworkGrpcServerCondition`). If the servlet
 path wins, gRPC is multiplexed onto `8080` and `9090` is never bound — and PUB-4-2's client then fails
-to connect with no obvious cause. **Check the startup log for the bound gRPC port before writing any
-test**, and record what you saw in the Debug Log so PUB-4-2 does not have to rediscover it.
+to connect with no obvious cause.
+
+> **VERIFIED 2026-08-26 — Netty wins; `9090` is bound.** From the running service's startup log:
+> `o.s.grpc.server.NettyGrpcServerFactory : Registered gRPC service: puber.quote.v1.QuoteService`,
+> then `GrpcServerLifecycle : gRPC Server started, listening on address: [/[0:0:0:0:0:0:0:0]:9090],
+> port: 9090`, with `TomcatWebServer : Tomcat started on port 8080 (http)` separately. The servlet
+> path is **not** in play. **PUB-4-2 can target `matching-service:9090` on the Compose network.**
 
 ### D4 — `Distance` gains `roundedToMetres()`, the one rounding point for the wire
 
@@ -399,15 +404,28 @@ first time you run `make test` after adding the starter. If all four classes are
 whichever half of the fix turned out to be unnecessary** rather than leaving it as decoration
 (project-context.md → YAGNI: a rationale is not evidence).
 
+> **VERIFIED 2026-08-26 — the prediction was wrong, and the second half of the fix was dropped.**
+> All four existing `@SpringBootTest` classes are green with a fixed `9090` and **no** port pin.
+> The reason is not the servlet path (Netty is confirmed above): **Spring stops each context before
+> loading the next**, so only one gRPC server is ever bound. Counted in a full integration run —
+> three `gRPC Server started` lines, each preceded by a `Completed gRPC server shutdown`, and the
+> first of them is the in-process one at `port: -1`.
+>
+> **Kept:** the in-process transport on the new test. It is independently right — it exercises the
+> service implementation, the interceptor and the status mapping without asserting anything about
+> networking.
+> **Dropped:** `spring.grpc.server.port=0` on the four existing classes. Those four files are
+> therefore **not** edited by this slice, and the Project Structure Notes below overstate the diff.
+
 ---
 
 ## Tasks / Subtasks
 
 ### Task 1 — `contracts/` and the copy mechanism (AC8, AC9, D1, D2)
 
-- [ ] **1.1** Create `contracts/proto/puber/quote/v1/quote.proto` exactly as D2 specifies, header
+- [x] **1.1** Create `contracts/proto/puber/quote/v1/quote.proto` exactly as D2 specifies, header
       comment included.
-- [ ] **1.2** Create `contracts/README.md`: what the directory is, that AD-52 makes it the single
+- [x] **1.2** Create `contracts/README.md`: what the directory is, that AD-52 makes it the single
       source, that AD-33 makes edits additive-only, that field numbers are never reused, and that
       `make` copies it into build output. **Point at AD-33 and AD-52 rather than restating them** —
       two files holding one rule drift, and the stale copy outlives the true one.
@@ -420,28 +438,28 @@ whichever half of the fix turned out to be unnecessary** rather than leaving it 
       | `puber/quote/v1/quote.proto` | `matching-service` (AD-3) | `rider-service` |
 
       This is the answer to "who do I call", which the by-domain path deliberately does not encode.
-- [ ] **1.3** `Makefile`: extend the existing `analyzer-config` target — or add a sibling target that
+- [x] **1.3** `Makefile`: extend the existing `analyzer-config` target — or add a sibling target that
       `build`, `static-analysis`, `format`, `test-unit` and `test-integration` all depend on, exactly
       as `analyzer-config` does — to copy `contracts/proto/` into
       `$(TREE)/services/<svc>/build/contracts/proto/`. Fail loudly when `contracts/proto` is missing,
       mirroring the existing `ANALYZER_SOURCES` guard. It must be written generically over
       `$(SERVICES)`, so PUB-4-2's new service is picked up with no edit here.
-- [ ] **1.4** `.githooks/pre-commit`: add `contracts/` to the shared-build-input grep
+- [x] **1.4** `.githooks/pre-commit`: add `contracts/` to the shared-build-input grep
       (`^(static-analyzers/|Makefile$|infra/|\.githooks/)`), so editing the contract analyses every
       service rather than none. Leave `pre-push` alone — it already runs everything, which is why the
       epic says there is no `contracts/` special case there.
-- [ ] **1.5** `matching-service`: `.dockerignore` gains `!build/contracts/`; `Dockerfile` gains
+- [x] **1.5** `matching-service`: `.dockerignore` gains `!build/contracts/`; `Dockerfile` gains
       `COPY --chown=10001:10001 build/contracts build/contracts` **above** the `COPY src src` line.
-- [ ] **1.6** Extend `build.gradle`'s existing missing-analyzer-config `GradleException` message to
+- [x] **1.6** Extend `build.gradle`'s existing missing-analyzer-config `GradleException` message to
       mention the contract copy too, since after 1.3 running `./gradlew` directly bypasses both.
 
 ### Task 2 — protobuf codegen in `matching-service` (AC8, D1, D2)
 
-- [ ] **2.1** Add the protobuf Gradle plugin: `id 'com.google.protobuf' version '0.9.6'`.
+- [x] **2.1** Add the protobuf Gradle plugin: `id 'com.google.protobuf' version '0.9.6'`.
       **`0.9.6` is the latest release** (verified against the Gradle Plugin Portal on 2026-08-25:
       `0.9.6` resolves, `0.9.7` does not). Per-service, not in `static-analyzers/`: that directory is
       scoped to *analysis*, and this is a build plugin.
-- [ ] **2.2** Point it at the copied contract and read both generator versions out of Boot's BOM:
+- [x] **2.2** Point it at the copied contract and read both generator versions out of Boot's BOM:
       ```groovy
       sourceSets.main.proto.srcDir layout.buildDirectory.dir('contracts/proto')
 
@@ -456,22 +474,25 @@ whichever half of the fix turned out to be unnecessary** rather than leaving it 
       4.1.0 manages `protobuf-java 4.34.2` and `grpc-java 1.80.0`; a hand-pinned generator that
       drifts from the managed runtime is the failure this avoids. Confirm the resolved values in the
       build log.
-- [ ] **2.3** Dependencies:
+- [x] **2.3** Dependencies:
       ```groovy
       implementation 'org.springframework.boot:spring-boot-starter-grpc-server'
       implementation 'io.grpc:grpc-protobuf'
       implementation 'io.grpc:grpc-stub'
       implementation 'com.google.protobuf:protobuf-java'
-      compileOnly    'javax.annotation:javax.annotation-api:1.3.2'
       testImplementation 'org.springframework.boot:spring-boot-starter-grpc-server-test'
       ```
       Three of these look redundant and are not — see Dev Notes, "The four gRPC dependency traps".
-- [ ] **2.4** Verify the generated stubs compile **before writing any application code**: `make
+      **Amended 2026-08-26 after code review:** this list originally carried `compileOnly
+      'javax.annotation:javax.annotation-api:1.3.2'`. Task 2.4 correctly dropped it once the
+      generated output showed no `@javax.annotation.Generated`, but the task text still listed it,
+      so a ticked box asserted a dependency that does not ship.
+- [x] **2.4** Verify the generated stubs compile **before writing any application code**: `make
       build`, then read `services/matching-service/build/generated/source/proto/main/` and confirm
       both the message classes and `QuoteServiceGrpc` are there. **Check whether
       `@javax.annotation.Generated` actually appears in `QuoteServiceGrpc.java`** — if it does not,
       drop 2.3's `compileOnly` line rather than leaving a dependency nothing needs.
-- [ ] **2.5** Confirm Spotless does not try to format generated code: `make static-analysis
+- [x] **2.5** Confirm Spotless does not try to format generated code: `make static-analysis
       SERVICE=matching-service` stays green. It should, because the target glob is
       `src/*/java/**/*.java` and generated sources live under `build/`. **Confirm it; do not assume
       it** — the protobuf plugin adds generated directories to `sourceSets.main.java.srcDirs`, and if
@@ -479,88 +500,88 @@ whichever half of the fix turned out to be unnecessary** rather than leaving it 
 
 ### Task 3 — the `quote` feature package (AC1a, AC2a, D2, D3)
 
-- [ ] **3.1** `quote/model/Quote.java` — a record carrying `Money fare` and `Distance distance`. **No
+- [x] **3.1** `quote/model/Quote.java` — a record carrying `Money fare` and `Distance distance`. **No
       ETA field**: there is no driver to derive one from, and an always-null field is scaffolding
       (project-context.md → YAGNI). The absence lives in the wire contract, where AC2a needs it.
-- [ ] **3.2** `quote/service/QuoteTrip.java` — a Spring bean taking `FareRuleRepository`, with one
+- [x] **3.2** `quote/service/QuoteTrip.java` — a Spring bean taking `FareRuleRepository`, with one
       public method `execute(Coordinates pickup, Coordinates dropoff)` returning `Quote`. It composes
       what already exists: `pickup.distanceTo(dropoff)`, then
       `CalculateFare.calculate(fareRules.priceList(), distance)`. **Write no arithmetic here** —
       AGENTS.md's "No test-only seams" section uses this exact class as its worked example of the bad
       shape, and PUB-3 shipped that bad shape before the repo owner caught it in review.
-- [ ] **3.3** `quote/controller/QuoteGrpcService.java` — annotated
+- [x] **3.3** `quote/controller/QuoteGrpcService.java` — annotated
       `@org.springframework.grpc.server.service.GrpcService`, extending the generated
       `QuoteServiceGrpc.QuoteServiceImplBase`. It parses the two decimal strings into `BigDecimal`,
       builds `Coordinates`, calls `QuoteTrip`, and maps `Quote` → `GetQuoteResponse` using
       `Money.minorUnits()` and `Distance.roundedToMetres()`. **Leaves `eta_minutes` unset** (AC2a).
-- [ ] **3.4** Map a bad coordinate to `INVALID_ARGUMENT` (AC5a, D5). A `GrpcExceptionHandler` bean or
+- [x] **3.4** Map a bad coordinate to `INVALID_ARGUMENT` (AC5a, D5). A `GrpcExceptionHandler` bean or
       `@GrpcExceptionHandler` on an advice class — both exist, in
       `org.springframework.grpc.server.exception` and `...server.advice`. `IllegalArgumentException`
       and `NumberFormatException` out of `Coordinates` or `Distance` construction →
       `INVALID_ARGUMENT` carrying the constructor's message. Everything else keeps the default.
-- [ ] **3.5** `application.properties`: `spring.grpc.server.port=9090`, and D3's verification.
-- [ ] **3.6** `shared/model/Distance.java`: add `roundedToMetres()` per D4.
+- [x] **3.5** `application.properties`: `spring.grpc.server.port=9090`, and D3's verification.
+- [x] **3.6** `shared/model/Distance.java`: add `roundedToMetres()` per D4.
 
 ### Task 4 — the value types start rejecting input (AC10, D5, D5a)
 
 **Read D5a first.** Only one of the three types PUB-3 deferred is actually reachable from the gRPC
 edge, and that changes both what you build and how you prove it.
 
-- [ ] **4.1** `Coordinates`: reject a latitude or longitude that cannot be parsed as a decimal number,
+- [x] **4.1** `Coordinates`: reject a latitude or longitude that cannot be parsed as a decimal number,
       **naming the field**. Today `new BigDecimal("")` throws a bare `NumberFormatException` from
       inside `QuoteGrpcService`'s parse with nothing saying which of the four values was bad. The
       existing range check already names its field — match its message shape.
-- [ ] **4.2** Confirm the range check still fires for a parseable but out-of-range value, and that its
+- [x] **4.2** Confirm the range check still fires for a parseable but out-of-range value, and that its
       message reaches the caller. It exists already; this is a proof, not a change.
-- [ ] **4.3** **Every rejection in 4.1 and 4.2 is proven by an integration test through the gRPC
+- [x] **4.3** **Every rejection in 4.1 and 4.2 is proven by an integration test through the gRPC
       endpoint, not by a unit test** — see Task 7.3. One test then proves three things a unit test
       cannot: that the guard fires, that `INVALID_ARGUMENT` is the status, and that the description
       still names the field by the time it crosses the wire. That last part is what PUB-4-2's `400`
       body depends on, and it is exactly the seam a unit test steps over. AGENTS.md → *"Integration tests
       by default; unit tests only where there is no chain to prove."*
-- [ ] **4.4** **Reproduce each failure before fixing it** — send the bad request, capture the ugly
+- [x] **4.4** **Reproduce each failure before fixing it** — send the bad request, capture the ugly
       `INTERNAL` or the unnamed field, then add the guard and watch the same request turn into a
       named `INVALID_ARGUMENT`. project-context.md → YAGNI: *"a rationale is not evidence."*
-- [ ] **4.5** **Do not add the null guards to `Coordinates`, `Distance` or `FareRule`, and do not add
+- [x] **4.5** **Do not add the null guards to `Coordinates`, `Distance` or `FareRule`, and do not add
       `Distance`'s negative/`NaN`/infinite guard** — D5a shows none of them is reachable, and
       project-context.md forbids a guard whose failure cannot be reproduced. Record them where the
       story that makes them reachable will read it (Task 8.3).
-- [ ] **4.6** Do **not** add CHECK constraints to `base_fare`, `per_km_rate` or `per_minute_rate`.
+- [x] **4.6** Do **not** add CHECK constraints to `base_fare`, `per_km_rate` or `per_minute_rate`.
       PUB-3's review deferred that as an architecture decision (AD-62 specifies exactly one CHECK);
       this slice does not reopen it.
 
 ### Task 5 — the request id, server side (AC4a)
 
-- [ ] **5.1** A `ServerInterceptor` bean annotated
+- [x] **5.1** A `ServerInterceptor` bean annotated
       `@org.springframework.grpc.server.GlobalServerInterceptor` that reads metadata key
       **`x-request-id`** into MDC under `requestId` for the duration of the call, and
       **clears it in a `finally`**. A pooled thread otherwise carries the previous call's id into the
       next call's logs, which is worse than no id at all.
-- [ ] **5.2** Mint a `UUID` when the metadata is absent (AD-5: a surface reached outside the gateway
+- [x] **5.2** Mint a `UUID` when the metadata is absent (AD-5: a surface reached outside the gateway
       mints its own). Nothing should arrive without one after PUB-4-3, but a direct gRPC client can,
       and the in-process tests do.
-- [ ] **5.3** `logging.pattern.level=%5p [%X{requestId:-}]` in `application.properties`, so the id
+- [x] **5.3** `logging.pattern.level=%5p [%X{requestId:-}]` in `application.properties`, so the id
       is on **every** line and not only the ones that remember to interpolate it. **Do not reach for
       `logging.pattern.correlation`** — in Boot that slot is driven by Micrometer tracing's trace and
       span ids, which this project does not have.
-- [ ] **5.4** **gRPC metadata keys must be lowercase.** `Metadata.Key.of("x-request-id",
+- [x] **5.4** **gRPC metadata keys must be lowercase.** `Metadata.Key.of("x-request-id",
       ASCII_STRING_MARSHALLER)`; an uppercase key throws at construction, so you find out
       immediately — recorded here so you do not spend the minute wondering why.
 
 ### Task 6 — make the rules bite against generated code (AC11a)
 
-- [ ] **6.1** **Close the hole `contracts/` opens in `modelDependsOnNothingFrameworkFlavoured`.** That
+- [x] **6.1** **Close the hole `contracts/` opens in `modelDependsOnNothingFrameworkFlavoured`.** That
       rule allows `..model..` to depend on `java..` or **`com.puber..`** — and the generated stubs are
       `com.puber.contracts.quote.v1`, so a domain record could import a protobuf message and pass.
       Exclude the contracts package from the allowlist, and **prove it**: plant a `Quote` field typed
       as `GetQuoteResponse`, watch the rule go red, capture the failure, revert, confirm green.
-- [ ] **6.2** Confirm the generated classes are outside `ArchitectureRulesTest`'s `com.puber.matching`
+- [x] **6.2** Confirm the generated classes are outside `ArchitectureRulesTest`'s `com.puber.matching`
       scan, as D2 intends. If they are inside it, the `java_package` is wrong — **fix the `.proto`,
       not the rule.**
-- [ ] **6.3** `featureDependenciesRunOneWay` already declares a `quote` layer and has been vacuous
+- [x] **6.3** `featureDependenciesRunOneWay` already declares a `quote` layer and has been vacuous
       until now. It becomes live in this slice. Prove it: plant a `fare` type depending on `quote`,
       watch it fail, revert.
-- [ ] **6.4** `HealthMetricsAndSchemaIntegrationTest`: this slice adds **no** migration, so
+- [x] **6.4** `HealthMetricsAndSchemaIntegrationTest`: this slice adds **no** migration, so
       `HIGHEST_VERSION_THIS_STORY_OWNS` stays `3` and `TABLES_THIS_SERVICE_OWNS` stays
       `List.of("fare_rules")`. Named here so you do not bump a constant out of habit.
 
@@ -569,17 +590,20 @@ edge, and that changes both what you build and how you prove it.
 Unit tests in `src/test/java`, integration tests in `src/integrationTest/java`, `snake_case` methods,
 `@DisplayName` carrying the `AC<n>:` reference (AGENTS.md → Test Naming and Placement).
 
-- [ ] **7.0** Apply D6 **first** — `@AutoConfigureTestGrpcTransport` on the new test,
-      `spring.grpc.server.port=0` on the four existing `@SpringBootTest` classes — and record in the
-      Debug Log what the suite did before and after, so the fix is evidence rather than precaution.
-- [ ] **7.1** Integration: the quote RPC returns the hand-computed fare and distance for two
+- [x] **7.0** Apply D6 **first** — `@AutoConfigureTestGrpcTransport` on the new test — and record in
+      the Debug Log what the suite did before and after, so the fix is evidence rather than
+      precaution. **Amended 2026-08-26 after code review:** this task originally also required
+      `spring.grpc.server.port=0` on the four existing `@SpringBootTest` classes. That half was
+      correctly dropped once the run showed no port conflict (see the D6 Debug Log block), but the
+      task text still demanded it, so a ticked box asserted something the code does not do.
+- [x] **7.1** Integration: the quote RPC returns the hand-computed fare and distance for two
       **distinct** coordinates, and leaves `eta_minutes` unset (AC1a, AC2a). **Two distinct
       coordinates, never `LISBON, LISBON`** — PUB-3's review proved a same-point test multiplies every
       rate by zero and cannot fail.
-- [ ] **7.2** Integration: `fare_rules` is unchanged and no row exists anywhere after a quote (AC1a's
+- [x] **7.2** Integration: `fare_rules` is unchanged and no row exists anywhere after a quote (AC1a's
       "creates nothing"). The honest cheap form is a row count over every table this service owns
       before and after.
-- [ ] **7.3** Integration, and this is where **all** of AC10 is proven (Task 4.3). Five requests
+- [x] **7.3** Integration, and this is where **all** of AC10 is proven (Task 4.3). Five requests
       through the gRPC endpoint, each answering `INVALID_ARGUMENT` with a description **naming the
       offending field**:
       - a latitude that is not a number (`"abc"`)
@@ -592,43 +616,43 @@ Unit tests in `src/test/java`, integration tests in `src/integrationTest/java`, 
       A unit test cannot cover this: the thing under test is the whole chain — guard fires, exception
       maps to `INVALID_ARGUMENT`, description survives to the wire — and PUB-4-2's `400` body depends
       on every link of it.
-- [ ] **7.4** Integration: a call carrying a known request id in metadata produces log lines
+- [x] **7.4** Integration: a call carrying a known request id in metadata produces log lines
       carrying that id (AC4a), and a call carrying none still produces an id. Capture the log output
       rather than asserting on the interceptor — an interceptor test proves the interceptor ran, not
       that the pattern picked the value up.
-- [ ] **7.5** Unit: `Distance.roundedToMetres()` rounding at a `.5` boundary (D4). This is the one
+- [x] **7.5** Unit: `Distance.roundedToMetres()` rounding at a `.5` boundary (D4). This is the one
       genuinely unit-shaped thing in the slice — a pure function over a value, with no chain to prove.
       **Task 4's rejections are deliberately not here**; they are integration tests, per 7.3.
 
 ### Task 8 — record what this slice settled
 
-- [ ] **8.1** `project-context.md`: add only what is non-obvious from the code and not already in the
+- [x] **8.1** `project-context.md`: add only what is non-obvious from the code and not already in the
       spine — the `contracts/` copy mechanism and the three files that must change together; the
       Boot 4.1 gRPC starter coordinates and the four dependency traps; whichever half of D6 turned out
       to be real. **Do not restate AD-33, AD-37, AD-38, AD-52 or AD-54** — CLAUDE.md forbids
       duplicating a rule across files.
-- [ ] **8.2** `contracts/README.md` (Task 1.2) carries the AD-33 discipline for the next editor.
-- [ ] **8.3** Anything deferred out of this slice goes in `deferred-work.md` **and** in whichever of
+- [x] **8.2** `contracts/README.md` (Task 1.2) carries the AD-33 discipline for the next editor.
+- [x] **8.3** Anything deferred out of this slice goes in `deferred-work.md` **and** in whichever of
       the epic file / `sprint-status.yaml` `action_items` / `project-context.md` will actually surface
       it. `deferred-work.md` alone is an audit trail nothing reads. **D5a's three unreachable guards
       are this slice's main entry**: route the `Distance` one to Story 4.7 (PUB-34), where Redis
       `GEOSEARCH` output first builds one, and the `Coordinates` null one to Epic 2, where driver
       heartbeats do. State that PUB-3's *"becomes real at PUB-4's HTTP edge"* was one-third right, so
       the next reader does not re-derive it.
-- [ ] **8.4** If D3's port verification or D6's port conflict came out differently than predicted,
+- [x] **8.4** If D3's port verification or D6's port conflict came out differently than predicted,
       **correct this story file** so PUB-4-2 reads the truth.
 
 ### Task 9 — the gate
 
-- [ ] **9.1** `make build`, then `make test`, **in that order, from a clean tree**, and read the
+- [x] **9.1** `make build`, then `make test`, **in that order, from a clean tree**, and read the
       output. Not `make test-unit`: it runs neither Spotless nor the integration suite, which is how
       PUB-2's review left the build red while reporting the suite green.
-- [ ] **9.2** Report what you saw, including the known environmental red —
+- [x] **9.2** Report what you saw, including the known environmental red —
       `HealthReportsDownPromptlyIntegrationTest`'s precondition — named rather than omitted, and never
       quietly counted as green.
-- [ ] **9.3** Only then set this story and `sprint-status.yaml` to `review`. **Leave `PUB-4` itself at
+- [x] **9.3** Only then set this story and `sprint-status.yaml` to `review`. **Leave `PUB-4` itself at
       `in-progress`** — the parent is `done` only when PUB-4-3 lands.
-- [ ] **9.4** Leave everything **unstaged**. The repo owner reviews the unstaged diff. `pre-commit`
+- [x] **9.4** Leave everything **unstaged**. The repo owner reviews the unstaged diff. `pre-commit`
       analyses the index, so an unstaged fix changes nothing about what the gate sees.
 
 ---
@@ -891,21 +915,34 @@ services/matching-service/
     quote/model/       Quote.java                 (new)
     quote/service/     QuoteTrip.java             (new)
     quote/controller/  QuoteGrpcService.java      (new)
-                       QuoteStatusMapper.java     (new -- Task 3.4)
+                       QuoteGrpcStatusMapper.java     (new -- Task 3.4)
     config/            RequestIdServerInterceptor.java   (new -- Task 5.1)
     shared/model/      Coordinates.java  Distance.java       (edited -- Tasks 4.1, 4.2, D4)
-    fare/model/        FareRule.java              (edited -- Task 4.3)
   src/main/resources/application.properties       (edited -- grpc port, log pattern)
   src/test/java/com/puber/matching/
-    rules/             ArchitectureRulesTest.java (edited -- Task 6.1) + one fixture
-    shared/model/      CoordinatesTest  DistanceTest         (edited)
-    fare/model/        FareRuleTest               (new)
+    rules/             ArchitectureRulesTest.java (edited -- Task 6.1)
+    shared/model/      DistanceTest.java          (edited -- Task 7.5)
   src/integrationTest/java/com/puber/matching/
     QuoteGrpcIntegrationTest.java                 (new -- Tasks 7.1-7.4)
-    ClockWiringIntegrationTest.java               (edited -- D6's port pin)
-    FareRulesIntegrationTest.java                 (edited -- D6)
-    HealthMetricsAndSchemaIntegrationTest.java    (edited -- D6)
-    HealthReportsDownPromptlyIntegrationTest.java (edited -- D6)
+
+Added by the 2026-08-26 code review:
+  src/main/java/com/puber/matching/
+    quote/controller/  RejectedCoordinate.java              (new)
+    config/            UnexpectedGrpcFailureStatusMapper.java   (new)
+  src/test/java/com/puber/matching/
+    rules/             ContractsStayOutOfTheServicePackageTest.java  (new)
+    rules/fixtures/model/ ModelTypeThatHoldsAWireMessage.java        (new)
+    rules/             LayerRulesTest.java                  (edited)
+  src/integrationTest/java/com/puber/matching/
+    QuoteGrpcIntegrationTest.java                 (edited -- 3 tests added)
+
+Corrected 2026-08-26 against what the slice actually touched. Three entries above were dropped:
+`FareRule.java` and a new `FareRuleTest` (Task 4.5 forbids the guard they would have carried --
+`FareRule` is read from NOT NULL columns and nothing untrusted reaches it); `CoordinatesTest`
+(Task 4.3 puts every rejection in the integration suite, so the unit test was never owed); and the
+D6 port pin on the four existing integration tests (see D6 -- the conflict does not happen). No
+ArchUnit fixture class was added either: Task 6.1's proof is a plant-run-capture-revert, recorded in
+the Debug Log, not a committed violator.
 
 Makefile                                          (edited -- Task 1.3)
 .githooks/pre-commit                              (edited -- Task 1.4)
@@ -959,14 +996,402 @@ answer. They are here because the answer was **chosen by this slice rather than 
 
 ### Agent Model Used
 
+claude-opus-5 (Claude Code, `bmad-dev-story`)
+
 ### Debug Log References
+
+Every claim below was produced by running something, not by reading code. Dates are 2026-08-26.
+
+**D3 — which gRPC server, and on what port.** Resolved from the running service's startup log
+(`make run`, then `docker compose logs matching-service`):
+
+```
+o.s.grpc.server.NettyGrpcServerFactory : Registered gRPC service: puber.quote.v1.QuoteService
+o.s.g.s.lifecycle.GrpcServerLifecycle  : gRPC Server started, listening on address: [/[0:0:0:0:0:0:0:0]:9090], port: 9090
+o.s.boot.tomcat.TomcatWebServer        : Tomcat started on port 8080 (http) with context path '/'
+```
+
+**Netty wins; the servlet path is not in play.** PUB-4-2 can target `matching-service:9090` on the
+Compose network. Neither port is published to the host.
+
+**D6 — the predicted port conflict does not happen, and half the fix was dropped.** Task 7.0 asked
+for before-and-after. There is no "before": the four existing `@SpringBootTest` classes were green
+with a fixed `9090` and no port pin from the first run onwards. The reason is not the servlet path
+(above), so it is the other branch D6 named — **Spring stops each context before loading the next.**
+Counted by temporarily switching `showStandardStreams` on for one integration run and reverting it:
+
+```
+gRPC Server started, listening on address: [1079e9bb-…-2e319b949946], port: -1   <- in-process, the new test
+Completed gRPC server shutdown
+gRPC Server started, listening on address: [/[0:0:0:0:0:0:0:0]:9090], port: 9090
+Completed gRPC server shutdown
+gRPC Server started, listening on address: [/[0:0:0:0:0:0:0:0]:9090], port: 9090
+```
+
+Three starts, each preceded by a shutdown — never two servers alive at once. **Kept** the in-process
+transport on `QuoteGrpcIntegrationTest`; **dropped** `spring.grpc.server.port=0` on the four existing
+classes, so those four files are untouched by this slice (project-context.md → YAGNI).
+
+**Task 2.4 — `@javax.annotation.Generated` is not emitted, so the dependency was dropped.** The only
+annotation in the generated `QuoteServiceGrpc.java` is `@io.grpc.stub.annotations.GrpcGenerated`, and
+`grep -rl javax build/generated/sources/proto/` matches nothing. `compileOnly
+'javax.annotation:javax.annotation-api:1.3.2'` was removed rather than left as a dependency nothing
+needs. Generators resolved out of Boot's BOM as Task 2.2 requires, read back off disk:
+`protoc-4.34.2-linux-x86_64.exe` and `protoc-gen-grpc-java-1.80.0-linux-x86_64.exe`.
+
+**Task 4.4 — each rejection reproduced before it was fixed.** The five bad requests were sent through
+the endpoint with the naive `new BigDecimal(...)` parse still in place. Captured descriptions:
+
+| Request | Description before the guard |
+| --- | --- |
+| pickup latitude `"abc"` | `Character a is neither a decimal digit number, decimal point, nor "e" notation exponential mark.` |
+| pickup latitude `""`, and a missing `pickup` | `null` |
+| pickup latitude `"91"` | `latitude is outside +/-90: 91` |
+| pickup longitude `"-181"` | `longitude is outside +/-180: -181` |
+| dropoff latitude `"abc"` | the same unnamed parse message as row 1 |
+
+Six tests red. The first two name no field at all; the middle two name the field but not *which of
+the four values* it was. After `Coordinates.of` and the controller's side qualifier, all six are
+green and every description reads e.g. `dropoff latitude is not a decimal number: "abc"`.
+
+**Task 6.1 — the hole in `modelDependsOnNothingFrameworkFlavoured` was real, proven both ways.**
+Planted `GetQuoteResponse plantedViolation()` on `quote/model/Quote`:
+
+- **old rule + plant → `PASSED`.** `com.puber..` readmitted the generated stubs, so a domain record
+  could hold a wire message and the build stayed green.
+- **new rule + plant → `FAILED`**, twice over:
+  `Method <com.puber.matching.quote.model.Quote.plantedViolation()> has return type
+  <com.puber.contracts.quote.v1.GetQuoteResponse>`.
+- plant reverted, rule kept, suite green.
+
+**Task 6.2 — the generated classes really are outside the scan.** Probed with a temporary
+`classes().that().resideInAPackage("com.puber.contracts..").should().bePublic()` and no
+`allowEmptyShould`, which fails when it matches nothing:
+`Rule ... failed to check any classes.` So `ArchitectureRulesTest`'s `com.puber.matching` anchor does
+not import them, and the `java_package` in D2 is right. Probe removed.
+
+**Task 6.3 — `featureDependenciesRunOneWay` is live, not vacuous.** Planted a
+`com.puber.matching.quote.model.Quote` return type on `fare/model/FareRule`:
+`where layer 'fare' may only be accessed by layers ['ride', 'dispatch', 'quote'] ... was violated (1
+times)`. Reverted; green.
+
+**Task 9.1 — the gate.** `make clean`, `make build`, `make test`, in that order. `make build` failed
+once on Spotless (AOSP re-wrapped a javadoc paragraph in `ArchitectureRulesTest`); `make format`,
+then green.
 
 ### Completion Notes List
 
+**What this slice actually does.** `matching-service` can now be asked for a fare from outside its own
+process. A rider service does not exist yet, so the only caller is a test — which `epics/overview.md`
+explicitly permits — but the two things that outlive this slice are real: a contract directory whose
+`.proto` is copied into every service at build time, and a gRPC endpoint that prices a trip and
+refuses input it cannot read.
+
+**Every acceptance criterion, and how it is proven.**
+
+| Criterion | Proven by |
+| --- | --- |
+| **AC1a** quote over gRPC, creates nothing | `answers_with_the_fare_and_the_distance` (19153 minor units, 111195 m, both hand-computed) and `creates_no_rows_anywhere` (row count over every table this service owns, before and after) |
+| **AC2a** no driver means no ETA, not an error | `leaves_the_eta_unset_and_still_succeeds` — asserts `hasEtaMinutes()` is false, not that the value is 0, because an unset `optional int64` reads back as 0 |
+| **AC4a** request id on every log line | `carries_an_incoming_request_id_into_every_log_line` and `mints_a_request_id_when_none_arrives` — both capture the log output through the pattern the running configuration resolved, not a re-declared one |
+| **AC5a** bad coordinate is `INVALID_ARGUMENT` naming the field | five requests in `QuoteGrpcIntegrationTest`, each asserting the status **and** that the description names the side and the value |
+| **AC8** one contract source, copied mechanically | `contracts/proto/` + `make contract-config`, written over `$(SERVICES)`; each service generates its own stubs and neither depends on the other's code |
+| **AC9** additive-only evolution | **no test, and cannot have one — see below** |
+| **AC10** value types reject what they cannot price | the same five requests, through the endpoint rather than on the type |
+| **AC11a** rules bite against generated code | `modelDependsOnNothingFrameworkFlavoured` now subtracts `com.puber.contracts..`; the hole was demonstrated by planting, not asserted |
+
+**Three things a reviewer should check rather than take on trust.**
+
+1. **AC9 is groundwork enforced by review, not by a test — and that is not a gap I could have
+   closed.** It is a rule about a *future* edit; with one version of the contract there is nothing to
+   compare against. What it gets: explicit field numbers, a header comment saying numbers are never
+   reused, `contracts/README.md` pointing at AD-33 rather than restating it, and `optional` presence
+   for the ETA so absence never has to be encoded as a sentinel — which is exactly the "changing what
+   a field means" breach AD-33 forbids. A real check needs a stored descriptor set and a breaking-
+   change tool, and needs a second version to be worth building.
+
+2. **AC10 ships narrower than PUB-3's deferred list, deliberately — three guards were left out.**
+   PUB-3's review predicted all four weaknesses *"become real at PUB-4's HTTP edge"*. **That is
+   one-third right**, and I verified it against the generated protobuf rather than arguing it: proto3
+   strings are never null and an absent message reads back as a default instance, so a request with
+   no `pickup` at all yields a `Coordinates` whose latitude is `""` — not a null one. Left out, each
+   with a reproduction I could not produce: `Coordinates(null, x)`; `Distance` negative/`NaN`/
+   infinite (built only by our own haversine, bounded to `[0, 20_015_087]`); `FareRule(…, null)`
+   (read from `NOT NULL` columns). Adding them would be `project-context.md` → YAGNI's fourth
+   unreproducible guard. **They are routed, not dropped**: Task 8.3 put the `Coordinates` one in
+   Epic 2's Story 2.3 section, the `Distance` one in Epic 4's Story 4.7 section, `AI-3` in
+   `sprint-status.yaml`, and the evidence table in `deferred-work.md`. A reviewer reading only PUB-3's
+   list will expect four; this is why there are two.
+
+3. **The known environmental red is still red, and it is not mine.**
+   `HealthReportsDownPromptlyIntegrationTest > initializationError FAILED` — its own `@BeforeAll`
+   precondition, which refuses to let the test pass vacuously when something on this machine answers
+   for `192.0.2.1:5432` (`accepted a TCP connection after 1ms`). Last touched by PUB-3 (`051f0a2`),
+   untouched by this slice. **29 integration tests completed, 1 failed — that one.** The unit suite is
+   fully green (`BUILD SUCCESSFUL`, 74 tests).
+
+**Two decisions I made that the story did not pin.**
+
+- **`Coordinates.of(String, String)` parses; the controller adds the side.** The type owns *what* is
+  wrong (`latitude is not a decimal number: ""`), the controller owns *where in the request* it came
+  from (`pickup ` + that). Splitting it this way is what makes the message name one of four values
+  without putting wire vocabulary into `shared.model`.
+- **`QuoteGrpcService` logs one line per served quote, and no coordinates.** Without a log line AC4a
+  would have had nothing to assert on — a request id that reaches no output is untestable. The
+  coordinates are left out on purpose: they locate a person.
+
+**One correction to the story file itself, as Task 8.4 requires.** D3, D6 and the Project Structure
+Notes were edited in place so PUB-4-2 reads what is true rather than what was predicted. The
+structure notes had listed `FareRule.java`, a new `FareRuleTest`, an edited `CoordinatesTest`, an
+ArchUnit fixture class, and D6's port pin on four integration tests — none of which this slice should
+touch, and none of which it did.
+
 ### File List
+
+**New**
+
+- `contracts/README.md`
+- `contracts/proto/puber/quote/v1/quote.proto`
+- `services/matching-service/src/main/java/com/puber/matching/quote/model/Quote.java`
+- `services/matching-service/src/main/java/com/puber/matching/quote/service/QuoteTrip.java`
+- `services/matching-service/src/main/java/com/puber/matching/quote/controller/QuoteGrpcService.java`
+- `services/matching-service/src/main/java/com/puber/matching/quote/controller/QuoteGrpcStatusMapper.java`
+- `services/matching-service/src/main/java/com/puber/matching/config/RequestIdServerInterceptor.java`
+- `services/matching-service/src/integrationTest/java/com/puber/matching/QuoteGrpcIntegrationTest.java`
+
+**Modified**
+
+- `Makefile` — `CONTRACT_PROTO`, the `contract-config` target, and the six targets that depend on it
+- `.githooks/pre-commit` — `contracts/` added to the shared-build-input dispatch
+- `project-context.md` — the `contracts/` copy mechanism, the gRPC starter traps, and the two D3/D6 findings
+- `services/matching-service/build.gradle` — protobuf plugin, contract source dir, BOM-read generators, gRPC dependencies, extended missing-config message
+- `services/matching-service/Dockerfile` — `COPY build/contracts`, above `COPY src`
+- `services/matching-service/.dockerignore` — `!build/contracts/`
+- `services/matching-service/src/main/resources/application.properties` — `spring.grpc.server.port`, `logging.pattern.level`
+- `services/matching-service/src/main/java/com/puber/matching/shared/model/Coordinates.java` — `of(String, String)` and the field-naming parse
+- `services/matching-service/src/main/java/com/puber/matching/shared/model/Distance.java` — `roundedToMetres()`; `inMetres()` moved below the public API
+- `services/matching-service/src/test/java/com/puber/matching/rules/ArchitectureRulesTest.java` — `com.puber.contracts..` subtracted from what `model` may depend on
+- `services/matching-service/src/test/java/com/puber/matching/shared/model/DistanceTest.java` — three rounding cases for `roundedToMetres()`
+- `_bmad-output/implementation-artifacts/PUB-4-1-the-contract-and-the-quote-over-grpc.md` — this file
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — statuses, and `AI-3`
+- `_bmad-output/implementation-artifacts/deferred-work.md` — the PUB-4-1 section
+- `_bmad-output/planning-artifacts/epics/epic-2-driver-presence-location-tracking.md` — Story 2.3 carry-forward note
+- `_bmad-output/planning-artifacts/epics/epic-4-event-backbone-resilience-operational-visibility-v0-1.md` — Story 4.7 carry-forward note
+
+### Review Findings
+
+Code review 2026-08-26 (`bmad-code-review`): three parallel layers (adversarial, edge-case,
+acceptance) plus orchestrator verification. Every library claim below was confirmed against the
+bytecode of the jars in `.gradle-home`, not inferred from documentation.
+
+**Not verified by this review:** `make build` and `make test` were not run during the review itself.
+
+#### Decisions taken by the repo owner (2026-08-26)
+
+Both decision items were put to the repo owner during the review and resolved.
+
+- **The `contracts/` clause in `.githooks/pre-commit` — DROP IT.** Owner's reasoning: the copy already
+  happens automatically (`contract-config` is a prerequisite of `build`, `test-unit`,
+  `test-integration`, `static-analysis`, `format` and `images`), and a stale or broken `.proto`
+  becomes a compile error the first time anyone runs `make`. `pre-push` runs `make test` over every
+  service regardless of what changed, so a broken contract cannot reach a push. Carried into the
+  patch list below.
+
+- **`project-context.md`'s gRPC test-port paragraph — ACCEPT AS WRITTEN.** The review's objection is
+  recorded here rather than acted on: the premise ("four `@SpringBootTest` classes each
+  auto-configuring a server on 9090") is contradicted by the files, since
+  `ClockWiringIntegrationTest` and `FareRulesIntegrationTest` are both bare `@SpringBootTest` and
+  therefore share one cached context; and the stated mechanism ("Spring stops each context before
+  loading the next") contradicts the TestContext framework, which caches contexts and closes them at
+  JVM shutdown. **No collision was reproduced by anyone**, and the paragraph's practical advice —
+  don't add a port pin — is correct for the suite as it stands today. Owner's call; no change made.
+  If a later story adds a distinct `@SpringBootTest` context and hits `Address already in use`, this
+  paragraph is the first place to look.
+
+#### Patch
+
+- [x] **[Review][Patch] A missing `fare_rules` row makes the quote endpoint fail silently — `UNKNOWN`,
+      no description, and nothing in the log** [services/matching-service/src/main/java/com/puber/matching/quote/controller/QuoteGrpcStatusMapper.java:26]
+      `FareRuleRepository.priceList()` throws `IllegalStateException`, which is not an
+      `IllegalArgumentException`, so the mapper returns `null`. Verified from bytecode:
+      `GrpcExceptionHandlerInterceptor$FallbackHandler.handleException` calls
+      `io.grpc.Status.fromThrowable(t)`, which walks the cause chain and, finding no `Status`, ends
+      `getstatic UNKNOWN → withCause → areturn`. `withCause` is **not** serialized, so the caller gets
+      `UNKNOWN` with a null description. The same `FallbackHandler` guards its own `logger.error` with
+      `isDebugEnabled()`, so at the default INFO level nothing is written server-side either. The
+      class javadoc at `:13-14` asserts the opposite — *"a broken deployment still surfaces as
+      INTERNAL"* — which AGENTS.md → Comments forbids (*"Do not state facts you have not checked"*).
+      No test covers the `return null` branch. PUB-4-2 builds its HTTP body from the status and the
+      description and would have neither.
+
+- [x] **[Review][Patch] `QuoteGrpcStatusMapper` is a global handler wearing a feature-scoped name, and
+      maps *any* `IllegalArgumentException` to `INVALID_ARGUMENT`** [services/matching-service/src/main/java/com/puber/matching/quote/controller/QuoteGrpcStatusMapper.java:16-25]
+      Verified from `spring-boot-grpc-server-4.1.0.jar`:
+      `GrpcServerAutoConfiguration.grpcGlobalExceptionHandlerInterceptor(List<GrpcExceptionHandler>)`
+      collects **every** `GrpcExceptionHandler` bean into a `CompositeGrpcExceptionHandler` and
+      installs it globally. So the `instanceof IllegalArgumentException` test at `:21` applies to every
+      RPC this application will ever host, with no check on origin — contradicting Task 3.4, which
+      scoped it to *"`IllegalArgumentException` and `NumberFormatException` out of `Coordinates` or
+      `Distance` construction"*. Any internal IAE is reported to an external caller as **their** fault
+      with the internal message echoed verbatim onto the wire. Live example: Task 4.5 deliberately
+      declined the NaN guard on `Distance`, and `Distance.roundedToMetres()` calls
+      `BigDecimal.valueOf(metres)`, which throws `NumberFormatException` (an IAE subclass) for NaN or
+      infinity — so a server-side arithmetic bug would surface as `INVALID_ARGUMENT: Infinite or NaN`.
+      A dedicated exception type thrown by `QuoteGrpcService.readCoordinates` keeps the mapper's scope
+      to what the spec pinned.
+
+- [x] **[Review][Patch] The new ArchUnit clause has no committed proof — delete it and the whole suite
+      stays green** [services/matching-service/src/test/java/com/puber/matching/rules/ArchitectureRulesTest.java:154]
+      `.and(not(resideInAPackage(CONTRACTS)))` is proven only by the plant-run-revert in the Debug Log.
+      Every sibling clause of the same rule has a committed violator — `LayerRulesTest:70-88` uses
+      `ModelTypeThatDependsOnJackson` and `ModelTypeCarryingAFrameworkAnnotation` — and there is no
+      `rules/fixtures/model/` equivalent for a wire message. No production `model` type depends on
+      contracts, so removing the clause is silent in the main run too. AC11a asks that the failure be
+      *"demonstrated rather than asserted"*; the plant proves it worked once, not that it still works.
+      CLAUDE.md: *"a rule that cannot fire is indistinguishable from a rule that passes"* and *"prefer
+      a fix that makes the proof structural"*. Two further holes in the same clause: `CONTRACTS` is a
+      hand-maintained string prefix, so a second contract under a different `java_package` — Epic 4's
+      event schemas, which `contracts/README.md` already announces — reopens the hole silently; and
+      Task 6.2's vacuity probe, which confirmed the generated stubs sit outside the
+      `com.puber.matching` scan, was **removed** after the run, so that property is verified once by
+      hand and never again. Fix: add a committed violator plus one `assertRejects` line, and a
+      committed rule pinning generated stubs to `com.puber.contracts..`.
+
+- [x] **[Review][Patch] Drop `contracts/` from `pre-commit`'s shared-build-input dispatch**
+      [.githooks/pre-commit:48] Resolved by the repo owner (see above). The clause makes a `.proto`
+      edit run `make static-analysis` for every service, but `staticAnalysis` is
+      `dependsOn 'spotlessCheck'` and nothing else (`static-analyzers/spotless.gradle:42-46`), over
+      the glob `src/*/java/**/*.java`. Spotless is a Java formatter: it never opens a `.proto` and
+      never compiles the generated stubs, so the run costs a container + JVM + Gradle start per
+      service and cannot fail on account of the contract. Remove `contracts/` from the `grep -qE`
+      alternation and amend the comment above it, which currently claims `contracts/` is a shared
+      build input this gate checks. **Consequence of the change, stated plainly:** a `.proto`-only
+      commit gets no commit-time gate — which is already true today, since Spotless cannot read one.
+
+- [x] **[Review][Patch] The commit gate compiles the working-tree contract, not the staged one**
+      [Makefile:35] `CONTRACT_PROTO := contracts/proto` — every *destination* in `contract-config` is
+      `$(TREE)`-prefixed but the *source* is not, and `Makefile:37-39` says TREE exists precisely
+      *"so the commit gate checks what is actually being committed"*. `.githooks/pre-commit:65` runs
+      `git checkout-index --all --prefix="$TREE/"`, which **does** materialise `$TREE/contracts/proto`
+      — the Makefile just ignores it. Stage a `.proto` edit, revert it in the working tree, and the
+      hook analyses code generated from the reverted file. Damage is capped today only because
+      `staticAnalysis` never compiles the proto at all (see the second decision item). The fix is one
+      word: `CONTRACT_PROTO := $(TREE)/contracts/proto`. Note `analyzer-config` has the same shape and
+      is pre-existing, so the pattern was inherited rather than invented here.
+
+- [x] **[Review][Patch] The `Dockerfile` comment and `project-context.md` both claim a layering
+      benefit the order does not deliver** [services/matching-service/Dockerfile:26-28] The comment
+      reads *"Above `COPY src`, so editing a .proto does not invalidate the dependency-resolution
+      layer"*, and `project-context.md` repeats it as a binding rule. But `COPY build/contracts` at
+      `:27` sits **above** `RUN ./gradlew … dependencies --configuration runtimeClasspath` at `:28`,
+      so a one-character `.proto` edit busts that layer and forces a full re-resolve on every image
+      build. To do what the comment claims, the `COPY` belongs *between* `:28` and `COPY src src` —
+      which still satisfies the story's "above `COPY src src`" wording. Correct the `Dockerfile`, the
+      comment, and `project-context.md` together.
+
+- [x] **[Review][Patch] `contract-config`'s guard does not mirror the analyzer guard it says it
+      mirrors** [Makefile:119] `test -d "$(CONTRACT_PROTO)"` passes on an empty `contracts/proto/`.
+      Task 1.3 asked for a failure *"mirroring the existing `ANALYZER_SOURCES` guard"*, which is
+      `test -n "$(ANALYZER_SOURCES)"` over `$(wildcard static-analyzers/*.gradle)` — a check for actual
+      **files**. With an empty directory the build instead dies at `cannot find symbol:
+      GetQuoteRequest`, the exact confusing failure the guard exists to prevent, and the error text at
+      `:120` claims *"no contract sources found"* having only checked for a directory.
+
+- [x] **[Review][Patch] `build.gradle`'s error message advertises a contract check that does not
+      exist** [services/matching-service/build.gradle:38] The `if` tests `analyzerConfig.exists()`
+      only; Task 1.6 extended the *message* to mention the contract copy but added no
+      `if (!contractProto.exists())`. A tree where `build/static-analyzers` survives and
+      `build/contracts` does not — a partial clean, an interrupted `cp -R`, a stale container — passes
+      the guard and fails later exactly as the message describes, without the message ever printing.
+
+- [x] **[Review][Patch] AD-52's "single source" is asserted for protos and enforced by nothing**
+      [services/matching-service/build.gradle:63] `sourceSets.main.proto.srcDir …` **adds** to the
+      protobuf plugin's default `src/main/proto`; it does not replace it. Any service can drop a
+      `.proto` into `src/main/proto` and it compiles, generating stubs from a source `contracts/` does
+      not know about, with no rule, hook or test failing. `contracts/README.md` and
+      `project-context.md` both assert the single-source property. Compare the analyzer config, where
+      `apply from:` a fixed path makes the equivalent structurally impossible.
+
+- [x] **[Review][Patch] An empty `x-request-id` header defeats the minting**
+      [services/matching-service/src/main/java/com/puber/matching/config/RequestIdServerInterceptor.java:35]
+      The test is `incoming == null` only, so a client sending `x-request-id:` with an empty value
+      gets `MDC.put("requestId", "")` and every line renders `[]` — visually identical to no id at
+      all. AD-5's *"a surface the gateway does not front mints its own"* is defeated by a
+      one-character header, and neither request-id test sends an empty value. Fix:
+      `incoming == null || incoming.isBlank()`.
+
+- [x] **[Review][Patch] The request-id assertions are `allMatch` over the root logger, which makes
+      them a tripwire for unrelated logging**
+      [services/matching-service/src/integrationTest/java/com/puber/matching/QuoteGrpcIntegrationTest.java:222,234]
+      The appender is attached to the **root** logger for the whole test method (`:341`) and
+      `capturedLines()` filters only blank lines, so any INFO line from any thread inside that window
+      — a Hikari pool event, a Spring lifecycle message, a logged stack trace whose continuation lines
+      carry no pattern prefix, or any future log statement anywhere in the service — fails the test
+      with a message that points at the request id rather than at what actually logged.
+      `mints_a_request_id_when_none_arrives` is the more fragile of the two, since it additionally
+      requires the first `[…]` on every line to parse as a UUID. Scoping the appender to `com.puber`
+      keeps the same proof without the tripwire.
+
+- [x] **[Review][Patch] `@AfterEach` NPEs and masks the real failure when `@BeforeEach` fails early**
+      [services/matching-service/src/integrationTest/java/com/puber/matching/QuoteGrpcIntegrationTest.java:94-100]
+      If `FareRulesFixture.reseed(dataSource)` throws (Postgres unreachable, fixture missing) or
+      `channels.createChannel` throws, `logCapture` and `channel` are still `null` and
+      `closeTheChannel` dereferences `logCapture.stop()` first. A teardown NPE then masks the real
+      setup failure in every one of the ten tests.
+
+- [x] **[Review][Patch] Three statements shipped in this change are factually wrong** — (a)
+      `application.properties:36` and this file's D3 Debug Log block both say *"Neither port is
+      published to the host"*; `infra/docker-compose.yml:38-39` publishes `8080:8080`. (b)
+      `contracts/README.md:23` points at `ARCHITECTURE-SPINE.md` by bare name, but the file is at
+      `_bmad-output/planning-artifacts/architecture/architecture-puber-2026-08-03/ARCHITECTURE-SPINE.md`
+      — five levels deep behind a dated directory, so a reader who lands in `contracts/` (the whole
+      point of that README) cannot follow it without a repo-wide grep. AGENTS.md → Comments: *"A stale
+      pointer is worse than no pointer."* (c) `Dockerfile:53` still declares `EXPOSE 8080` only, while
+      the service now binds 9090 and `project-context.md` tells PUB-4-2 to dial `matching-service:9090`;
+      `EXPOSE` is advisory on a Compose network so nothing breaks, but the image understates its own
+      surface.
+
+- [x] **[Review][Patch] Two ticked tasks assert things the code does not do** — Task 7.0 still reads
+      *"`spring.grpc.server.port=0` on the four existing `@SpringBootTest` classes"* and Task 2.3 still
+      lists `compileOnly 'javax.annotation:javax.annotation-api:1.3.2'`. Both were correctly **not**
+      done, and both deviations are disclosed elsewhere in this file — but the checkboxes themselves
+      now assert false things, and `CLAUDE.md` records that a task list is binding by the time
+      `dev-story` reads it. Amend the task text rather than the checkbox.
+
+- [x] **[Review][Patch] Task 8.3 is two-thirds done: the `FareRule` null guard is routed nowhere** —
+      Task 4.5/8.3 require each unreachable guard to be recorded *"where the story that makes them
+      reachable will read it"*. `deferred-work.md`'s new PUB-4-1 section lists `new FareRule(…, null)`
+      as **"no story yet"**, and `AI-3` in `sprint-status.yaml` names only the `Coordinates` and
+      `Distance` ones. That guard now lives solely in `deferred-work.md` — the file this very task
+      calls *"an audit trail nothing reads"*.
+
+#### Deferred
+
+- [x] **[Review][Defer] The request id is unset for every HTTP request the service serves** — deferred,
+      belongs to PUB-4-3. `application.properties:42` puts `%X{requestId:-}` on every line
+      service-wide, but only `RequestIdServerInterceptor` ever populates it. The service still serves
+      HTTP (`spring-boot-starter-webmvc`, actuator on 8080, exercised by
+      `HealthMetricsAndSchemaIntegrationTest`), and those requests log `[]`. There is no servlet-filter
+      equivalent, and nothing in `deferred-work.md` or `sprint-status.yaml` named the gap — so
+      PUB-4-3's gateway work would have discovered it rather than planned for it.
+
+- [x] **[Review][Defer] `Coordinates.of(null, …)` throws `NullPointerException`, not
+      `IllegalArgumentException`** — deferred, correctly unreachable today.
+      `Coordinates.asDecimal` catches only `NumberFormatException`, and `new BigDecimal((String) null)`
+      throws NPE from `val.toCharArray()`. An NPE escapes `QuoteGrpcService.readCoordinates`'
+      `catch (IllegalArgumentException)`, misses the status mapper, and surfaces as `UNKNOWN`.
+      Leaving the guard out is `project-context.md` → YAGNI applied correctly — but `AI-3` routes
+      Epic 2's Story 2.3 (driver heartbeats, where null *can* arrive) to this exact method and tells
+      the next author to reuse it, without saying that the one input it was routed to handle is the
+      one it does not. Add that sentence to the routing note.
 
 ## Change Log
 
 | Date | Change | By |
 | --- | --- | --- |
 | 2026-08-25 | Story created from epic-1 Story 1.4 as PUB-4, then split into PUB-4-1/2/3 at the repo owner's request; this is slice 1 | bmad-create-story |
+| 2026-08-26 | Implemented: `contracts/` and its copy mechanism, protobuf codegen, the `quote` feature package over gRPC, coordinate validation that names the offending field, the request-id interceptor, and the ArchUnit rule that stops a domain type holding a wire message | bmad-dev-story |
+| 2026-08-26 | D3 verified (Netty on 9090, not the servlet path) and D6 falsified (contexts are stopped between test classes, so the port pin was dropped); both corrected in place per Task 8.4, along with the Project Structure Notes | bmad-dev-story |
+| 2026-08-26 | Status -> review. `make build` green; `make test` green except the pre-existing `HealthReportsDownPromptlyIntegrationTest` environmental precondition | bmad-dev-story |
+| 2026-08-26 | Code review (3 parallel layers + orchestrator verification): 2 decisions taken by the repo owner, 15 patches applied, 2 items deferred, 9 dismissed. Notable fixes: an unhandled failure was reaching callers as a bare `UNKNOWN` with no description and no log line (spring-grpc's fallback, confirmed from bytecode) -- `config/UnexpectedGrpcFailureStatusMapper` now answers `INTERNAL` and logs; `QuoteGrpcStatusMapper` matched `IllegalArgumentException` while being installed globally over every RPC, so it now matches a dedicated `RejectedCoordinate`; the ArchUnit contracts exclusion gained a committed violator and a durable `java_package` scan, both proven by planting; the Dockerfile contract COPY moved below the dependency-resolution layer it was busting | bmad-code-review |
+| 2026-08-26 | Status -> done. `make build` green; `make test` green except the pre-existing `HealthReportsDownPromptlyIntegrationTest` environmental precondition (last touched in `051f0a2` PUB-3, untouched by this slice) | bmad-code-review |

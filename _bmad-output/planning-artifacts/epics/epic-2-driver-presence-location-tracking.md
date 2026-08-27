@@ -127,6 +127,15 @@ local literal (AD-46)
 **When** it is read back
 **Then** it reflects the most recent heartbeat received
 
+**Carried from PUB-4-1** (raised 2026-08-26). **This is the first story that builds `Coordinates`
+from data the service did not write.** PUB-3 deferred a null guard on `Coordinates`, and PUB-4-1 did
+not add it: proto3 strings are never null, so the gRPC quote endpoint cannot reach it, and
+`project-context.md` → YAGNI forbids a guard whose failure cannot be reproduced. A heartbeat body is
+different — it is parsed from a request, and a missing latitude *can* arrive as null. Add the guard
+here, prove it through the heartbeat endpoint rather than on the type, and make it name the offending
+field the way `Coordinates.of` already does. Detail:
+`implementation-artifacts/deferred-work.md` → "Deferred from: PUB-4-1 implementation".
+
 ### Story 2.4: Matchability is derived from status and heartbeat freshness
 
 As a rider,

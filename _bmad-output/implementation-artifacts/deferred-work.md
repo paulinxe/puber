@@ -94,5 +94,102 @@ Items raised by a workflow, real but not actionable at the time they were found.
   reminds anyone to do it: forget the copy and the new service can read the clock however it likes,
   and nothing anywhere turns red.
 
-  Revisit in **Story 1.4**, which stands up the gateway and is the first service that has to copy
-  them.
+  **Routed to PUB-4-2**, the slice that creates `rider-service` — the second service, and so the
+  first one that has to copy them. Its story file already specifies the copy rule by rule
+  (`implementation-artifacts/PUB-4-2-rider-service-delivers-the-quote.md`), which is what makes this
+  landed rather than merely recorded.
+
+  Two refinements that story makes and this note did not anticipate:
+  `timeIsReadOnlyThroughTheClock` goes over **stronger** — without the `SystemClock` exemption,
+  because `rider-service` has no clock at all, so nothing there may read time — and
+  `theRealClockIsOnlyEverInjected` is deliberately **not** copied, since it names a class that does
+  not exist in that service yet.
+
+  Re-pointed 2026-08-26. It previously read "Revisit in Story 1.4", written before that story was
+  split into PUB-4-1/2/3. PUB-4-1 added no second service, so the pointer was aimed at a slice that
+  had already passed without touching it.
+
+## Deferred from: PUB-4-1 implementation (2026-08-26)
+
+- **Three of PUB-3's four deferred value-type guards are still unreachable, and were deliberately not
+  added** (`services/matching-service/src/main/java/com/puber/matching/shared/model/Coordinates.java`,
+  `.../Distance.java`, `.../fare/model/FareRule.java`)
+
+  PUB-3's review deferred four weaknesses with the note *"Becomes real at PUB-4's HTTP edge."*
+  **That note is one-third right.** Verified against the generated protobuf on 2026-08-26: proto3
+  strings are never null and an absent message reads back as a default instance, so nothing null can
+  arrive from the gRPC layer at all.
+
+  | PUB-3's deferred weakness | Reachable from the quote endpoint? | Where it becomes real |
+  | --- | --- | --- |
+  | `Coordinates` latitude/longitude unparseable | **yes** — closed by PUB-4-1 | — |
+  | `Coordinates` latitude/longitude out of range | **yes** — proven by PUB-4-1 | — |
+  | `Coordinates(null, x)` | no — proto3 strings are never null | **Epic 2**, driver heartbeats |
+  | `new Distance(-5000)`, `NaN`, infinite | no — built only by `Coordinates.distanceTo`, over range-checked points, and haversine is bounded to `[0, 20_015_087]` | **Story 4.7 (PUB-34)**, Redis `GEOSEARCH` output |
+  | `new FareRule(…, null)` | no — read from `NOT NULL` columns | no story yet |
+
+  Adding a guard whose failure cannot be reproduced is what `project-context.md` → YAGNI forbids, and
+  is the mistake three PUB-1 guards already made. The two reachable rows are proven **through the
+  gRPC endpoint** in `QuoteGrpcIntegrationTest`, not by a unit test on the type — AGENTS.md →
+  *"Integration tests by default"*.
+
+  **Routed to Epic 2 and to Story 4.7 (PUB-34)** — see the notes in
+  `planning-artifacts/epics/epic-2-driver-presence-location-tracking.md` and
+  `planning-artifacts/epics/epic-4-event-backbone-resilience-operational-visibility-v0-1.md`, and
+  `action_items: AI-3` in `sprint-status.yaml`.
+
+- **CHECK constraints on `base_fare`, `per_km_rate` and `per_minute_rate` are still absent**
+  (`services/matching-service/src/main/resources/db/migration/V2__create_fare_rules.sql`)
+
+  Deferred by PUB-3's review as an architecture decision — AD-62 specifies exactly one CHECK, on the
+  surge multiplier. PUB-4-1 did not reopen it. Unchanged from PUB-3's entry; recorded again only so
+  a reader of this section does not think the quote endpoint made it urgent. It did not: a bad rate
+  is a broken deployment, and `FareRuleRepository` already fails loudly on a missing row.
+
+- **AC9 (contracts evolve by addition only) has no test and cannot have one**
+  (`contracts/proto/puber/quote/v1/quote.proto`, `contracts/README.md`)
+
+  It is a rule about a *future* edit, and there is no second version of the contract to compare
+  against. What PUB-4-1 gives it is groundwork: explicit field numbers, `optional` presence for the
+  ETA instead of a sentinel, and the rule written in the two places the next editor will read. It is
+  enforced by review, not by the build.
+
+  A real check becomes possible once a second version exists — a stored descriptor set plus
+  `buf breaking` or equivalent. **Not routed anywhere**: nothing is broken today, and inventing the
+  tooling before there is a contract change to test it against is speculative. Whoever makes the
+  first breaking-shaped edit is the one who should reach for it.
+
+## Deferred from: code review of PUB-4-1 (2026-08-26)
+
+- **The request id is unset for every HTTP request the service serves**
+  (`services/matching-service/src/main/resources/application.properties`,
+  `.../config/RequestIdServerInterceptor.java`)
+
+  `logging.pattern.level=%5p [%X{requestId:-}]` applies to every log line the service writes, but only
+  `RequestIdServerInterceptor` ever populates the MDC key, and it is a gRPC `ServerInterceptor`. The
+  service still serves HTTP — `spring-boot-starter-webmvc`, actuator on 8080, exercised by
+  `HealthMetricsAndSchemaIntegrationTest` — and every one of those requests logs `[]`.
+
+  AC4a is a gRPC criterion and this slice satisfies it, so this is not a criterion missed. It is a
+  gap nothing recorded: PUB-4-3 stands up the gateway and owns the HTTP edge, and would have
+  discovered the missing servlet filter rather than planned for it.
+
+  **Routed to PUB-4-3.**
+
+- **`Coordinates.of(null, …)` throws `NullPointerException`, not `IllegalArgumentException`**
+  (`services/matching-service/src/main/java/com/puber/matching/shared/model/Coordinates.java`)
+
+  `asDecimal` catches only `NumberFormatException`; `new BigDecimal((String) null)` throws NPE from
+  `val.toCharArray()`. `NullPointerException` is not an `IllegalArgumentException` (checked against
+  the JDK on 2026-08-26), so it escapes `QuoteGrpcService`'s single `catch (IllegalArgumentException)`
+  around the two coordinate parses, is never mapped to `INVALID_ARGUMENT`, and surfaces to the caller
+  as `INTERNAL` from `UnexpectedGrpcFailureStatusMapper`.
+
+  Unreachable from the gRPC surface — proto3 strings are never null — so **leaving the guard out is
+  correct** and is `project-context.md` → YAGNI applied as written. The gap is in the routing, not in
+  the code: `AI-3` and the Story 2.3 note in
+  `planning-artifacts/epics/epic-2-driver-presence-location-tracking.md` send the next author to this
+  exact method for driver heartbeats, where null *can* arrive, without saying that the one input it
+  was routed to handle is the one it does not currently handle.
+
+  **Routed to Epic 2, Story 2.3** — one sentence to add to the existing note, not new code here.
