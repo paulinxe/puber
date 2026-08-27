@@ -107,10 +107,49 @@ Good  # Hikari defaults to 30s, too slow for a readiness probe.
 - Bad: `DriverService`, `RideService`, `MatchingService` (god-class smell, noun-only, no verb).
 - Every service has a single public `execute(...)` method (or `calculateXxx(...)` / `findXxx(...)` for read-only services).
 
-### Functional Tests Over Unit Tests
+### Integration tests by default; unit tests only where there is no chain to prove
 
-- Every feature is validated by `@SpringBootTest(webEnvironment = RANDOM_PORT)` + `TestRestTemplate` + real Postgres.
-- No mocked repositories in feature tests. Mock only cross-service HTTP clients when the callee service is not running in the same JVM.
+**Prove behaviour through the outermost surface it is reachable from.** For a feature that ends at an
+endpoint, that is the endpoint — `@SpringBootTest(webEnvironment = RANDOM_PORT)` over the real
+transport, against the real datastores in the Compose stack. Not the class in the middle.
+
+**Why, in one example.** A guard on a value type can be proven two ways:
+
+```java
+// Weak -- proves the guard fires. Proves nothing else.
+assertThrows(IllegalArgumentException.class, () -> new Coordinates(null, ONE));
+
+// Strong -- the same guard, through the endpoint.
+// Proves it fires, that the input can actually reach it, that the failure maps to the right
+// status, and that the message still names the field by the time a caller reads it.
+var error = assertThrows(StatusRuntimeException.class, () -> stub.getQuote(badLatitude));
+assertEquals(Status.Code.INVALID_ARGUMENT, error.getStatus().getCode());
+assertTrue(error.getStatus().getDescription().contains("latitude"));
+```
+
+Everything the first version leaves out is where the defects live. The mapping, the reachability and
+the message crossing the wire are all real code, and all invisible to it.
+
+**A unit test is right when there is no chain — a pure function over values, whose expectation you can
+derive by hand.** `CalculateFare.calculate(rule, distance)`, `Distance.roundedToMetres()`,
+`AssumedSpeed.minutesToCover(distance)`. If the class needs a repository, a `Clock` or a transport to
+do its job, the test belongs in `src/integrationTest/java`.
+
+**Two consequences worth stating separately:**
+
+- **No mocked repositories, ever, and no mocked collaborator that the Compose stack is already
+  running.** Race-safety *is* Postgres's behaviour (AD-10), and the test runner joins the Compose
+  network, so the real callee is reachable. See project-context.md → "Real datastores only".
+- **If you cannot reach the behaviour from the outermost surface, that is a finding, not a reason to
+  drop down a level.** Ask whether the code should exist at all before writing a unit test that
+  reaches it artificially — project-context.md → YAGNI.
+
+**Recorded 2026-08-25, after this section was found too weak to work.** It previously read *"validated
+by `@SpringBootTest` + `TestRestTemplate` + real Postgres"*, which named HTTP and Postgres specifically
+and so appeared not to bind a gRPC surface, or a service like `rider-service` that owns no database.
+PUB-4-1's specification drafted unit tests for value-type guards on that reading; checking reachability
+then showed three of the four guards could not be reached from the endpoint at all, and did not belong
+in the story. Both mistakes are what this wording is written against.
 
 ### No test-only seams
 

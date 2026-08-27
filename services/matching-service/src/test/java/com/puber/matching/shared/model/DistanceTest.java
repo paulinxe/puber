@@ -19,4 +19,24 @@ class DistanceTest {
     void converts_a_fractional_distance_exactly() {
         assertEquals(0, new Distance(5327).inKilometres().compareTo(new BigDecimal("5.327")));
     }
+
+    @Test
+    @DisplayName("D4: a half metre rounds up -- 1000.5 m is 1001")
+    void rounds_a_half_metre_up() {
+        assertEquals(1001L, new Distance(1000.5).roundedToMetres());
+    }
+
+    @Test
+    @DisplayName("D4: the metre below a half rounds down -- 1000.4999 m is 1000")
+    void rounds_below_a_half_metre_down() {
+        assertEquals(1000L, new Distance(1000.4999).roundedToMetres());
+    }
+
+    @Test
+    @DisplayName("D4: HALF_UP, not HALF_EVEN -- 1001.5 m is 1002, not 1002 by luck")
+    void rounds_a_half_metre_up_from_an_odd_metre_too() {
+        // HALF_EVEN would give 1002 here and 1000 for 1000.5, so the pair is what tells the two
+        // modes apart; either one alone passes under both.
+        assertEquals(1002L, new Distance(1001.5).roundedToMetres());
+    }
 }

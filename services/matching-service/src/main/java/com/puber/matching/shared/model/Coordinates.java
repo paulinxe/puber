@@ -16,6 +16,10 @@ public record Coordinates(BigDecimal latitude, BigDecimal longitude) {
         requireWithin(longitude, LONGITUDE_LIMIT, "longitude");
     }
 
+    public static Coordinates of(String latitude, String longitude) {
+        return new Coordinates(asDecimal(latitude, "latitude"), asDecimal(longitude, "longitude"));
+    }
+
     /**
      * The great-circle distance to another point, on a sphere. The only trigonometry in this
      * service.
@@ -43,6 +47,17 @@ public record Coordinates(BigDecimal latitude, BigDecimal longitude) {
         double centralAngle = 2 * Math.asin(Math.min(1, Math.sqrt(halfChordSquared)));
 
         return new Distance(EARTH_RADIUS_METRES * centralAngle);
+    }
+
+    private static BigDecimal asDecimal(String value, String name) {
+        try {
+            return new BigDecimal(value);
+        } catch (NumberFormatException notADecimal) {
+            // Quoted, because the value that gets here most often is the empty string and an
+            // unquoted message would end in a colon and nothing.
+            throw new IllegalArgumentException(
+                    name + " is not a decimal number: \"" + value + "\"", notADecimal);
+        }
     }
 
     private static void requireWithin(BigDecimal value, BigDecimal limit, String name) {

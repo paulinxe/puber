@@ -8,6 +8,7 @@ import com.puber.matching.rules.fixtures.controller.AControllerNothingMayDependO
 import com.puber.matching.rules.fixtures.entity.AClassInAPackageNamedEntity;
 import com.puber.matching.rules.fixtures.model.ModelTypeCarryingAFrameworkAnnotation;
 import com.puber.matching.rules.fixtures.model.ModelTypeThatDependsOnJackson;
+import com.puber.matching.rules.fixtures.model.ModelTypeThatHoldsAWireMessage;
 import com.puber.matching.rules.fixtures.service.ServiceThatDependsOnAConcreteStrategy;
 import com.puber.matching.shared.model.Deadline;
 import com.puber.matching.shared.model.Distance;
@@ -85,6 +86,17 @@ class LayerRulesTest {
                 ModelTypeCarryingAFrameworkAnnotation.class,
                 "an annotation was allowed to carry the framework into the domain model, which is"
                         + " the form the leak actually takes");
+    }
+
+    @Test
+    @DisplayName("AD-8: a model type holding a generated contract message is rejected")
+    void rejects_a_model_type_that_holds_a_wire_message() {
+        assertRejects(
+                ArchitectureRulesTest.modelDependsOnNothingFrameworkFlavoured,
+                ModelTypeThatHoldsAWireMessage.class,
+                "the domain model was allowed to hold a generated protobuf message -- the rule's"
+                        + " com.puber.. allowance readmits com.puber.contracts.. unless it is"
+                        + " subtracted, and no production type violates it, so nothing else is red");
     }
 
     @Test

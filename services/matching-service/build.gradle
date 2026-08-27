@@ -2,6 +2,7 @@ plugins {
 	id 'java'
 	id 'org.springframework.boot' version '4.1.0'
 	id 'io.spring.dependency-management' version '1.1.7'
+	id 'com.google.protobuf' version '0.9.6'
 }
 
 group = 'com.puber'
@@ -37,12 +38,80 @@ if (!analyzerConfig.exists()) {
 			Static-analysis configuration is missing:
 			  ${analyzerConfig}
 
-			Run `make build` from the repository root. It copies static-analyzers/ into
-			each service's build output before invoking that service's Gradle wrapper
-			(AD-52). Invoking ./gradlew directly inside a service bypasses that copy.
+			Run `make build` from the repository root. It copies static-analyzers/ AND
+			contracts/proto/ into each service's build output before invoking that
+			service's Gradle wrapper (AD-52). Invoking ./gradlew directly inside a
+			service bypasses both copies.
 			""".stripIndent())
 }
 apply from: analyzerConfig
+
+// ---------------------------------------------------------------------------
+// The gRPC contract (AC8, AD-52)
+//
+// Same mechanism as the analyzer config above: `contracts/proto/` at the repository
+// root is the single source, `make` copies it here, and codegen reads the copy. Each
+// service generates its own stubs, so no service depends on another's code.
+// ---------------------------------------------------------------------------
+// The plugin already looks in src/main/proto on its own, and the srcDir line below ADDS to
+// that list rather than replacing it. So a .proto left in there gets compiled too, this
+// service quietly ends up owning a contract of its own, and AD-52's "one source" becomes a
+// claim nothing checks.
+def perServiceProto = file('src/main/proto')
+if (perServiceProto.exists()) {
+	throw new GradleException(
+			"""
+			A per-service contract source exists:
+			  ${perServiceProto}
+
+			AD-52: contracts/ at the repository root is the ONE source. `make` copies it into
+			build/contracts/proto and codegen reads that copy. Move these .proto files to
+			contracts/proto/ and delete this directory.
+			""".stripIndent())
+}
+
+// The Provider form, NOT `.get().asFile`: resolving it here would read build output at
+// configuration time, and the image build runs `./gradlew dependencies` before the contract
+// has been copied in -- deliberately, so that editing a .proto does not re-resolve the whole
+// runtime classpath.
+sourceSets.main.proto.srcDir layout.buildDirectory.dir('contracts/proto')
+
+// The analyzer message above used to promise this check and not perform it: the guard tested
+// only the analyzer config, so a tree with build/static-analyzers but no build/contracts
+// passed it and died later as `cannot find symbol: GetQuoteRequest` -- the failure the
+// message describes, without the message ever printing. Checked when codegen actually runs,
+// for the same reason the srcDir above stays lazy.
+tasks.matching { it.name.startsWith('generateProto') }.configureEach {
+	doFirst {
+		def contractProto = layout.buildDirectory.dir('contracts/proto').get().asFile
+		if (!contractProto.exists()) {
+			throw new GradleException(
+					"""
+					The gRPC contract is missing:
+					  ${contractProto}
+
+					Run `make build` from the repository root. Its `contract-config` target
+					copies contracts/proto/ into each service's build output before invoking
+					that service's Gradle wrapper (AD-52). Invoking ./gradlew directly inside
+					a service bypasses that copy.
+					""".stripIndent())
+		}
+	}
+}
+
+protobuf {
+	protoc {
+		artifact = "com.google.protobuf:protoc:${dependencyManagement.managedVersions['com.google.protobuf:protobuf-java']}"
+	}
+	plugins {
+		grpc {
+			artifact = "io.grpc:protoc-gen-grpc-java:${dependencyManagement.managedVersions['io.grpc:grpc-api']}"
+		}
+	}
+	generateProtoTasks {
+		all().each { it.plugins { grpc {} } }
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Integration tests: a second group of tests with a Gradle task of their own.
@@ -94,6 +163,13 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-jdbc'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	implementation 'org.flywaydb:flyway-database-postgresql'
+	implementation 'org.springframework.boot:spring-boot-starter-grpc-server'
+	// The starter pulls grpc-protobuf and protobuf-java at RUNTIME scope only, and ships no
+	// grpc-stub at all -- but the generated *Grpc.java references all three at compile time.
+	// Without these three lines the build fails in code nobody wrote.
+	implementation 'io.grpc:grpc-protobuf'
+	implementation 'io.grpc:grpc-stub'
+	implementation 'com.google.protobuf:protobuf-java'
 	runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
 	runtimeOnly 'org.postgresql:postgresql'
 
@@ -105,6 +181,11 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-starter-jdbc-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-micrometer-metrics-test'
+	// Brings grpc-inprocess, so a test can exercise the service over an in-process transport
+	// rather than a port. It also drags in the monolithic spring-boot-starter-test
+	// transitively -- that is Boot's choice inside its own capability starter, not ours, and
+	// is not a reason to add an exclude block.
+	testImplementation 'org.springframework.boot:spring-boot-starter-grpc-server-test'
 	// Boot 4 relocated TestRestTemplate here and no longer registers it off the back of
 	// webEnvironment=RANDOM_PORT alone -- tests opt in with @AutoConfigureTestRestTemplate.
 	// Boot 4 also modularized the blocking REST clients, so TestRestTemplate's own

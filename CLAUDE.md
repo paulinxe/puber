@@ -6,15 +6,20 @@ Three files govern work here and they do not overlap. Read this one first; it is
 | --- | --- | --- |
 | `CLAUDE.md` (this file) | How to talk to me, and how to prove a claim | Automatically |
 | `project-context.md` | Binding project rules — build, layout, hooks, conventions | Automatically, by every BMad workflow |
-| `AGENTS.md` | Coding style only — SOLID, immutability, naming, comments | By `bmad-dev-story` and `bmad-code-review`. **Nothing else loads it — read it before writing code.** |
+| `AGENTS.md` | Coding style only — SOLID, immutability, naming, comments, what kind of test proves a thing | By `bmad-create-story`, `bmad-dev-story` and `bmad-code-review`. **Nothing else loads it — read it before writing code or specifying tests.** |
 
 Rules live in exactly one of these. Do not copy a rule from one into another: two files holding the
 same rule drift, and the stale copy outlives the true one.
 
-`AGENTS.md` is loaded into the two workflows that write code, via `_bmad/custom/bmad-dev-story.toml`
-and `_bmad/custom/bmad-code-review.toml`. That is deliberate: nothing can make a comment rule fail,
-so being in context is the only gate it gets. On PUB-2 both runs wrote comments the Comments section
-forbids, because neither had the file open at the point the code was written.
+`AGENTS.md` is loaded into the three workflows that decide code, via
+`_bmad/custom/bmad-create-story.toml`, `_bmad/custom/bmad-dev-story.toml` and
+`_bmad/custom/bmad-code-review.toml`. That is deliberate: **nothing can make a style or test-shape
+rule fail a build, so being in context is the only gate it gets.** It has now been missed twice, one
+workflow apart. On PUB-2 both runs wrote comments the Comments section forbids, because neither had
+the file open at the point the code was written. On PUB-4-1 the story specified unit tests where the
+Integration-tests-by-default section calls for integration tests, because `create-story` did not load
+it at all — and a task list is binding by the time `dev-story` reads the rule. Loading it into the
+workflow that *writes the task list* is what closed that.
 
 ## This is a Java repository
 

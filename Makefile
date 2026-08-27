@@ -32,6 +32,7 @@ COMPOSE_DOWN := MATCHING_SERVICE_DB_PASSWORD=unused-for-teardown $(COMPOSE)
 # file cannot become a phantom service.
 SERVICES         := $(notdir $(patsubst %/,%,$(sort $(dir $(wildcard services/*/gradlew)))))
 ANALYZER_SOURCES := $(wildcard static-analyzers/*.gradle)
+CONTRACT_PROTO    = $(TREE)/contracts/proto
 
 # What to analyse. `.` is the working tree; pre-commit overrides it with a copy of the
 # index, so the commit gate checks what is actually being committed.
@@ -43,7 +44,7 @@ GRADLE       := $(COMPOSE) run --rm --no-deps -T
 GRADLE_STACK := $(COMPOSE) run --rm -T
 
 .PHONY: help build run stop test test-unit test-integration static-analysis format hooks \
-        analyzer-config images clean verify-no-root-owned-files gradle-home
+        analyzer-config contract-config images clean verify-no-root-owned-files gradle-home
 
 help:
 	@echo
@@ -109,6 +110,21 @@ analyzer-config:
 	  rm -rf $(TREE)/services/$$svc/build/spotless-clean || exit 1; \
 	done
 
+# contracts/proto is copied into each service's build output, and the protobuf plugin
+# generates from the copy.
+#
+# Written over $(SERVICES), so a new service is picked up with no edit here.
+contract-config:
+	@test -n "$$(find $(CONTRACT_PROTO) -type f -name '*.proto' 2>/dev/null)" || { \
+	  echo "no .proto found under $(CONTRACT_PROTO) -- AD-52 requires exactly one versioned source" >&2; \
+	  exit 1; \
+	}
+	@for svc in $(SERVICES); do \
+	  rm -rf $(TREE)/services/$$svc/build/contracts || exit 1; \
+	  mkdir -p $(TREE)/services/$$svc/build/contracts || exit 1; \
+	  cp -R $(CONTRACT_PROTO) $(TREE)/services/$$svc/build/contracts/ || exit 1; \
+	done
+
 # AC11: a fresh clone plus a build restores both gates. core.hooksPath points at the
 # tracked scripts, so nothing is copied into the untracked .git/hooks.
 hooks:
@@ -118,12 +134,12 @@ hooks:
 	@chmod +x .githooks/pre-commit .githooks/pre-push
 	@echo "==> git hooks installed (core.hooksPath=.githooks)"
 
-images: $(DB_PASSWORD_FILE) analyzer-config
+images: $(DB_PASSWORD_FILE) analyzer-config contract-config
 	$(COMPOSE) --profile tools build
 
 # Analysis and tests run before the image is tagged. Otherwise a failed build leaves a
 # tagged image behind, and `make run` would serve it (AC16).
-build: hooks $(DB_PASSWORD_FILE) gradle-home analyzer-config
+build: hooks $(DB_PASSWORD_FILE) gradle-home analyzer-config contract-config
 	@for svc in $(SERVICES); do \
 	  echo "==> build $$svc"; \
 	  $(GRADLE) --workdir /workspace/services/$$svc tests ./gradlew build --console=plain || exit 1; \
@@ -153,20 +169,20 @@ verify-no-root-owned-files:
 
 # What the pre-commit hook invokes, for one service: static analysis and nothing else.
 # TREE lets the hook point this at a materialised copy of the index.
-static-analysis: $(DB_PASSWORD_FILE) gradle-home analyzer-config
+static-analysis: $(DB_PASSWORD_FILE) gradle-home analyzer-config contract-config
 	@test -n "$(SERVICE)" || { echo "usage: make static-analysis SERVICE=<name>" >&2; exit 2; }
 	@test -d "$(TREE)/services/$(SERVICE)" || { echo "no such service: $(TREE)/services/$(SERVICE)" >&2; exit 2; }
 	$(GRADLE) --workdir /workspace/$(TREE)/services/$(SERVICE) tests ./gradlew staticAnalysis --console=plain
 
 # Fixes what `static-analysis` rejects. Always the working tree, never $(TREE). Remember to
 # `git add` the result: the commit gate reads the index.
-format: $(DB_PASSWORD_FILE) gradle-home analyzer-config
+format: $(DB_PASSWORD_FILE) gradle-home analyzer-config contract-config
 	@for svc in $(SERVICES); do \
 	  echo "==> format $$svc"; \
 	  $(GRADLE) --workdir /workspace/services/$$svc tests ./gradlew spotlessApply --console=plain || exit 1; \
 	done
 
-test-unit: $(DB_PASSWORD_FILE) gradle-home analyzer-config
+test-unit: $(DB_PASSWORD_FILE) gradle-home analyzer-config contract-config
 	@for svc in $(SERVICES); do \
 	  echo "==> unit tests: $$svc"; \
 	  $(GRADLE) --workdir /workspace/services/$$svc tests ./gradlew test --console=plain || exit 1; \
@@ -174,7 +190,7 @@ test-unit: $(DB_PASSWORD_FILE) gradle-home analyzer-config
 
 # Brings up what it needs, so this works on a fresh clone. Waits on the healthcheck,
 # never on a sleep.
-test-integration: $(DB_PASSWORD_FILE) gradle-home analyzer-config
+test-integration: $(DB_PASSWORD_FILE) gradle-home analyzer-config contract-config
 	$(COMPOSE) up -d --wait matching-postgres
 	@for svc in $(SERVICES); do \
 	  echo "==> integration tests: $$svc"; \

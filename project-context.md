@@ -321,7 +321,78 @@ build and test run.
 - **`deploy/`** — Kubernetes manifests, reconciled from git by Argo CD (AD-49). Its contents *are* the
   desired cluster state, so unrelated files there are noise. Empty until Epic 7.
 - **`contracts/`** — versioned cross-service contracts at the repository root (AD-52), copied into each
-  service at build time. **Story 1.4 creates it**; do not create it speculatively.
+  service at build time. Created by PUB-4-1; the copy mechanism has its own section below.
+
+## `contracts/`: three files change together (PUB-4-1)
+
+`contracts/proto/` is the single source (AD-52) and is **copied**, never referenced in place. The
+copy happens in `make`'s `contract-config` target, written over `$(SERVICES)` so a new service needs
+no edit there. Three files have to agree or the failure surfaces somewhere that looks unrelated:
+
+| File | Line | Miss it and |
+| --- | --- | --- |
+| `Makefile` → `contract-config` | copies into `build/contracts/proto/` | codegen finds no `.proto` at all |
+| `<svc>/.dockerignore` | `!build/contracts/` | the copy is silently excluded from the image context |
+| `<svc>/Dockerfile` | `COPY build/contracts build/contracts` | `make build` works and the image build does not |
+
+The `Dockerfile` line goes **below** `RUN ./gradlew dependencies` and **above** `COPY src src`, so a
+`.proto` edit rebuilds codegen and the sources without re-resolving the runtime classpath. Above the
+`RUN` — where PUB-4-1 first put it — every one-character contract edit busts that layer; corrected
+2026-08-26 in code review.
+
+`.githooks/pre-commit` treats `contracts/` as a shared build input, so editing the contract analyses
+every service rather than none. `pre-push` needs no case — it already runs everything.
+
+## The gRPC server (PUB-4-1)
+
+- **The starter is Boot's:** `org.springframework.boot:spring-boot-starter-grpc-server`, with
+  `-grpc-server-test` beside it. The coordinate every published example shows,
+  `org.springframework.grpc:spring-grpc-spring-boot-starter`, is **not in Boot's BOM** and fails
+  unversioned.
+- **Three dependencies look redundant and are not.** The server starter carries `grpc-protobuf` and
+  `protobuf-java` at *runtime* scope and no `grpc-stub` at all, while the generated `*Grpc.java`
+  needs all three at compile time. Declare `io.grpc:grpc-protobuf`, `io.grpc:grpc-stub` and
+  `com.google.protobuf:protobuf-java` explicitly.
+- **`spring-boot-starter-grpc-server-test` drags in the monolithic `spring-boot-starter-test`.** That
+  is Boot's choice inside its own capability starter, not ours. Do not add an `exclude` block — the
+  split-starter rule is about what you *declare*.
+- **Read both generator versions out of the BOM**, do not pin them: a generator that drifts from the
+  managed runtime emits stubs against an API that is not on the classpath. Verified 2026-08-26 —
+  Boot 4.1.0 resolves `protoc 4.34.2` and `protoc-gen-grpc-java 1.80.0`. Only the protobuf **Gradle
+  plugin** is pinned (`0.9.6`), because Boot manages the Maven plugin and not it.
+- **`protoc-gen-grpc-java` 1.80.0 does not emit `@javax.annotation.Generated`.** Checked in the
+  generated output on 2026-08-26, so no `javax.annotation-api` dependency is needed. Published
+  guidance saying otherwise predates this generator.
+- **Netty wins, not the servlet path.** With `webmvc` on the classpath Boot could multiplex gRPC onto
+  the HTTP port instead of binding its own. It does not: verified from the running service on
+  2026-08-26 — `NettyGrpcServerFactory`, `listening on ...:9090`, Tomcat separately on 8080.
+- **A fixed `spring.grpc.server.port` does not conflict across test contexts.** Four
+  `@SpringBootTest` classes each auto-configuring a server on `9090` was expected to collide, and
+  does not: Spring **stops** each context before loading the next, so only one server is ever bound.
+  Verified 2026-08-26 by counting `gRPC Server started` against `Completed gRPC server shutdown` in
+  a full integration run. **Do not add a dynamic-port pin to test classes to fix a conflict that
+  does not exist.**
+- **A gRPC test uses the in-process transport**, `@AutoConfigureTestGrpcTransport` plus the
+  auto-configured `GrpcChannelFactory`. That is the honest subject — the service implementation, the
+  interceptors and the status mapping — and asserts nothing about networking.
+- **gRPC metadata keys must be lowercase.** `Metadata.Key.of` throws at construction otherwise.
+- **A `ServerInterceptor` that sets the MDC must wrap the *listener*, not just `interceptCall`.**
+  `startCall` only builds the listener; the service method runs later, from `onHalfClose`. Clearing
+  the MDC in `interceptCall`'s `finally` leaves it unset exactly where the logging happens.
+- **Every `GrpcExceptionHandler` bean is global, whatever package it sits in.**
+  `GrpcServerAutoConfiguration.grpcGlobalExceptionHandlerInterceptor(List<GrpcExceptionHandler>)`
+  collects them all into one `CompositeGrpcExceptionHandler`, first non-null wins. So a handler must
+  match a **dedicated exception type**, never `IllegalArgumentException` — matching that reports any
+  internal one as the caller's fault and echoes its message onto the wire, and
+  `BigDecimal.valueOf(Double.NaN)` throws a subclass of it. Order the catch-all last with
+  `@Order(Ordered.LOWEST_PRECEDENCE)`; Spring sorts an injected `List` by `@Order`.
+- **Returning `null` from every handler does NOT give you `INTERNAL`.** spring-grpc's
+  `FallbackHandler` calls `Status.fromThrowable`, which returns `UNKNOWN.withCause(t)` — and
+  `withCause` is never serialized, so the caller gets `UNKNOWN` with a **null description**. That
+  fallback's only log call is guarded by `isDebugEnabled()`, so at INFO nothing is logged either.
+  Verified from the bytecode of `spring-grpc-core-1.1.0.jar` and `grpc-api` on 2026-08-26, after a
+  comment claiming the opposite shipped in PUB-4-1. A last-resort handler that logs and returns
+  `INTERNAL` is why `config/UnexpectedGrpcFailureStatusMapper` exists.
 
 ## Boot 4.1 / Java 25 — these contradict most existing guidance
 

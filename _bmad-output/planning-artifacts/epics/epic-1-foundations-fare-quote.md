@@ -324,3 +324,52 @@ is breaking and requires a new message alongside the old
 > here, and it is fully delivered. The ETA-present branch lights up in Story 2.6 once driver
 > positions exist. This story is complete and independently valuable without it.
 
+
+### Story 1.5: Every package declares its nullness
+
+As an engineer,
+I want every package to declare that its types are non-null unless annotated otherwise,
+So that "can this be null?" is answered by the signature rather than by reading the implementation, and no package added later quietly answers nothing.
+
+**Acceptance Criteria:**
+
+**Given** a service's production source tree
+**When** it is inspected
+**Then** every package holding at least one class carries `@NullMarked` on a `package-info.java`
+**And** this holds for every service the repository builds
+
+**Given** a new production package added with no `package-info.java`
+**When** the suite runs
+**Then** the build fails, naming the package
+**And** the rule is proven by planting that violation, not by inspection
+
+**Given** a value that genuinely can be absent
+**When** it crosses a method boundary
+**Then** it is annotated `@Nullable` at that point
+**And** no comment or javadoc is the sole statement that something may be null
+
+**Given** the full gate
+**When** `make build` and `make test` run
+**Then** the results are identical to the pre-change baseline apart from the new rule
+**And** no test expectation is edited to accommodate this story
+
+> **Added 2026-08-26, after Story 1.4 was detailed.** Sequenced **after** PUB-4 at the repo owner's
+> request, so it covers both `matching-service` and the `rider-service` Story 1.4 creates.
+>
+> **Why now, when there are no nulls to fix.** Production code holds zero `null` — 12 classes, not one
+> mention. This is the same move Story 1.1 made in writing architecture rules that were vacuously true:
+> *"a rule added after the code it governs is a rule that gets negotiated against existing violations
+> rather than enforced."* Adopting at zero nulls costs a dozen four-line files with nothing to migrate;
+> adopting later means auditing each null and arguing about it. And the nulls arrive on a known
+> schedule — migrations are **expand-only and therefore nullable**, so from Epic 3 every field read
+> from a new column can be null, joined by lookups that may find nothing (Story 3.4) and cache misses
+> (Story 4.7). Unlike Story 1.1's rules, this one is not vacuous: it fires the first time a package is
+> added without a declaration, which happens in Epic 2.
+>
+> **What it deliberately does not do, so these criteria are not read as more than they are.** It adds
+> **JSpecify annotations and one ArchUnit coverage rule — no nullness checker.** The build does *not*
+> reject `return null` from a non-nullable method; that needs NullAway, which runs as an Error Prone
+> plugin, and Story 1.1's static-analysis decision rejected Error Prone because it *"couples to javac
+> internals, which is the worst bet on a JDK this new"* — still true on Java 25, where its support is
+> unverified. So nullness here is **IDE-checked, coverage-guarded, and not build-enforced.** The
+> checker is a separate decision whose first deliverable is evidence rather than code.

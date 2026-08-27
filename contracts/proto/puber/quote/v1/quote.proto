@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+// Served by matching-service, which owns fare_rules (AD-3).
+package puber.quote.v1;
+
+option java_package = "com.puber.contracts.quote.v1";
+option java_multiple_files = true;
+
+service QuoteService {
+  rpc GetQuote(GetQuoteRequest) returns (GetQuoteResponse);
+}
+
+message Coordinates {
+  // Decimal text, not double: DECIMAL(10,8) / DECIMAL(11,8) survives the wire only as a string.
+  string latitude  = 1;
+  string longitude = 2;
+}
+
+message GetQuoteRequest {
+  Coordinates pickup  = 1;
+  Coordinates dropoff = 2;
+}
+
+message GetQuoteResponse {
+  int64 fare_minor_units = 1;
+  int64 distance_metres  = 2;
+  // Absent means "no driver available" (FR-1).
+  optional int64 eta_minutes = 3;
+}
