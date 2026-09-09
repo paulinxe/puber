@@ -11,7 +11,7 @@ Ticket: **PUB-4-3**
 Parent: **PUB-4** — Rider gets a fare quote through the gateway
 Status: ready-for-dev
 
-**PUB-4-2 must be `done` before this starts.** It creates `rider-service` and the `POST /quotes`
+**PUB-4-2 must be `done` before this starts.** It creates `rider-service` and the `POST /rider/v1/quotes`
 endpoint this slice routes to; a gateway with nothing to route is a container that 404s everything.
 The parent file `PUB-4-rider-gets-a-fare-quote-through-the-gateway.md` holds the acceptance criteria
 allocation and nothing binding — **this file is the whole specification for this slice.**
@@ -32,7 +32,7 @@ never be publicly reachable at all, is the one service publishing a port to the 
 
 This slice fixes both, with one small container and one deletion:
 
-1. **HAProxy goes in front** — one published port, `8080`. It routes `/quotes` to `rider-service` and
+1. **HAProxy goes in front** — one published port, `8080`. It routes `/rider/` to it and
    answers `404` to everything else. `matching-service` has no backend here and never will.
 2. **`matching-service` stops publishing its port** — the deletion is the substance of the criterion.
    A gateway with no route to `matching-service` proves nothing while `curl localhost:8080` still
@@ -126,8 +126,9 @@ frontend edge
     unique-id-format %{+X}o\ %ci:%cp_%fi:%fp_%Ts_%rt:%pid
     unique-id-header X-Request-Id
 
-    # AD-5: the route list is the actor-facing edge. rider-service only, today.
-    use_backend rider if { path_beg /quotes }
+    # AD-5: the route list is the actor-facing edge -- one rule per backend, rider-service only
+    # today. The trailing slash matters: without it /riderz would match too.
+    use_backend rider if { path_beg /rider/ }
     default_backend no_such_route
 
 backend rider
@@ -179,13 +180,13 @@ true thing.
 
 This matters for the test, not just for correctness. **A 503 from an empty backend, a connection
 refused because a container is down, and a deliberate 404 are three different facts**, and only the
-last one proves AC3. Assert the `404` specifically, and assert **in the same run** that `/quotes`
+last one proves AC3. Assert the `404` specifically, and assert **in the same run** that the quote path
 answers `200` — otherwise a gateway that is simply broken passes AC3 while proving nothing.
 
 ### D5 — proving the gateway needs the stack up, so `make test-integration` brings it up
 
 AC1c, AC3 and AC4c cannot be asserted from inside a JVM: HAProxy is a container. The test runner is
-already a container on the Compose network (AD-56), so it can call `http://haproxy:8080/quotes` by
+already a container on the Compose network (AD-56), so it can call the gateway by
 service name — but only if the gateway, both services and Postgres are running.
 
 PUB-4-2 already grew `make test-integration` to bring up `matching-service` and gave it `images` as a
@@ -249,8 +250,8 @@ Put them in `services/rider-service/src/integrationTest/java/com/puber/rider/Gat
 Use the JDK's `HttpClient` — no new dependency. `snake_case` methods, `@DisplayName` carrying the
 `AC<n>:` reference (AGENTS.md → Test Naming and Placement).
 
-- [ ] **4.1** `POST http://haproxy:8080/quotes` answers `200`, and the body carries the same
-      `fareMinorUnits` and `distanceMetres` PUB-4-2's direct test asserts for the same two coordinates
+- [ ] **4.1** `POST http://haproxy:8080/rider/v1/quotes` answers `200`, and the body carries the same
+      `fare` and `distance` PUB-4-2's direct test asserts for the same two coordinates
       (AC1c). **Hand-computed expectation, two distinct coordinates** — PUB-3's review proved a
       same-point test multiplies every rate by zero and cannot fail.
 - [ ] **4.2** The response carries an `X-Request-Id` the client did not send (AC4c).
@@ -260,7 +261,10 @@ Use the JDK's `HttpClient` — no new dependency. `snake_case` methods, `@Displa
       two traces into one.
 - [ ] **4.4** Paths that would reach `matching-service` answer **404**, not 503 and not a connection
       error (AC3, D4). At minimum `/actuator/health` and `/actuator/prometheus` — the two surfaces
-      that exist on both services and that AD-5 explicitly keeps off the route list.
+      that exist on both services and that AD-5 explicitly keeps off the route list. **Add the
+      un-prefixed `POST /quotes` and `POST /v1/quotes`**: both fall outside `path_beg /rider/`,
+      so the *gateway* 404s them — a second, independent proof that the prefix is load-bearing rather
+      than decorative (PUB-4-2's Task 6.8 proves the same thing at the service).
 - [ ] **4.5** 4.1 and 4.4 run in the **same** class, so a broken gateway cannot pass AC3 by failing
       everything (D4).
 - [ ] **4.6** Make the failure messages name **which** service was unreachable. These are the least
@@ -310,7 +314,7 @@ After PUB-4-1 and PUB-4-2:
   at build time.
 - `matching-service` serves `QuoteService/GetQuote` over gRPC, reads a request id out of metadata,
   and rejects bad coordinates with `INVALID_ARGUMENT`. **It still publishes `8080:8080`.**
-- `rider-service` serves `POST /quotes`, mints a request id when none arrives, carries it over gRPC
+- `rider-service` serves `POST /rider/v1/quotes`, mints a request id when none arrives, carries it over gRPC
   metadata, and answers RFC 9457 Problem Details on a bad request. **It publishes nothing, so nothing
   outside the Compose network can call it.**
 - `make test-integration` already brings up `matching-service` and depends on `images`.
@@ -403,7 +407,7 @@ weaken AC4c, which is about minting and propagation.
 | Not in this slice | Where it lands |
 | --- | --- |
 | `contracts/`, the copy mechanism, `matching-service`'s gRPC surface, the value-type hardening | **PUB-4-1** (done) |
-| `rider-service`, `POST /quotes`, Problem Details, `X-Rider-Id`, the ArchUnit rule copies | **PUB-4-2** (done) |
+| `rider-service`, its `POST …/v1/quotes` endpoint, Problem Details, `X-Rider-Id`, the ArchUnit rule copies | **PUB-4-2** (done) |
 | Routes for `driver-service`, the Stripe webhook, audit's query API | Epics 2, 5, 6 — AD-5's list grows when a new **actor** appears |
 | TLS, auth, anything at the gateway resembling security | Nowhere — FR-48 puts auth out of scope on purpose |
 | Rate limits, `maxconn`, AD-6's bound chain, the tightest-bound-at-the-edge rule | Epic 4, sized by measurement (AD-47) |
@@ -490,9 +494,15 @@ answer.
    `make test`, so every push pays it. The alternative is not testing AC3, which I do not think is an
    alternative — but if the gate becomes intolerable, project-context.md is explicit that the answer is
    faster tests, never moving the gate.
-3. **The gateway routes on `path_beg /quotes` (D1).** That is a prefix match, so `/quotesomething`
-   would route too. The alternative is an exact path match, which breaks the moment a story adds
-   `/quotes/{id}`. I chose the prefix; say if you would rather be strict now and relax later.
+3. **The gateway routes on `path_beg /rider/` — one rule per backend (D1).** Settled on 2026-08-26.
+   The **actor** segment in the path is what makes this possible: AD-5 routes to four backends and a
+   bare `/v1/…` could not tell them apart, so the alternative was a rule per *resource*, editing this
+   file every time any story adds an endpoint. Note the path segment is `/rider` while the backend
+   name, the Compose service and the image all stay `rider-service` — AD-12's split between
+   identifiers and deployment names. Consequence to know: an unknown `/rider/v1/typo` reaches the
+   service and gets Spring's 404 rather than the gateway's. AC3 is unaffected — it holds because
+   `matching-service` has **no backend at all** — and Task 4.4 asserts the gateway's own 404 on paths
+   outside the prefix.
 4. **HAProxy's timeouts are conventional, not measured (D1).** Recorded honestly rather than presented
    as derived. Task 5.3 routes them to Epic 4 alongside PUB-1's healthcheck-timing item, which is the
    same shape of debt.

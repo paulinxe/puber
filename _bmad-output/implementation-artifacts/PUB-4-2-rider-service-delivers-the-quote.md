@@ -41,7 +41,7 @@ Four things get built:
 
 1. **The service itself** — its own Gradle wrapper, its own Dockerfile, its own place in the Compose
    stack, health and metrics exposed the same way `matching-service` exposes them.
-2. **`POST /quotes`** — takes two coordinate pairs and a rider identity header, returns the fare and
+2. **`POST /rider/v1/quotes`** — takes two coordinate pairs and a rider identity header, returns the fare and
    the distance. No arrival estimate, because there are still no drivers, and that is a success.
 3. **Errors a caller can act on** — a bad request comes back as RFC 9457 Problem Details with a `400`
    and the request's request id, not as a stack trace and a `500`.
@@ -145,14 +145,26 @@ taking the host UID/GID from environment.
 
 ## Story-local decisions you must implement as written
 
-**Six things this slice needs have no source anywhere in the planning artifacts.** No document states
-the HTTP method or path of any endpoint, the header names, or where the DTOs live. They are pinned
-here so the implementation is deterministic. If one is wrong, raise it and change it here first.
+> **FROZEN — implement exactly as written. Do not propose an alternative.**
+>
+> Every decision here was settled with the repo owner and is closed. **Appendix A** holds the reasoning,
+> including the options that were considered and rejected; it exists so none of this is re-argued.
+>
+> Reopen a decision **only** if it is factually wrong — the API does not exist, the code does not
+> compile, the version behaves differently than stated. Then stop, say which decision and what you
+> actually observed, and change this section before writing code.
+>
+> A cleaner alternative, a more idiomatic shape, a rejected option looking attractive, or a personal
+> preference is **not** grounds to reopen one. Appendix A already weighed those.
 
-### D1 — `POST /quotes`, with a JSON body
+**Seven things this slice needs have no source anywhere in the planning artifacts.** No document states
+the HTTP method or path of any endpoint, the header names, or where the DTOs live. They are pinned
+here so the implementation is deterministic.
+
+### D1 — `POST /rider/v1/quotes`, with a JSON body
 
 ```
-POST /quotes
+POST /rider/v1/quotes
 X-Rider-Id: rider-42
 Content-Type: application/json
 
@@ -161,24 +173,65 @@ Content-Type: application/json
 ```
 
 ```json
-{"fareMinorUnits": 1100, "distanceMetres": 4148}
+{"fare": 1100, "distance": 4148}
 ```
 
-`POST`, not `GET`, and the reason is not REST purity. A quote's input is a *pair of pairs*; four flat
-query parameters (`pickupLat`, `pickupLng`, …) has no shape and only one failure mode — a missing
-parameter. A JSON body gives AC5 a real deserialization failure to map, and it is the shape
-`POST /rides` needs in Story 3.2 anyway.
+**`POST` with a JSON body. Not `GET`, not `QUERY`.** → Appendix A1.
 
-The `GET` argument is cacheability, and it does not apply: a quote moves with surge, so it is not
-cacheable, and advertising it as cacheable would be actively wrong. AD-40's `ETag`/`304` handling is
-for **ride detail**, not for quotes.
+**Every public path is `/<service>/<version>/<resource>`, and the actor segment is suffix-free** —
+`/rider`, not `/rider-service`. Epic 2's is `/driver/`, audit's query API is `/audit/`. → Appendix A2.
+Task 7.2 writes the scheme into the spine.
 
-**No `/v1` prefix on the URL.** AD-33's additive rule governs protobuf and events; nothing asks for a
-versioned URL, and adding one now is a guess about a migration with no requirement behind it. The
-*proto* package carries `v1`, which PUB-4-1 settled.
+**The directory, the image, the Compose service and the HAProxy backend all stay `rider-service`.**
+Only the URL drops the suffix.
 
-**Field names are verbose on purpose.** `fare: 1100` invites someone to read €1,100; `fareMinorUnits`
-does not. Renaming later is a breaking change for every client.
+**Apply the prefix in one place, and not to `/actuator`.** Do **not** repeat it in every
+`@PostMapping`, and do **not** use `server.servlet.context-path` — that would prefix the actuator
+endpoints too, and health and metrics are neither versioned nor service-scoped (AD-54 fixes them at
+`/actuator/**`). The hook, verified against `spring-webmvc-7.0.8`:
+
+```java
+// config/ApiVersionConfiguration.java
+private static final String CONTROLLERS = "com.puber.rider.controller.";
+
+@Override
+public void configurePathMatch(PathMatchConfigurer configurer) {
+    configurer.addPathPrefix("/rider/v1", inPackage(CONTROLLERS + "v1"));
+    // a v2 is one new package and one new line here -- nothing above is touched
+}
+```
+
+`PathMatchConfigurer.addPathPrefix(String, Predicate<Class<?>>)` exists and `getPathPrefixes()`
+returns a `Map<String, Predicate<Class<?>>>`, so **calls accumulate** — one entry per version, each
+predicate matching its own package. `QuotesController` still declares `@PostMapping("/quotes")`; the
+prefix is configuration, not repetition. **Keep the predicates disjoint** — one package, one prefix —
+because a class matching two entries resolves by map iteration order, which is not something to rely
+on. → Appendix A2 for why the predicate is per-package rather than blanket.
+
+**The DTOs carry the same version, in their own package: `dto/v1`** (D5). A version is **two packages
+that open and close together**, `controller.v2` beside `dto.v2`. `ProblemDetailsHandler` is the
+exception and stays in `shared`: AD-38's error vocabulary is one thing across every version.
+
+**`nothingDependsOnController` still binds** — it is written `..controller..` and matches
+sub-packages. **It does not cover the DTOs**, which is why D5 adds `onlyControllerDependsOnDto`.
+
+**`matching-service` needs no equivalent.** Its version is in the proto package (`puber.quote.v1`), so
+`quote/controller/QuoteGrpcService` stays where it is. Do not add a `.v1` Java package there for
+symmetry.
+
+**The service serves the full path itself; the gateway does not rewrite.** PUB-4-3's HAProxy passes
+`/rider/v1/…` through unchanged, so this service's own integration tests hit the same path a real
+client does.
+
+**All three response fields are bare: `fare`, `distance`, `eta`.** → Appendix A3.
+
+**`eta` is always minutes, and that is not a per-response choice.** **Nothing may return an ETA in any
+other unit** — seconds would be an AD-33 change to what the field means and needs a new field beside
+it. Story 2.6 (PUB-10) is what first populates it; until then it is always absent.
+
+**The wire and the JSON disagree on purpose.** The proto fields are `fare_minor_units` and
+`distance_metres` (PUB-4-1, shipped) and `rider-service` is a protocol translator. **Do not "fix" the
+mismatch by renaming the proto fields** — AD-33 makes a field rename a breaking change.
 
 ### D2 — headers: `X-Request-Id` and `X-Rider-Id`
 
@@ -187,23 +240,18 @@ does not. Renaming later is a breaking change for every client.
 | `X-Request-Id` | PUB-4-3's gateway; **minted by `rider-service` if absent** | effectively yes | yes — metadata key `x-request-id` |
 | `X-Rider-Id` | the client | **yes — missing or blank is a 400** | no |
 
-**`rider-service` mints a request id when the header is absent.** AD-5 requires any surface
-reached outside the gateway to mint its own, and there is no gateway at all until PUB-4-3 — so without
-this the entire suite would run untraced and AC4b could not be asserted.
+**`rider-service` mints a request id when the header is absent.** AD-5 requires any surface reached
+outside the gateway to mint its own, and there is no gateway at all until PUB-4-3 — so without this
+the entire suite would run untraced and AC4b could not be asserted.
 
-**`X-Rider-Id` is required, even though a quote does not use it.** Name the failure it prevents, per
-project-context.md → YAGNI: without it, `/quotes` works anonymously, and Story 3.2 then has to make
-identity mandatory on an endpoint where it was optional — which AD-33 classifies as *changing what a
-field means*, a breaking change. One identity rule for the whole façade, from the first endpoint,
-avoids that.
+**`X-Rider-Id` is required, even though a quote does not use it.** → Appendix A4.
 
 **"Trusted as-is" (FR-48) means non-blank is the only check.** No lookup, no format validation, no
 registration, no persistence. It is logged beside the request id and goes no further — **do not
 propagate it over gRPC metadata**, because nothing on the other side reads it.
 
 **gRPC metadata keys must be lowercase.** `Metadata.Key.of("x-request-id", ASCII_STRING_MARSHALLER)`;
-an uppercase key throws at construction, so you find out immediately — recorded here so you do not
-spend the minute wondering why.
+an uppercase key throws at construction.
 
 ### D3 — the channel, and where its address comes from
 
@@ -220,17 +268,34 @@ every other setting (Configuration convention); **no address literal in source.*
 instead, in which case the port is `8080` and `9090` was never bound. That was a prediction, not a
 measurement; the answer is in PUB-4-1's Debug Log.
 
-The stub is injected, not built by hand:
+**One class is the whole gRPC-client setup** — the channel address, the stub types, and the
+interceptor chain that hangs off the channel:
 
 ```java
 @Configuration
 @ImportGrpcClients(target = "matching", types = QuoteServiceGrpc.QuoteServiceBlockingStub.class)
-class GrpcClientConfiguration {}
+class GrpcClientConfiguration {
+
+    // Without @GlobalClientInterceptor the bean is created and never attached to a channel.
+    @Bean
+    @GlobalClientInterceptor
+    RequestIdClientInterceptor requestIdClientInterceptor() {
+        return new RequestIdClientInterceptor();
+    }
+}
 ```
 
 `@org.springframework.grpc.client.ImportGrpcClients` also accepts `factory`, `prefix`, `basePackages`
 and `basePackageClasses`. **Use `types` and be explicit** — a package scan here would pick up whatever
 the contract grows later.
+
+**`@GlobalClientInterceptor` is mandatory on the `@Bean` method, and dropping it fails silently** —
+the bean is created, no channel intercepts, the request id stops crossing the gRPC hop, and nothing is
+logged and nothing turns red except Task 6.6. Verified in the bytecode; → Appendix A5.
+
+**Ordering, if a second client interceptor ever arrives:** `configureInterceptors` sorts by `@Order`
+and then **reverses** the list before `ManagedChannelBuilder.intercept(...)`. Do not reason about the
+final call order from the `@Order` values alone — assert it.
 
 ### D4 — validation is structural here and semantic in `matching-service`
 
@@ -257,19 +322,46 @@ AD-9 is explicit: *"`matching-service` alone splits by feature."* So `rider-serv
 ```
 com.puber.rider
   RiderServiceApplication
-  config/      GrpcClientConfiguration  RequestIdFilter  RequestIdClientInterceptor
-  controller/  QuoteController  QuoteRequest  QuoteResponse  ProblemDetailsHandler
+  shared/      RequestId  RequestIdFilter  RequestIdClientInterceptor  ProblemDetailsHandler
+  config/      GrpcClientConfiguration  ApiVersionConfiguration
+  controller/
+    v1/        QuotesController
+  dto/
+    v1/        QuoteRequest  QuoteResponse
   service/     RequestQuote
   model/       Quote
 ```
 
-**Wire DTOs live in `controller`, not `model`.** `nothingDependsOnController` means `service` cannot
-see them, which is the point: `RequestQuote` returns a `Quote` from `model`, and the controller maps
-that to `QuoteResponse`. Putting the DTOs in `model` would either drag Jackson into the domain package
-— which `modelDependsOnNothingFrameworkFlavoured` fails the build on — or make the controller a
-passthrough that proves nothing.
+**Wire DTOs live in `dto/v1`, not in `model` and not inside `controller`.** → Appendix A6.
 
-**No `@JsonInclude` anywhere.** AC2 needs the `etaMinutes` key *absent*, and the obvious annotation
+**`dto` is a seventh layer, and AD-7 lists six.** That is an addition to the spine, not a local
+deviation, so Task 7.2 writes it into the same Consistency Conventions row as the path scheme —
+`driver-service` (Epic 2) faces an actor the same way and must not invent a different answer.
+
+**Moving them out of `controller` costs the guard `nothingDependsOnController` was giving them, so
+this slice adds a replacement** and proves it by planting (Task 4.7):
+
+```java
+// no class outside controller may see a wire DTO -- a dto may still see another dto
+@ArchTest
+static final ArchRule onlyControllerDependsOnDto =
+        noClasses()
+                .that()
+                .resideOutsideOfPackage("..dto..")
+                .and()
+                .resideOutsideOfPackage("..controller..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAPackage("..dto..")
+                .because("the wire shape reaches no further in than the controller that serves it")
+                .allowEmptyShould(true);
+```
+
+The `..dto..` exclusion on the `that()` side is load-bearing: `QuoteRequest` holds a nested
+`Coordinates` record, so DTOs depend on DTOs by design. Without it the rule fails on correct code, and
+whoever hits that will weaken the rule rather than the code.
+
+**No `@JsonInclude` anywhere.** AC2 needs the `eta` key *absent*, and the obvious annotation
 puts a framework dependency on whichever class carries it. Set
 
 ```properties
@@ -285,9 +377,49 @@ copied rules.
 
 **No `package-info.java` and no JSpecify annotations.** PUB-60 (Story 1.5) adopts JSpecify across every
 service and is sequenced **after** all of PUB-4, so it covers `matching-service` and this service in
-one pass. Adding `@NullMarked` here would leave the repository half-annotated with no rule guarding
-the coverage, which is the state PUB-60's ArchUnit rule exists to make impossible. **Create the
-packages bare; PUB-60 retrofits both services together.**
+one pass. **Create the packages bare; PUB-60 retrofits both services together.**
+
+### D5a — the request id and Problem Details live in `shared`, and it is one flat directory
+
+Both are **conventions, not domain behaviour**, which is project-context.md's membership test: *"does
+the type encode a convention?"* Every service's edge implements both identically, so neither belongs
+in this service's own layers.
+
+```
+com.puber.rider.shared
+  RequestId.java                     the four names and the minting, in one place
+  RequestIdFilter.java               inbound HTTP: read or mint, MDC, echo, clear in a finally
+  RequestIdClientInterceptor.java    outbound gRPC: MDC -> metadata (plain class, wired in config)
+  ProblemDetailsHandler.java         @RestControllerAdvice -> RFC 9457 carrying the request id
+```
+
+**Flat, with no sub-layers.** Four classes do not need four layers, and a flat package is **one
+directory to copy** into `driver-service`, `payment-service` and `audit-service`. Sub-layer it when a
+fifth class arrives that genuinely belongs to a layer.
+
+**Copy-pasted per service, never extracted into a library.** The spine: *"Duplicated domain code across
+services is accepted; a shared library is not."*
+
+**`RequestId` holds the four names that must agree** — the header, the gRPC metadata key, the MDC key
+and the log pattern's `%X{…}` — plus `mint()`. **Nothing else in the service spells any of them.**
+→ Appendix A7 for why it was right to extract this now and not in PUB-4-1.
+
+**`shared` is not byte-identical across services, and that is not drift.** It is a menu keyed on which
+transports a service has:
+
+| Service | Transports | Its `shared` holds |
+| --- | --- | --- |
+| `matching-service` | gRPC server | `RequestId`, `RequestIdServerInterceptor`, `UnexpectedGrpcFailureStatusMapper` |
+| `rider-service` | HTTP edge + gRPC client | `RequestId`, `RequestIdFilter`, `RequestIdClientInterceptor`, `ProblemDetailsHandler` |
+| `driver-service` (Epic 2) | HTTP edge + gRPC client | the same four as `rider-service` |
+
+**The HTTP-edge classes self-register; the gRPC client interceptor is wired in `config`.**
+`RequestIdFilter` carries `@Component` and `ProblemDetailsHandler` carries `@RestControllerAdvice`.
+`RequestIdClientInterceptor` is a **plain class with no annotation at all**, declared as a `@Bean` in
+`GrpcClientConfiguration` (D3). → Appendix A5.
+
+**`config` holds `GrpcClientConfiguration`** — the channel target, the stub types and the interceptor
+chain — **and `ApiVersionConfiguration`**. Both are this service's own wiring rather than a convention.
 
 ### D6 — which rules get copied, which are adapted, and which are deliberately absent
 
@@ -305,6 +437,20 @@ add the layer rules:
 | `floatingPointIsConfinedToDistance`, `bigDecimalIsNeverBuiltFromADouble` | yes — the Money convention binds all services. Neither needs a `Distance` exemption here |
 | `TestNamingRulesTest` + `TestNamingRulesIntegrationTest` | **yes, both.** AGENTS.md records why one class cannot cover both source sets: ArchUnit's `OnlyIncludeTests` recognises test output by path and knows `build/classes/java/test`, not `.../integrationTest` |
 | PUB-4-1's contracts-package exclusion on the model rule | **yes** — this service generates the same stubs, so it has the same hole |
+| `sharedDependsOnNothingElseInThisService` | **new, written here** — see below |
+| `onlyControllerDependsOnDto` | **new, written here** — see D5. `rider-service` only: `matching-service` has no `dto` package and gains one when it first serves JSON |
+
+**`sharedDependsOnNothingElseInThisService`, written here rather than copied.**
+`sharedDependsOnNoFeaturePackage` forbids `shared` depending on a *feature* (`fare`, `ride`, …), which
+is a matching-service concern. What `rider-service` needs is stronger and simpler:
+**`com.puber.rider.shared..` may depend on nothing else under `com.puber.rider..`** — not `controller`,
+not `dto`, not `service`, not `model`, not `config`. The moment `ProblemDetailsHandler` references
+`Quote`, the directory stops being liftable into `driver-service` and nobody finds out until they try.
+**Prove it by planting** (Task 4.6).
+
+**It also belongs in `matching-service`.** There the rule already exists in the weaker feature-only
+form, so add the stronger clause **beside** it rather than replacing it: `shared` may depend on no
+feature **and** on no layer of its own service.
 
 **The trap: `DatabaseNeverReadsTimeTest.no_migration_asks_the_database_for_the_time` asserts
 `filesScanned() > 0`.** `rider-service` owns no database (AD-3) and ships no `.sql` file, so copying
@@ -313,8 +459,7 @@ Java-source scan and the four planted-violation tests; drop the migration scan, 
 saying why and naming what would bring it back.
 
 **Copy the rule bodies, not a shared class.** They are test code, and no service depends on another's
-code. They were written to copy cleanly — no `matching`-specific names in any of them — which is the
-intended design, not an accident.
+code. They were written to copy cleanly — no `matching`-specific names in any of them.
 
 ---
 
@@ -384,15 +529,29 @@ intended design, not an accident.
       an ETA the service can leave absent. **Use `Long` (nullable) or `OptionalLong`, and say which in
       the completion notes** — the point is that "no ETA" is representable without a sentinel, matching
       the contract's `optional`.
+      **The domain record keeps its unit suffixes while the DTO drops them** (D1): it holds raw `long`s
+      with no `Money` or `Distance` type to carry the meaning, unlike `matching-service`'s
+      `quote/model/Quote`, so here the name is the only thing saying what the number is. **Do not
+      rename it to match `QuoteResponse`** — mapping between the two is the translator's job, and D5
+      is why the DTOs live in `dto/v1` rather than in `model`.
 - [ ] **2.3** `service/RequestQuote.java` — holds the injected blocking stub, one public method taking
       the two coordinate pairs as strings, calls `GetQuote`, returns `model/Quote`. It reads
       `hasEtaMinutes()` on the response rather than comparing to zero.
-- [ ] **2.4** `config/GrpcClientConfiguration.java` — D3's `@ImportGrpcClients`.
-- [ ] **2.5** `controller/QuoteRequest.java` / `QuoteResponse.java` — plain records, no annotations
-      (D5). Nested `Coordinates` record for the pair-of-pairs shape.
-- [ ] **2.6** `controller/QuoteController.java` — `POST /quotes`. Reads `X-Rider-Id` and rejects blank
-      or missing (D2), calls `RequestQuote`, maps `Quote` → `QuoteResponse`.
-- [ ] **2.7** `controller/ProblemDetailsHandler.java` — a `@RestControllerAdvice` producing
+- [ ] **2.4** `config/GrpcClientConfiguration.java` — D3's `@ImportGrpcClients`, **plus the
+      `@Bean @GlobalClientInterceptor` method for Task 3.2's interceptor**. This one file is the whole
+      gRPC-client setup (D3, D5a). **The `@GlobalClientInterceptor` annotation goes on the `@Bean`
+      method and is not optional** — without it the bean is built and never attached, and nothing
+      turns red except Task 6.6.
+- [ ] **2.5** `dto/v1/QuoteRequest.java` / `QuoteResponse.java` — plain records, no annotations
+      (D5). Nested `Coordinates` record for the pair-of-pairs shape. `QuoteResponse` is
+      `fare` / `distance` / `eta` per D1 — all three bare, with `eta` fixed at minutes.
+- [ ] **2.6** `controller/v1/QuotesController.java` — `@PostMapping("/quotes")`, served at
+      `/rider/v1/quotes` via Task 2.9's prefix (D1) — **do not spell the prefix here**. Named for the
+      resource it serves, so the class and the path agree. Reads `X-Rider-Id` and rejects blank
+      or missing (D2), calls `RequestQuote`, maps `Quote` → `QuoteResponse`. **It is the only class
+      in the service that may import `dto.v1`** — Task 4.7's rule enforces that.
+- [ ] **2.7** `shared/ProblemDetailsHandler.java` (D5a — **`shared`, not `controller`**) — a
+      `@RestControllerAdvice` producing
       `org.springframework.http.ProblemDetail` (AC5). AD-38's table, **restricted to what can occur
       today**: `INVALID_ARGUMENT` → 400, `UNAVAILABLE` → 503, anything else → 500; plus Spring's own
       deserialization and missing-header failures → 400. Every body carries the request id as a
@@ -406,21 +565,72 @@ intended design, not an accident.
       `management.endpoint.health.cache.time-to-live=0`. **Omit every datasource and Flyway line.**
       Add `spring.application.name=rider-service`, D3's channel target, D5's Jackson inclusion, and
       Task 3's log pattern.
+- [ ] **2.9** `config/ApiVersionConfiguration.java` — a `WebMvcConfigurer` applying D1's
+      `addPathPrefix("/rider/v1", …)` keyed on the **`controller.v1` package**, not on controllers in
+      general (D1). One class, one method, one entry per version. The controller-package root is **one
+      named constant** — AGENTS.md's No Magic Numbers applies to a path segment a client depends on as
+      much as to a number. **Note it is `/rider`, not `/rider-service`** (D1): the directory and the
+      image keep the suffix, the URL does not.
+      It lives in `config` and **not** in `shared`: the *convention* (the API is `/v1`, the actuator is
+      not) is cross-service and belongs in the spine per Task 7.2, but the predicate names this
+      service's own controller package, so the class is wiring like `GrpcClientConfiguration`.
 
-### Task 3 — the request id, client side (AC4b)
+### Task 3 — the `shared` package, in **both** services (AC4b, D5a)
 
-- [ ] **3.1** `config/RequestIdFilter.java` — a servlet `Filter` that reads `X-Request-Id`,
-      mints a `UUID` when absent (D2), puts it in MDC under `requestId`, echoes it on the response
-      header, and **clears MDC in a `finally`**. A pooled request thread otherwise carries the previous
-      request's id into the next one's logs, which is worse than no id at all.
-- [ ] **3.2** `config/RequestIdClientInterceptor.java` — a `ClientInterceptor` bean annotated
-      `@org.springframework.grpc.client.GlobalClientInterceptor` that copies the MDC value into
-      metadata under the **lowercase** key `x-request-id`.
+3.0–3.4 build `rider-service`'s half. **3.5–3.9 move `matching-service`'s half**, so the convention
+has one home from the day the second service exists rather than being reconciled later. That part
+touches code PUB-4-1 already shipped; it is a move plus one extraction, and it changes no behaviour.
+
+- [ ] **3.0** `shared/RequestId.java` — the four names in one place (D5a): the header
+      `X-Request-Id`, the gRPC metadata key `x-request-id` as a `Metadata.Key`, the MDC key
+      `requestId`, and `mint()` returning a `UUID` string. **Nothing else in the service spells any of
+      these four literals.** PUB-4-1 did **not** create this type — it kept the same four names inline
+      in `matching-service`'s `config/RequestIdServerInterceptor`, correctly, because one class needed
+      them. Read that file and lift its literals verbatim: the two services agreeing on the wire is the
+      whole point.
+- [ ] **3.1** `shared/RequestIdFilter.java` — a `@Component` servlet `Filter` that reads
+      `RequestId.HEADER`, mints when absent (D2), puts it in MDC under `RequestId.MDC_KEY`, echoes it
+      on the response header, and **clears MDC in a `finally`**. A pooled request thread otherwise
+      carries the previous request's id into the next one's logs, which is worse than no id at all.
+- [ ] **3.2** `shared/RequestIdClientInterceptor.java` — a `ClientInterceptor` that copies the MDC
+      value into metadata under `RequestId.METADATA_KEY`. **A plain class: no `@Component`, no
+      `@GlobalClientInterceptor` on the class.** Task 2.4's `@Bean` in `GrpcClientConfiguration` is
+      what registers it, so all gRPC client wiring reads from one file (D3, D5a). It differs from
+      `RequestIdFilter` and `ProblemDetailsHandler`, which do self-register — D5a says why.
 - [ ] **3.3** `logging.pattern.level=%5p [%X{requestId:-}]` in `application.properties`, so the id
       is on **every** line and not only the ones that remember to interpolate it. **Do not reach for
       `logging.pattern.correlation`** — in Boot that slot is driven by Micrometer tracing's trace and
       span ids, which this project does not have.
 - [ ] **3.4** `ProblemDetailsHandler` sets the id as a Problem Details property (AC5's second clause).
+
+**`matching-service`, moving its half into `shared` (D5a):**
+
+- [ ] **3.5** Extract `shared/RequestId.java` in `matching-service` too, holding the same four names,
+      and have the interceptor read them from it. This is the type that makes the two services
+      *provably* agree — the alternative is two files each spelling `x-request-id` and nobody noticing
+      when one changes.
+- [ ] **3.6** Move `config/RequestIdServerInterceptor.java` → `shared/RequestIdServerInterceptor.java`.
+      It keeps `@Component @GlobalServerInterceptor`; the self-registration is already what D5a wants,
+      so nothing about its wiring changes. Its `REQUEST_ID_HEADER` constant moves to `RequestId`.
+- [ ] **3.7** Move `config/UnexpectedGrpcFailureStatusMapper.java` →
+      `shared/UnexpectedGrpcFailureStatusMapper.java`. It is AD-38's "one error vocabulary" for a gRPC
+      edge — the same convention `ProblemDetailsHandler` is for an HTTP one — so it belongs beside it.
+- [ ] **3.8** Fix the one caller: `QuoteGrpcIntegrationTest` imports
+      `com.puber.matching.config.RequestIdServerInterceptor` (line 19) and reads
+      `RequestIdServerInterceptor.REQUEST_ID_HEADER` (line ~343). Repoint both at
+      `shared.RequestId`. **That is the only reference in the repository** — verified by grep on
+      2026-08-26; if you find another, this story's Dev Notes were wrong and say so.
+- [ ] **3.9** Confirm no existing ArchUnit rule breaks. Checked on 2026-08-26 and none should, but
+      confirm rather than trust it:
+      - `theRealClockIsOnlyEverInjected` restricts `config..` for `SystemClock` only — moving classes
+        *out* of `config` cannot affect it.
+      - `sharedDependsOnNoFeaturePackage` forbids `shared` → `fare`/`ride`/`dispatch`/`quote`. The
+        interceptor depends on `io.grpc`, `org.slf4j` and `org.springframework.grpc` — no feature.
+      - `modelDependsOnNothingFrameworkFlavoured` binds `..model..`. These land in `shared`'s **root**,
+        not `shared/model`, which is exactly the root-versus-sub-layer split Task 7.1 writes down.
+      - `featureDependenciesRunOneWay` declares `shared` as a layer with no `whereLayer` restriction
+        and uses `consideringOnlyDependenciesInLayers()`, so `config` → `shared` was never considered
+        and `shared` → nothing-in-a-layer stays true.
 
 ### Task 4 — the structural rules (AC11, D6)
 
@@ -439,7 +649,25 @@ intended design, not an accident.
       line in the Debug Log.
 - [ ] **4.4** Apply PUB-4-1's contracts-package exclusion to this service's model rule, and prove it
       the same way: plant a `Quote` field typed as `GetQuoteResponse`, watch it go red, revert.
-- [ ] **4.5** Close `deferred-work.md`'s PUB-2-review item: state what was copied, what was
+- [ ] **4.5** Add `sharedDependsOnNothingElseInThisService` (D6) **to both services**: no class under
+      `com.puber.<service>.shared..` may depend on anything else under `com.puber.<service>..`.
+      **This one is written here, not copied** — it is what makes D5a's directory liftable into the
+      next service. In `matching-service` add it **beside** `sharedDependsOnNoFeaturePackage`, not
+      instead of it: the feature clause is AD-9's and still binds, and the new clause is stronger in a
+      different direction.
+- [ ] **4.6** **Prove 4.5 fires, in both services.** In `rider-service`, plant an import of
+      `com.puber.rider.model.Quote` into `ProblemDetailsHandler`. In `matching-service`, plant an
+      import of `com.puber.matching.quote.model.Quote` into `RequestIdServerInterceptor` — which also
+      re-proves the feature clause did not already cover it. Run `make test`, capture each failure,
+      revert, confirm green. Then check neither is vacuous: point a rule at a package that does not
+      exist and confirm it goes red rather than passing on an empty set.
+- [ ] **4.7** Add `onlyControllerDependsOnDto` (D5) to `rider-service`, **and prove it fires**:
+      plant an import of `com.puber.rider.dto.v1.QuoteResponse` into `service/RequestQuote`, run
+      `make test`, capture the failure, revert, confirm green. Then plant a second `dto` record that
+      references `QuoteRequest.Coordinates` and confirm the suite **stays green** — a rule that also
+      fails on DTO-to-DTO dependency is a rule someone will delete rather than fix. Not added to
+      `matching-service`: it has no `dto` package, and a rule scanning nothing passes forever.
+- [ ] **4.8** Close `deferred-work.md`'s PUB-2-review item: state what was copied, what was
       deliberately not, and why. It named Story 1.4 by number; this is where it lands.
 
 ### Task 5 — Compose and the Makefile (AC7, D3, and the test wiring)
@@ -476,8 +704,8 @@ intended design, not an accident.
 Unit tests in `src/test/java`, integration tests in `src/integrationTest/java`, `snake_case` methods,
 `@DisplayName` carrying the `AC<n>:` reference (AGENTS.md → Test Naming and Placement).
 
-- [ ] **6.1** Integration: `POST /quotes` returns 200 with `fareMinorUnits` and `distanceMetres`
-      matching a **hand-computed** expectation for two **distinct** coordinates, and **no `etaMinutes`
+- [ ] **6.1** Integration: `POST /rider/v1/quotes` returns 200 with `fare` and `distance`
+      matching a **hand-computed** expectation for two **distinct** coordinates, and **no `eta`
       key at all** (AC1b, AC2). Assert the key's absence, not that its value is null. Two distinct
       coordinates, never the same point twice — PUB-3's review proved a same-point test multiplies
       every rate by zero and cannot fail.
@@ -489,7 +717,12 @@ Unit tests in `src/test/java`, integration tests in `src/integrationTest/java`, 
       never seen before answers 200 (AC6 — "trusted as-is, no registration").
 - [ ] **6.4** Integration: health is UP and `/actuator/prometheus` serves Prometheus text format
       (AC7). **`@AutoConfigureMetrics` is required** or the endpoint 404s under test while working in
-      the running service.
+      the running service. **Assert the actuator paths are the unprefixed ones** — `/actuator/health`,
+      not `/rider/v1/actuator/health` — which is what proves D1's prefix was scoped to
+      controllers rather than applied with `context-path`. Both spellings answering `200` would mean
+      the scoping failed, and **PUB-4-3's AC3 test depends on this**: it asserts the gateway 404s
+      `/actuator/health`, which only means something while the actuator sits outside the routed
+      prefix.
 - [ ] **6.5** Integration: a request carrying a known `X-Request-Id` gets it back on the response,
       and a request carrying none gets a minted one back (AC4b).
 - [ ] **6.6** **One test that proves the id crossed the gRPC hop** (AC4b's third clause). The cheap
@@ -500,16 +733,50 @@ Unit tests in `src/test/java`, integration tests in `src/integrationTest/java`, 
 - [ ] **6.7** Unit: `RequestQuote` maps an absent `eta_minutes` to an absent ETA, and a present one to
       a present one. The second case has no production producer yet and is the cheapest possible guard
       against Story 2.6 discovering the mapping was never written.
+- [ ] **6.8** Integration: **both** shorter spellings answer `404` — `POST /quotes` and
+      `POST /v1/quotes`. Cheap, and the only thing that proves the prefix is real rather than
+      decorative: a misconfigured predicate leaves the controller mapped at its bare path *as well*,
+      and every other test still passes.
 
 ### Task 7 — record what this slice settled
 
-- [ ] **7.1** `project-context.md`: add only what is non-obvious from the code and not already in the
-      spine — the request-id chain and the MDC-clearing requirement; that `rider-service`
-      deliberately has no `Clock`, so one rule is absent by design; that a new service's rule copies
-      are hand-made and what the `DatabaseNeverReadsTimeTest` migration-scan trap is. **Do not restate
-      AD-5, AD-33, AD-37, AD-38 or AD-54** — CLAUDE.md forbids duplicating a rule across files.
-- [ ] **7.2** `deferred-work.md`: Task 4.5's closure.
-- [ ] **7.3** Anything deferred out of this slice goes in `deferred-work.md` **and** in whichever of
+- [ ] **7.1** `project-context.md` → **extend the existing "What belongs in `shared`" section**, which
+      is currently written only for `matching-service`'s feature order. It now has to say two more
+      things: (a) in a **layered** service, `shared` means *the conventions every service's edge
+      implements identically* rather than "the bottom of the feature order" — same membership test
+      ("does the type encode a convention?"), different surrounding structure; and (b) `shared`'s
+      **root holds cross-cutting plumbing while its sub-packages hold layer-shaped content**, which is
+      why `RequestId` sits beside `shared/model/Money` rather than inside it.
+      **Extend that one section; do not open a second `shared` section** — two homes for one rule is
+      what CLAUDE.md forbids, and `project-context.md` already records what happened when "fixture"
+      came to mean two things.
+      Also record (c) that **`shared` is copied, but not every class in it self-registers**: the HTTP
+      edge classes carry their own stereotype, while `RequestIdClientInterceptor` is a plain class
+      wired as a `@Bean` in the receiving service's `GrpcClientConfiguration` (D5a). A service copying
+      `shared` and getting no request id on its outbound gRPC calls has forgotten that bean, and the
+      symptom is silent.
+- [ ] **7.2** `ARCHITECTURE-SPINE.md` → Consistency Conventions: add a **Public paths** row. No
+      document mentions URL layout or versioning today, and Epic 2's `driver-service` needs the same
+      rule, so the spine is its home: *every public path is `/<service>/<version>/<resource>` —
+      `/rider/v1/quotes` — never rewritten by the gateway and never applied to `/actuator`. The
+      actor segment is suffix-free per AD-12 (`/rider`, not `/rider-service`) and is what keeps AD-5's
+      route list one rule per backend. **The version is a controller sub-package**
+      (`…controller.v1`), and the path prefix is derived from it, one entry per version, so opening a
+      v2 touches no v1 code; the request and response DTOs carry the same version in **their own
+      package**, `dto.v1` beside `controller.v1`, because the DTO shape is the contract and because
+      `controller` holds controllers. Internal protobuf is versioned in its package instead
+      (`puber.<domain>.v1`), because there the package is the wire name.* **The same row records
+      `dto` as a layer AD-7's list does not name** (D5), so Epic 2's `driver-service` does not invent
+      a different answer, and it names `onlyControllerDependsOnDto` as what keeps the wire shape from
+      reaching past the controller. **Do not restate any of it in `project-context.md`** — CLAUDE.md
+      forbids the second copy.
+- [ ] **7.3** `project-context.md`: also add the request-id chain and the MDC-clearing requirement;
+      that `rider-service` deliberately has no `Clock`, so one rule is absent by design; and that a new
+      service's rule copies are hand-made, including the `DatabaseNeverReadsTimeTest` migration-scan
+      trap. **Do not restate AD-5, AD-33, AD-37, AD-38 or AD-54** — CLAUDE.md forbids duplicating a
+      rule across files.
+- [ ] **7.4** `deferred-work.md`: Task 4.8's closure.
+- [ ] **7.5** Anything deferred out of this slice goes in `deferred-work.md` **and** in whichever of
       the epic file / `sprint-status.yaml` `action_items` / `project-context.md` will actually surface
       it. `deferred-work.md` alone is an audit trail nothing reads.
 
@@ -524,6 +791,11 @@ Unit tests in `src/test/java`, integration tests in `src/integrationTest/java`, 
 - [ ] **8.3** Only then set this story and `sprint-status.yaml` to `review`. **Leave `PUB-4` itself at
       `in-progress`** — the parent is `done` only when PUB-4-3 lands.
 - [ ] **8.4** Leave everything **unstaged**. The repo owner reviews the unstaged diff.
+- [ ] **8.5** **Prove Tasks 3.5–3.9 changed no behaviour.** `matching-service`'s suite was green
+      before this slice touched it, so it must be green after with **no test expectation edited** — the
+      only permitted change to `QuoteGrpcIntegrationTest` is Task 3.8's import and constant reference.
+      If an assertion needed changing, the move was not a move. Say so in the completion notes rather
+      than adjusting the test.
 
 ---
 
@@ -535,6 +807,11 @@ After PUB-4-1: `contracts/proto/puber/quote/v1/quote.proto` is the single contra
 `Makefile` copies it into every service's build output, `matching-service` serves `QuoteService/GetQuote`
 over gRPC and reads a request id out of metadata, and `Coordinates`, `Distance` and `FareRule`
 reject bad input with named-field messages.
+
+**Two classes sit in `matching-service`'s `config/` that this slice moves into `shared/`** —
+`RequestIdServerInterceptor` (which also holds the header name, the `Metadata.Key` and the MDC key
+inline) and `UnexpectedGrpcFailureStatusMapper`. Both are self-registering `@Component`s already.
+Tasks 3.5–3.9 move them; D5a says why.
 
 `matching-service` still publishes `8080:8080` to the host. There is no gateway. `rider-service` does
 not exist.
@@ -643,15 +920,23 @@ comparison.**
 port, by design — PUB-4-3's gateway is the front door. So the only callers this slice has are the
 integration tests, and a human wanting to try it must go through `docker compose exec`.
 
+**This slice edits code PUB-4-1 already shipped, and that is deliberate rather than scope creep.**
+Tasks 3.5–3.9 move two classes out of `matching-service`'s `config/` into `shared/` and extract the
+four request-id names into a type both services read. The alternative was writing `rider-service`
+against a `matching-service` that disagreed about where the convention lives, then reconciling — which
+is more work and leaves a window where a third service could copy the wrong one. **It is a move plus
+an extraction: no behaviour changes, and Task 8.5 is the check that says so.**
+
 ### Scope boundaries — what is deliberately not here
 
 | Not in this slice | Where it lands |
 | --- | --- |
-| HAProxy, `infra/haproxy.cfg`, the `/quotes` route, the 404 default | **PUB-4-3** |
+| HAProxy, `infra/haproxy.cfg`, the `/rider/` route, the 404 default | **PUB-4-3** |
 | Removing `matching-service`'s published `8080:8080` | **PUB-4-3** |
 | Minting the request id at the gateway; the tests that prove it | **PUB-4-3** |
 | Bringing HAProxy up for `make run` / `make test` | **PUB-4-3** |
 | `contracts/`, the copy mechanism, `matching-service`'s gRPC surface, the value-type hardening | **PUB-4-1** (already done) |
+| Any change to `matching-service` **other than** Tasks 3.5–3.9's move into `shared` | Nowhere — that move changes no behaviour, and anything beyond it has left this slice |
 | ETA in a quote, driver proximity, the geo index | Story 2.6 (PUB-10) |
 | `rides`, `POST /rides`, the ride state machine | Stories 3.1–3.2 (PUB-12, PUB-13) |
 | AD-38's 409 / 404 / `ABORTED` rows | The stories that create those states |
@@ -710,10 +995,13 @@ services/rider-service/                          (new, entire tree -- AD-52: its
   Dockerfile  .dockerignore  .gitignore  .gitattributes
   src/main/java/com/puber/rider/
     RiderServiceApplication.java
-    config/      GrpcClientConfiguration.java  RequestIdFilter.java
-                 RequestIdClientInterceptor.java
-    controller/  QuoteController.java  QuoteRequest.java  QuoteResponse.java
-                 ProblemDetailsHandler.java
+    shared/      RequestId.java  RequestIdFilter.java                  (D5a -- one flat
+                 RequestIdClientInterceptor.java  ProblemDetailsHandler.java   directory, copied
+                                                                          per service)
+    config/      GrpcClientConfiguration.java  ApiVersionConfiguration.java
+    controller/v1/
+                 QuotesController.java
+    dto/v1/      QuoteRequest.java  QuoteResponse.java
     service/     RequestQuote.java
     model/       Quote.java
   src/main/resources/application.properties
@@ -726,10 +1014,20 @@ services/rider-service/                          (new, entire tree -- AD-52: its
     HealthAndMetricsIntegrationTest.java               (Task 6.4)
     rules/TestNamingRulesIntegrationTest.java
 
+services/matching-service/src/                   (edited -- D5a, Tasks 3.5-3.9)
+  main/java/com/puber/matching/
+    shared/    RequestId.java                     (new -- extracted from the interceptor)
+               RequestIdServerInterceptor.java    (moved from config/)
+               UnexpectedGrpcFailureStatusMapper.java  (moved from config/)
+  test/java/com/puber/matching/rules/
+    ArchitectureRulesTest.java                    (edited -- the new shared clause)
+  integrationTest/java/com/puber/matching/
+    QuoteGrpcIntegrationTest.java                 (edited -- one import, one constant)
+
 infra/docker-compose.yml                         (edited -- rider-service added, tests env)
 Makefile                                         (edited -- Task 5.5)
 project-context.md                               (edited -- Task 7.1)
-_bmad-output/implementation-artifacts/deferred-work.md   (edited -- Task 4.5)
+_bmad-output/implementation-artifacts/deferred-work.md   (edited -- Task 4.8)
 ```
 
 No root build: `rider-service` gets its own wrapper and build file, and the `Makefile` orchestrates
@@ -753,23 +1051,208 @@ both services (AD-52). Java packages are suffix-free (`com.puber.rider`); the di
 
 ---
 
+## Appendix A — why these decisions were made
+
+**Not implementation guidance. Nothing here is a task.** This is the record of *why* each frozen
+decision in "Story-local decisions" went the way it did, including the options that were considered and
+rejected. It exists so none of them is re-argued — in review, in a later slice, or by the next agent
+that finds a rejected option attractive.
+
+Read a section only if you believe the decision it supports is **factually** wrong. A preference is not
+a reason to reopen one.
+
+### A1 — why `POST`, and not `GET` or `QUERY` (D1)
+
+`POST`, not `GET`, and the reason is not REST purity. A quote's input is a *pair of pairs*; four flat
+query parameters (`pickupLat`, `pickupLng`, …) has no shape and only one failure mode — a missing
+parameter. A JSON body gives AC5 a real deserialization failure to map, and it is the shape
+`POST /rides` needs in Story 3.2 anyway.
+
+The `GET` argument is cacheability, and it does not apply: a quote moves with surge, so it is not
+cacheable, and advertising it as cacheable would be actively wrong. AD-40's `ETag`/`304` handling is
+for **ride detail**, not for quotes.
+
+**The `QUERY` method was considered and rejected on tooling, not on semantics** (raised 2026-08-26).
+QUERY is the proposed safe-and-idempotent method that carries a body, which is *exactly* this
+endpoint's shape — and the obvious objection, that a quote returns a different price at different
+times, **is not an objection**: HTTP idempotency is about the effect on the server, not the response.
+`GET /stock-price` is safe and idempotent and changes every second. A quote's effect is zero, twice
+over, which is what AC1's "no ride is created" says.
+
+What rules it out is that **Spring cannot express it.** `@RequestMapping(method = …)` takes
+`RequestMethod`, which in Spring Framework 7.0.8 — the version Boot 4.1 ships — is a **closed enum**
+of `GET HEAD POST PUT PATCH DELETE OPTIONS TRACE`, verified by reading the class. Serving QUERY needs
+a custom `RequestCondition` or `HandlerMapping`, and probably a servlet-layer workaround too, since
+`HttpServlet.service()` answers `501` to methods it does not know. Against that, QUERY's one real
+gain over POST is cacheability — which a surge-priced quote cannot use anyway.
+
+Revisit only if QUERY is published *and* `RequestMethod` gains it. **Do not hand-roll it**:
+project-context.md → YAGNI, name the failure it prevents. There isn't one.
+
+### A2 — why the path is `/rider/v1/…`, and why the prefix is derived from a package (D1)
+
+**Settled by the repo owner on 2026-08-26.** No planning document mentions URL versioning or path
+layout anywhere — checked across the spine, the PRD, the addendum, SPEC, the glossary and every epic.
+
+**The first segment names the actor, and that is what makes the gateway's route list one rule per
+backend.** AD-5 routes to four — `rider-service`, `driver-service`, the Stripe webhook and audit's
+query API — and frames its list as growing *"when a new **actor** appears"*. A bare `/v1/…` cannot
+distinguish them, so the gateway would need a rule per **resource** instead, editing
+`infra/haproxy.cfg` every time any story adds an endpoint. With the actor first, PUB-4-3 writes
+`path_beg /rider/` once and Story 3.2's `/rider/v1/rides` needs no gateway change.
+
+**`/rider`, not `/rider-service`.** AD-12 puts the `-service` suffix on containers, directories and
+Kubernetes resources, and keeps it off identifiers: *"Java packages stay suffix-free
+(`com.puber.rider`)."* A public URL is closer to an identifier a client depends on than to a
+deployment name, and the segment's job here is to name **the actor whose API this is** — which is
+also why AD-5's list is organised by actor rather than by process. **The Stripe webhook is the one
+that will not fit this shape** (Stripe is the caller, not an actor with an API, and nothing versions
+it for us) — leave that to Epic 5 rather than forcing it now.
+
+If the directory keeping its suffix while the URL drops it reads as inconsistent, it is the same split
+AD-12 already makes between `com.puber.rider` and `services/rider-service/`.
+
+**It is not a YAGNI violation, and the PRD is why.** The usual objection — nothing asks for a `v2`,
+so a prefix guards a migration with no requirement behind it — does not hold for this project, whose
+stated deliverable is *"deep, demonstrable engineering experience and a portfolio narrative: a system
+whose architecture, trade-offs, and migration stories hold up under senior-engineer interview
+scrutiny"* (prd.md#Context). Under that framing the named failure is real: an unversioned public API
+has no versioning story to show. There will almost certainly never be a `v2`; the point is that the
+shape is right the first time, because retrofitting a prefix onto a live URL is the breaking change
+`/v1` exists to avoid.
+
+**It also makes the two contracts symmetric.** The internal hop is already `puber.quote.v1` (PUB-4-1,
+shipped); now the external one is versioned too — by path rather than by package, which is the
+ordinary split between a public REST surface and an internal protobuf one.
+
+**Why the predicate is per-package rather than a blanket one.** A single
+`addPathPrefix("/rider/v1", <every controller>)` looks equivalent today and is not: adding v2 would
+force a predicate that *excludes* the v1 classes, or `/rider/v2` hand-written into a mapping — either
+way an edit to code that already shipped, which is what a version prefix exists to avoid. With a
+package per version, v1 is closed the moment v2 opens.
+
+**Why the gateway does not rewrite.** The alternative — the gateway stripping `/rider` and the app
+serving `/v1/…` — would leave this service's own integration tests hitting a path no client ever uses,
+since those tests run in-JVM on a random port and never traverse HAProxy. Same path everywhere is
+worth more than a shorter mapping.
+
+### A3 — why the response fields are bare `fare`, `distance` and `eta` (D1)
+
+**Settled by the repo owner on 2026-08-26**, against the alternative `fareMinorUnits` /
+`distanceMetres`. The argument for the long form was that `fare: 1100` invites a reader to see €1,100;
+the argument that won is that this system has exactly one money representation and one wire distance
+unit — the Money convention is *"integer minor units everywhere"* and metres is the only distance that
+crosses a boundary — so a client learns the units once, from the contract, rather than from every
+field name. **Renaming the JSON later breaks every client**, so this was the moment it was cheap.
+
+**`eta` is short too**, settled the same day, over the objection that a duration has several plausible
+encodings — minutes, seconds, ISO-8601 `PT8M`, an absolute arrival time — where `fare` and `distance`
+each have only one.
+
+**The unit is not undocumented, it is just not in the JSON key**, and three places say so: the proto
+field is `eta_minutes` (so the hop between services carries it explicitly), the glossary defines ETA
+as derived from the fixed 30 km/h speed at *"exactly 2 minutes per kilometre"*, and AD-62 ties that
+speed to the trip duration.
+
+**Why the wire and the JSON disagree.** `rider-service` is a protocol translator: `QuoteResponse` is a
+DTO mapped from `model/Quote`, not the proto message re-serialized. The proto keeps its units because
+inside `matching-service` the arithmetic is right there, and AD-33 makes a field rename a breaking
+change.
+
+### A4 — why `X-Rider-Id` is required on an endpoint that does not use it (D2)
+
+Name the failure it prevents, per project-context.md → YAGNI: without it, the quote endpoint works
+anonymously, and Story 3.2 then has to make identity mandatory on an endpoint where it was optional —
+which AD-33 classifies as *changing what a field means*, a breaking change. One identity rule for the
+whole façade, from the first endpoint, avoids that.
+
+The counter-argument is the plain YAGNI one: nothing reads it, so nothing needs it. The repo owner may
+still make it optional-when-present; until then it is required.
+
+### A5 — why the gRPC client interceptor is wired in `config` rather than self-registering (D3, D5a)
+
+**Settled by the repo owner on 2026-09-09.** `GrpcClientConfiguration` is the whole gRPC-client setup:
+the channel address, the stub types, and the interceptor chain that hangs off the channel.
+
+**The split is on where the thing attaches, not on taste.** A servlet `Filter` and a
+`@RestControllerAdvice` attach to the servlet container, which no class in this service configures —
+so there is no file they could be wired *in*, and self-registration is the only shape available. A
+`ClientInterceptor` attaches to a **channel**, and the channel is precisely what
+`GrpcClientConfiguration` exists to configure. Splitting the channel's address and its interceptor
+chain across two files means the answer to *"what does this service's gRPC client do"* is in two
+places, and one of them is a package you would not think to open.
+
+**This differs from the `SystemClock` / `ClockConfiguration` pattern in one respect**: that pattern
+exists because `config` owns the wiring for a *Strategy seam*, so no class can name a concrete
+implementation. None of these is a strategy and none has a second implementation, so no seam is being
+protected — `GrpcClientConfiguration` names `RequestIdClientInterceptor` directly and that is fine.
+
+**The evidence for the mandatory annotation.** Verified against `spring-grpc-core-1.1.0` on 2026-09-09
+by reading the bytecode: `ClientInterceptorsConfigurer.findGlobalInterceptors()` calls
+`ApplicationContextBeanLookupUtils.getBeansWithAnnotation(ctx, ClientInterceptor.class,
+GlobalClientInterceptor.class)`, so a plain `@Bean ClientInterceptor` is **not** collected. The
+annotation is declared `@Target({TYPE, METHOD})`, which is why putting it on a `@Bean` method is a
+supported shape and not a trick.
+
+**What this costs `shared`'s copy story, and why it is acceptable.** D5a's claim is that `shared` is
+one directory to copy with one `package` line to change and nothing to re-wire. That is still true of
+three of the four classes; `RequestIdClientInterceptor` now needs a `@Bean` method in the receiving
+service too. **It is not a forgettable edit, because the receiving service is writing that file
+anyway** — `driver-service` (Epic 2) has different stub types and must author its own
+`GrpcClientConfiguration` regardless, so the interceptor bean goes in beside them rather than into a
+file nobody was going to open. Task 7.1 records this so Epic 2 does not rediscover it.
+
+### A6 — why the wire DTOs are in `dto/v1` and not in `controller` or `model` (D5)
+
+**Settled by the repo owner on 2026-09-09.** `controller` holds controllers; a package that holds both
+a controller and the records it serializes is two kinds of thing under one name, and the name only
+describes one of them.
+
+**Why not `model`.** `RequestQuote` returns a `Quote` from `model` and the controller maps that to
+`QuoteResponse`. Putting the DTOs in `model` would either drag Jackson into the domain package — which
+`modelDependsOnNothingFrameworkFlavoured` fails the build on — or make the controller a passthrough
+that proves nothing.
+
+**Why they carry the version.** `QuoteRequest` and `QuoteResponse` *are* the contract — a v2 exists
+precisely because a shape changed — so they cannot sit in a shared `dto` root that both versions read.
+`controller.v2` and `dto.v2` are separate packages because they are different kinds of thing, not
+because they version separately.
+
+**Why the new ArchUnit rule was necessary.** While the DTOs sat in `controller.v1`,
+`nothingDependsOnController` mechanically stopped `service` from importing them; in `dto.v1` nothing
+does. The failure that guard prevents is real and concrete: `RequestQuote` returns `QuoteResponse`
+directly, the controller becomes the passthrough this decision exists to avoid, and the wire shape
+becomes the domain — a rename in the JSON then reaches into the service layer.
+
+### A7 — why `RequestId` is extracted now and was not in PUB-4-1 (D5a)
+
+The header, the gRPC metadata key, the MDC key and the log pattern's `%X{…}` are four strings that
+have to match; a mismatch is silent — the filter writes MDC under one name, the pattern reads another,
+and every log line shows a blank id while the tests still pass. One type holding all four, plus
+`mint()`, is the guard. That is a named, reproducible failure, so it survives YAGNI.
+
+**It was right not to extract it in PUB-4-1, and it is right to extract it now** — the difference is
+what justifies either. `matching-service` had **one** class needing the four names, so a constants
+type would have been indirection with nothing to hold together. This service has **three**: the
+filter, the client interceptor, and the log pattern's key.
+
+---
+
 ## Questions for the repo owner
 
-None of these blocks implementation — every one is pinned above so the dev agent has a deterministic
-answer. They are here because the answer was **chosen by this slice rather than found in a document**.
+None of these blocks implementation — every one is pinned in the decisions section so the dev agent
+has a deterministic answer. **These are for you, not for the dev agent**, which is told the decisions
+are frozen.
 
-1. **`POST /quotes` rather than `GET /quotes` (D1).** A quote creates nothing, which argues for `GET`.
-   I chose `POST` because the input is a pair of coordinate pairs, because a JSON body is what gives
-   AC5 a real 400 to map, and because `POST /rides` needs the same shape in Story 3.2. Switching means
-   changing the DTOs, the malformed-request tests, and PUB-4-3's HAProxy `path_beg` rule — so this is
-   the moment.
-2. **`X-Rider-Id` is required on `/quotes`, and a quote does not use it (D2).** The failure I named is
-   that making identity mandatory later is an AD-33 breaking change. The counter-argument is YAGNI:
-   nothing reads it, so nothing needs it. Say the word and it becomes optional-when-present.
-3. **Response field names are `fareMinorUnits` and `distanceMetres` (D1).** Verbose deliberately —
-   `fare: 1100` invites someone to read €1,100. If you would rather have `fare` and `distance` with
-   the units in documentation, that is a one-line change now and a breaking one later.
-4. **`make test` gets slower.** `test-integration` gains `images` and brings up `matching-service` as
+1. **`X-Rider-Id` is required on the quote endpoint, and a quote does not use it (D2, Appendix A4).**
+   The failure named is that making identity mandatory later is an AD-33 breaking change. The
+   counter-argument is YAGNI: nothing reads it, so nothing needs it. Say the word and it becomes
+   optional-when-present. **This is the only one still genuinely open.**
+2. **Settled, listed so you can see what was chosen rather than found:** `POST` over `GET` and `QUERY`
+   (A1), the `/rider/v1/…` path scheme and its package-derived prefix (A2), bare `fare` / `distance` /
+   `eta` (A3), the gRPC interceptor wired in `config` (A5), wire DTOs in `dto/v1` (A6). Each has its
+   full argument in Appendix A, including what was rejected and why.
+3. **`make test` gets slower.** `test-integration` gains `images` and brings up `matching-service` as
    well as Postgres, because `rider-service`'s tests need a real gRPC peer. `pre-push` runs
    `make test`, so every push pays it. PUB-4-3 adds two more containers on top.
 
@@ -790,3 +1273,6 @@ answer. They are here because the answer was **chosen by this slice rather than 
 | Date | Change | By |
 | --- | --- | --- |
 | 2026-08-25 | Story created from epic-1 Story 1.4 as PUB-4, then split into PUB-4-1/2/3 at the repo owner's request; this is slice 2 | bmad-create-story |
+| 2026-09-09 | Wire DTOs moved from `controller/v1` to their own `dto/v1` package at the repo owner's request (D1, D5). Adds `onlyControllerDependsOnDto` and Task 4.7 to replace the guard `nothingDependsOnController` was giving them for free; Task 7.2's spine row now also records `dto` as a layer AD-7 does not list | bmad-create-story |
+| 2026-09-09 | `RequestIdClientInterceptor` is now a plain class in `shared`, registered as a `@Bean @GlobalClientInterceptor` in `GrpcClientConfiguration`, at the repo owner's request — one file holds the whole gRPC client setup (D3, D5a, Tasks 2.4, 3.2, 7.1). `RequestIdFilter` and `ProblemDetailsHandler` still self-register; D5a records why the two cases differ | bmad-create-story |
+| 2026-09-09 | Decisions section trimmed from 473 to 320 lines and marked **FROZEN** at the repo owner's request: D1–D6 now carry only what to build, and every rejected-alternative and justification paragraph moved verbatim into the new **Appendix A**. Nothing deleted, nothing duplicated. "Questions for the repo owner" reduced to the one item still open | bmad-create-story |
