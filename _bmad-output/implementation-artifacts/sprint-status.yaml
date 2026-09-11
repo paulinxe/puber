@@ -1,5 +1,5 @@
 # generated: 2026-08-17
-# last_updated: 2026-08-26 (PUB-4-1 reviewed and moved to done; PUB-4 umbrella in-progress until 4-3 lands)
+# last_updated: 2026-09-11 (PUB-4-2 reviewed by the repo owner and released to dev; PUB-4 umbrella in-progress until 4-3 lands)
 # project: puber
 # project_key: PUB
 # tracking_system: file-system
@@ -66,7 +66,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-08-17
-last_updated: 2026-08-26
+last_updated: 2026-09-11
 project: puber
 project_key: PUB
 tracking_system: file-system
@@ -85,11 +85,17 @@ development_status:
   # backlog -> in-progress when PUB-4-1 starts; -> done when PUB-4-3 is done.
   PUB-4-rider-gets-a-fare-quote-through-the-gateway: in-progress  # Story 1.4 (umbrella)
   PUB-4-1-the-contract-and-the-quote-over-grpc: done  # Story 1.4, slice 1 of 3
-  # PUB-4-2, PUB-4-3 and PUB-60: story files EXIST and are complete, but the repo owner has not
-  # reviewed them yet (2026-08-26), so no dev run may pick them up. Held at `backlog` deliberately --
-  # `ready-for-dev` is a claim that a dev agent may start, and that is not true of these three yet.
-  # Move each to `ready-for-dev` after reviewing it. Sequencing is unchanged: 4-1, 4-2, 4-3, then 60.
-  PUB-4-2-rider-service-delivers-the-quote: backlog  # Story 1.4, slice 2 of 3 -- file written, awaiting review
+  # PUB-4-3 and PUB-60: story files EXIST and are complete, but the repo owner has not reviewed them
+  # yet, so no dev run may pick them up. Held at `backlog` deliberately -- `ready-for-dev` is a claim
+  # that a dev agent may start, and that is not true of these two yet. Move each to `ready-for-dev`
+  # after reviewing it. Sequencing is unchanged: 4-1, 4-2, 4-3, then 60.
+  #
+  # PUB-4-2 was reviewed and approved by the repo owner on 2026-09-11. That review changed the spec in
+  # five places, all recorded in the story's Change Log: wire DTOs moved to `dto/v1`; the gRPC client
+  # interceptor wired in `GrpcClientConfiguration`; the decisions section frozen with its reasoning
+  # split into Appendix A; `model/Quote`'s ETA pinned to `OptionalLong`; and `matching-service` stubbed
+  # rather than called in tests -- which narrowed a rule in AGENTS.md and project-context.md.
+  PUB-4-2-rider-service-delivers-the-quote: ready-for-dev  # Story 1.4, slice 2 of 3 -- owner-reviewed 2026-09-11
   PUB-4-3-the-gateway-is-the-front-door: backlog  # Story 1.4, slice 3 of 3 -- file written, awaiting review
   # Added 2026-08-26. Sequenced after all of PUB-4, so it covers both services.
   # JSpecify annotations + an ArchUnit coverage rule. Adds no nullness checker -- see the story.

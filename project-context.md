@@ -240,11 +240,42 @@ decision.
 
 ## Real datastores only (AD-10, AD-56)
 
-No H2, HSQLDB, embedded Postgres, fake repository, or self-starting container — anywhere. Race-safety
-*is* Postgres's behaviour, so every concurrency claim is worth only what the datastore under the test
-was. **Nothing enforces this mechanically; it is upheld here.** Reaching for Testcontainers is the
-ecosystem's default answer to "these tests feel slow" — treat adding it as an architecture decision,
-not a tooling choice.
+No H2, HSQLDB, embedded Postgres, fake repository, or self-starting container — for a service's
+**own** datastores, anywhere. Race-safety *is* Postgres's behaviour, so every concurrency claim is
+worth only what the datastore under the test was. **Nothing enforces this mechanically; it is upheld
+here.** Reaching for Testcontainers is the ecosystem's default answer to "these tests feel slow" —
+treat adding it as an architecture decision, not a tooling choice.
+
+### Own datastores are real. Another service is stubbed.
+
+**Settled 2026-09-11, during PUB-4-2 — the first story where one service calls another.** The line is
+the service boundary:
+
+| In a service's own suite | Treatment |
+| --- | --- |
+| Its own Postgres, Redis, and later the topics it owns | **real**, from the Compose stack |
+| Its own repositories, services, `Clock`, transports | **real** — reach them through the outermost surface (AGENTS.md) |
+| **Another service** (`rider-service` → `matching-service`) | **stubbed in-process, against the contract in `contracts/proto`** — never called |
+
+**The reason is portability, not speed.** `infra/docker-compose.yml` holding every service is a
+convenience of this repository; the architecture is one repo per service (AD-52 already gives each its
+own wrapper, build and Dockerfile). A suite that only passes because a *sibling* service happens to be
+running is a suite that cannot move to that service's own repository, and cannot run in a per-repo CI
+job. That stops being hypothetical the moment any service gets its own pipeline.
+
+**Stub against the generated contract, never by hand.** The stub implements the same
+`contracts/proto` service definition the real peer implements, so a proto change breaks both sides at
+compile time. A hand-rolled fake that returns plausible JSON is the thing this rule is not asking for.
+
+**The named cost: nothing in a service's own suite proves the two services still agree.** Shapes
+cannot drift, because both compile against the same proto; **behaviour can.** That gap is covered by
+**one end-to-end test at the gateway slice** (PUB-4-3), which brings the whole stack up anyway —
+gateway → `rider-service` → `matching-service`, one real quote. Do not try to close it a second time
+inside a single service's suite; that is what this rule just removed.
+
+**This narrows an earlier, broader rule.** Until 2026-09-11 AGENTS.md read *"no mocked collaborator
+that the Compose stack is already running"*, which banned stubbing a sibling service. That was written
+before any service called another and it overreached.
 
 - Tests run in the Dockerfile's **build stage image**, as a throwaway container on the Compose network.
   No separate runner image, and **no `/var/run/docker.sock` mount, ever**.

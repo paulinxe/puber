@@ -137,9 +137,11 @@ do its job, the test belongs in `src/integrationTest/java`.
 
 **Two consequences worth stating separately:**
 
-- **No mocked repositories, ever, and no mocked collaborator that the Compose stack is already
-  running.** Race-safety *is* Postgres's behaviour (AD-10), and the test runner joins the Compose
-  network, so the real callee is reachable. See project-context.md → "Real datastores only".
+- **Real inside the service, stubbed at its edge.** A service's **own** datastores are always real —
+  no mocked repository, ever, because race-safety *is* Postgres's behaviour (AD-10). Its **internal**
+  collaborators are never mocked either: reach them through the outermost surface, as above. But
+  **another service is stubbed**, never called. See project-context.md → "Real datastores only" for
+  where that line sits and what it costs.
 - **If you cannot reach the behaviour from the outermost surface, that is a finding, not a reason to
   drop down a level.** Ask whether the code should exist at all before writing a unit test that
   reaches it artificially — project-context.md → YAGNI.

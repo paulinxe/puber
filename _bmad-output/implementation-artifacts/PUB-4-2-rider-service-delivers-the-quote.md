@@ -209,7 +209,7 @@ because a class matching two entries resolves by map iteration order, which is n
 on. → Appendix A2 for why the predicate is per-package rather than blanket.
 
 **The DTOs carry the same version, in their own package: `dto/v1`** (D5). A version is **two packages
-that open and close together**, `controller.v2` beside `dto.v2`. `ProblemDetailsHandler` is the
+that open and close together**, `controller.v2` beside `dto.v2`. `ErrorDetailsHandler` is the
 exception and stays in `shared`: AD-38's error vocabulary is one thing across every version.
 
 **`nothingDependsOnController` still binds** — it is written `..controller..` and matches
@@ -322,7 +322,7 @@ AD-9 is explicit: *"`matching-service` alone splits by feature."* So `rider-serv
 ```
 com.puber.rider
   RiderServiceApplication
-  shared/      RequestId  RequestIdFilter  RequestIdClientInterceptor  ProblemDetailsHandler
+  shared/      RequestId  RequestIdFilter  RequestIdClientInterceptor  ErrorDetailsHandler
   config/      GrpcClientConfiguration  ApiVersionConfiguration
   controller/
     v1/        QuotesController
@@ -365,10 +365,25 @@ whoever hits that will weaken the rule rather than the code.
 puts a framework dependency on whichever class carries it. Set
 
 ```properties
-spring.jackson.default-property-inclusion=non_null
+spring.jackson.default-property-inclusion=non_absent
 ```
 
 instead — one line, no annotation, and the model rule stays clean.
+
+**`non_absent`, not `non_null`, and the difference is the difference between passing AC2 and failing
+it.** `NON_NULL` does **not** drop an empty `Optional` — it emits the key with a `null` value. Proven
+against `jackson-databind 3.1.4` on 2026-09-11 by serializing both shapes:
+
+```
+NON_NULL    OptionalLong.empty -> {"fare":1100,"distance":4148,"eta":null}   <- AC2 fails
+NON_NULL    Long null          -> {"fare":1100,"distance":4148}
+NON_ABSENT  OptionalLong.empty -> {"fare":1100,"distance":4148}
+NON_ABSENT  Long null          -> {"fare":1100,"distance":4148}
+```
+
+`non_absent` is correct for **both** field shapes, so it removes the trap rather than depending on
+nobody walking into it. Task 6.1 asserts the key is absent, not that it is null — which is what
+catches this if the setting is ever changed back.
 
 **No `strategy` package and no `Clock` in `rider-service`.** It varies nothing and reads no time.
 Creating either would be scaffolding an empty layer to match a diagram, which project-context.md
@@ -390,7 +405,7 @@ com.puber.rider.shared
   RequestId.java                     the four names and the minting, in one place
   RequestIdFilter.java               inbound HTTP: read or mint, MDC, echo, clear in a finally
   RequestIdClientInterceptor.java    outbound gRPC: MDC -> metadata (plain class, wired in config)
-  ProblemDetailsHandler.java         @RestControllerAdvice -> RFC 9457 carrying the request id
+  ErrorDetailsHandler.java           @RestControllerAdvice -> RFC 9457 ProblemDetail + request id
 ```
 
 **Flat, with no sub-layers.** Four classes do not need four layers, and a flat package is **one
@@ -410,11 +425,11 @@ transports a service has:
 | Service | Transports | Its `shared` holds |
 | --- | --- | --- |
 | `matching-service` | gRPC server | `RequestId`, `RequestIdServerInterceptor`, `UnexpectedGrpcFailureStatusMapper` |
-| `rider-service` | HTTP edge + gRPC client | `RequestId`, `RequestIdFilter`, `RequestIdClientInterceptor`, `ProblemDetailsHandler` |
+| `rider-service` | HTTP edge + gRPC client | `RequestId`, `RequestIdFilter`, `RequestIdClientInterceptor`, `ErrorDetailsHandler` |
 | `driver-service` (Epic 2) | HTTP edge + gRPC client | the same four as `rider-service` |
 
 **The HTTP-edge classes self-register; the gRPC client interceptor is wired in `config`.**
-`RequestIdFilter` carries `@Component` and `ProblemDetailsHandler` carries `@RestControllerAdvice`.
+`RequestIdFilter` carries `@Component` and `ErrorDetailsHandler` carries `@RestControllerAdvice`.
 `RequestIdClientInterceptor` is a **plain class with no annotation at all**, declared as a `@Bean` in
 `GrpcClientConfiguration` (D3). → Appendix A5.
 
@@ -444,7 +459,7 @@ add the layer rules:
 `sharedDependsOnNoFeaturePackage` forbids `shared` depending on a *feature* (`fare`, `ride`, …), which
 is a matching-service concern. What `rider-service` needs is stronger and simpler:
 **`com.puber.rider.shared..` may depend on nothing else under `com.puber.rider..`** — not `controller`,
-not `dto`, not `service`, not `model`, not `config`. The moment `ProblemDetailsHandler` references
+not `dto`, not `service`, not `model`, not `config`. The moment `ErrorDetailsHandler` references
 `Quote`, the directory stops being liftable into `driver-service` and nobody finds out until they try.
 **Prove it by planting** (Task 4.6).
 
@@ -460,6 +475,38 @@ saying why and naming what would bring it back.
 
 **Copy the rule bodies, not a shared class.** They are test code, and no service depends on another's
 code. They were written to copy cleanly — no `matching`-specific names in any of them.
+
+### D7 — `matching-service` is stubbed in this service's tests, never called
+
+**The rule lives in project-context.md → "Own datastores are real. Another service is stubbed."** Read
+it there; it is not restated here. What follows is only what *this slice builds*.
+
+`rider-service` owns no datastore, so **its integration tests need no container at all**. They boot
+`rider-service` and an in-process gRPC stub of `QuoteService` in the same JVM:
+
+```
+src/integrationTest/java/com/puber/rider/
+  support/StubQuoteService.java     extends QuoteServiceGrpc.QuoteServiceImplBase
+                                    -- generated from contracts/proto, so a proto change breaks it
+                                    -- records the Metadata it received; returns what the test sets
+```
+
+- **It implements the generated base class**, so the request and response shapes cannot drift from the
+  real peer without a compile error. Do not hand-roll a fake that returns plausible values.
+- **It records the `Metadata` it received**, which is what Task 6.6 asserts on. A receiver that saw the
+  header is stronger evidence than a sender that attached one.
+- **It can return a `Status` as well as a response**, which is how Task 6.2 produces `INVALID_ARGUMENT`
+  without needing `matching-service` to be wrong about a latitude.
+- **Transport:** `@AutoConfigureTestGrpcTransport` plus the auto-configured `GrpcChannelFactory`, the
+  shape project-context.md already records for a gRPC test. **Verify it wires the client side the same
+  way** — PUB-4-1 used it for a server and this is the first client use. If it does not, say so in the
+  completion notes and use an explicitly-built in-process channel instead.
+- **`support/`, not `rules/fixtures/`.** The latter is for deliberate rule-violators scanned by
+  ArchUnit (project-context.md); this is neither.
+
+**What this does not prove, and where that is covered:** nothing here shows `rider-service` and
+`matching-service` still agree on *behaviour*. That is one end-to-end test at **PUB-4-3**, which brings
+the whole stack up for the gateway anyway. → Appendix A8.
 
 ---
 
@@ -526,9 +573,9 @@ code. They were written to copy cleanly — no `matching`-specific names in any 
 
 - [ ] **2.1** `RiderServiceApplication.java` — `@SpringBootApplication`, nothing else.
 - [ ] **2.2** `model/Quote.java` — a record carrying `long fareMinorUnits`, `long distanceMetres`, and
-      an ETA the service can leave absent. **Use `Long` (nullable) or `OptionalLong`, and say which in
-      the completion notes** — the point is that "no ETA" is representable without a sentinel, matching
-      the contract's `optional`.
+      **`OptionalLong etaMinutes`**. Settled by the repo owner on 2026-09-11; `Long` was the
+      alternative. "No ETA" is representable without a sentinel and without a null, matching the
+      contract's `optional`. **The domain record only** — the DTO is a different decision, see 2.5.
       **The domain record keeps its unit suffixes while the DTO drops them** (D1): it holds raw `long`s
       with no `Money` or `Distance` type to carry the meaning, unlike `matching-service`'s
       `quote/model/Quote`, so here the name is the only thing saying what the number is. **Do not
@@ -545,14 +592,26 @@ code. They were written to copy cleanly — no `matching`-specific names in any 
 - [ ] **2.5** `dto/v1/QuoteRequest.java` / `QuoteResponse.java` — plain records, no annotations
       (D5). Nested `Coordinates` record for the pair-of-pairs shape. `QuoteResponse` is
       `fare` / `distance` / `eta` per D1 — all three bare, with `eta` fixed at minutes.
+      **`eta` is a nullable `Long` here, not an `OptionalLong`** — do **not** mirror `model/Quote`'s
+      shape onto the wire. An `Optional` is a return type, not a field a serializer should meet, and
+      D5's `non_absent` is what makes either shape produce an absent key. Keeping the DTO on a plain
+      nullable box means the wire type is the one every HTTP client already expects.
 - [ ] **2.6** `controller/v1/QuotesController.java` — `@PostMapping("/quotes")`, served at
       `/rider/v1/quotes` via Task 2.9's prefix (D1) — **do not spell the prefix here**. Named for the
       resource it serves, so the class and the path agree. Reads `X-Rider-Id` and rejects blank
       or missing (D2), calls `RequestQuote`, maps `Quote` → `QuoteResponse`. **It is the only class
       in the service that may import `dto.v1`** — Task 4.7's rule enforces that.
-- [ ] **2.7** `shared/ProblemDetailsHandler.java` (D5a — **`shared`, not `controller`**) — a
-      `@RestControllerAdvice` producing
-      `org.springframework.http.ProblemDetail` (AC5). AD-38's table, **restricted to what can occur
+      The ETA is the one field that changes shape in that mapping:
+      `quote.etaMinutes().isPresent() ? quote.etaMinutes().getAsLong() : null`. `OptionalLong` has no
+      `map` to a boxed type, so this is the whole conversion — do not add a helper for it.
+- [ ] **2.7** `shared/ErrorDetailsHandler.java` (D5a — **`shared`, not `controller`**) — a
+      `@RestControllerAdvice` producing `org.springframework.http.ProblemDetail`, the RFC 9457 media
+      type `application/problem+json` (AC5). **The class is named for AD-38's vocabulary ("one error
+      vocabulary, mapped at the façade") and not for the type it returns**, settled by the repo owner
+      on 2026-09-11 — so the RFC and the Spring type are named here and in D5a rather than in the
+      identifier. Do not rename it back to match `ProblemDetail`, and do not confuse it with Spring's
+      own `ErrorAttributes` / `ErrorController`, which are a different mechanism this service does not
+      use. AD-38's table, **restricted to what can occur
       today**: `INVALID_ARGUMENT` → 400, `UNAVAILABLE` → 503, anything else → 500; plus Spring's own
       deserialization and missing-header failures → 400. Every body carries the request id as a
       property. **Do not implement rows for statuses no code can produce yet** —
@@ -596,12 +655,12 @@ touches code PUB-4-1 already shipped; it is a move plus one extraction, and it c
       value into metadata under `RequestId.METADATA_KEY`. **A plain class: no `@Component`, no
       `@GlobalClientInterceptor` on the class.** Task 2.4's `@Bean` in `GrpcClientConfiguration` is
       what registers it, so all gRPC client wiring reads from one file (D3, D5a). It differs from
-      `RequestIdFilter` and `ProblemDetailsHandler`, which do self-register — D5a says why.
+      `RequestIdFilter` and `ErrorDetailsHandler`, which do self-register — D5a says why.
 - [ ] **3.3** `logging.pattern.level=%5p [%X{requestId:-}]` in `application.properties`, so the id
       is on **every** line and not only the ones that remember to interpolate it. **Do not reach for
       `logging.pattern.correlation`** — in Boot that slot is driven by Micrometer tracing's trace and
       span ids, which this project does not have.
-- [ ] **3.4** `ProblemDetailsHandler` sets the id as a Problem Details property (AC5's second clause).
+- [ ] **3.4** `ErrorDetailsHandler` sets the id as a Problem Details property (AC5's second clause).
 
 **`matching-service`, moving its half into `shared` (D5a):**
 
@@ -614,7 +673,7 @@ touches code PUB-4-1 already shipped; it is a move plus one extraction, and it c
       so nothing about its wiring changes. Its `REQUEST_ID_HEADER` constant moves to `RequestId`.
 - [ ] **3.7** Move `config/UnexpectedGrpcFailureStatusMapper.java` →
       `shared/UnexpectedGrpcFailureStatusMapper.java`. It is AD-38's "one error vocabulary" for a gRPC
-      edge — the same convention `ProblemDetailsHandler` is for an HTTP one — so it belongs beside it.
+      edge — the same convention `ErrorDetailsHandler` is for an HTTP one — so it belongs beside it.
 - [ ] **3.8** Fix the one caller: `QuoteGrpcIntegrationTest` imports
       `com.puber.matching.config.RequestIdServerInterceptor` (line 19) and reads
       `RequestIdServerInterceptor.REQUEST_ID_HEADER` (line ~343). Repoint both at
@@ -656,7 +715,7 @@ touches code PUB-4-1 already shipped; it is a move plus one extraction, and it c
       instead of it: the feature clause is AD-9's and still binds, and the new clause is stronger in a
       different direction.
 - [ ] **4.6** **Prove 4.5 fires, in both services.** In `rider-service`, plant an import of
-      `com.puber.rider.model.Quote` into `ProblemDetailsHandler`. In `matching-service`, plant an
+      `com.puber.rider.model.Quote` into `ErrorDetailsHandler`. In `matching-service`, plant an
       import of `com.puber.matching.quote.model.Quote` into `RequestIdServerInterceptor` — which also
       re-proves the feature clause did not already cover it. Run `make test`, capture each failure,
       revert, confirm green. Then check neither is vacuous: point a rule at a package that does not
@@ -680,16 +739,17 @@ touches code PUB-4-1 already shipped; it is a move plus one extraction, and it c
       the runtime image has no `curl` and deliberately stays that way.
 - [ ] **5.2** **Do not touch `matching-service`'s `ports:` block.** Removing it is PUB-4-3's AC3 work;
       doing it here leaves the system with nothing reachable and no gateway to replace it.
-- [ ] **5.3** `tests` service: add `MATCHING_SERVICE_GRPC_TARGET` to its environment and
-      `matching-service: condition: service_healthy` to its `depends_on`. `rider-service`'s
-      integration tests boot `rider-service` **inside the runner container**, so its gRPC client has to
-      reach the real `matching-service`; without this they fail on a channel they cannot open.
+- [ ] **5.3** `tests` service: **no change, and that is the point** (D7). `rider-service`'s
+      integration tests stand up an in-process stub, so they need neither `MATCHING_SERVICE_GRPC_TARGET`
+      nor a `depends_on: matching-service`. **If you find yourself adding either to make a test pass,
+      stop** — the test is reaching for the real peer and D7 says it must not.
 - [ ] **5.4** **There is still exactly one test runner, and it is built from `matching-service`'s
       Dockerfile.** It is a JDK-and-Gradle image; the Makefile points it at each service with
       `--workdir` and the mounted workspace supplies the sources. **Do not add a second `tests`
       service** — the only thing it would give you is a second image to keep in step.
-- [ ] **5.5** `Makefile`: `test-integration` must bring up `matching-service` (not just
-      `matching-postgres`) and gains `images` as a prerequisite, so it still works on a fresh clone.
+- [ ] **5.5** `Makefile`: `test-integration` needs **no new dependency for this service** — it already
+      brings up `matching-postgres` for `matching-service`'s own suite, and `rider-service` adds
+      nothing (D7). **Do not add `matching-service` to it.**
       `build`, `format`, `test-unit` and `static-analysis` need no change — they iterate
       `$(SERVICES)` and the wrapper from Task 1.1 is enough. `run` brings up `rider-service` too.
       Update the `help` text if any of it stops being true.
@@ -704,15 +764,27 @@ touches code PUB-4-1 already shipped; it is a move plus one extraction, and it c
 Unit tests in `src/test/java`, integration tests in `src/integrationTest/java`, `snake_case` methods,
 `@DisplayName` carrying the `AC<n>:` reference (AGENTS.md → Test Naming and Placement).
 
-- [ ] **6.1** Integration: `POST /rider/v1/quotes` returns 200 with `fare` and `distance`
-      matching a **hand-computed** expectation for two **distinct** coordinates, and **no `eta`
-      key at all** (AC1b, AC2). Assert the key's absence, not that its value is null. Two distinct
-      coordinates, never the same point twice — PUB-3's review proved a same-point test multiplies
-      every rate by zero and cannot fail.
-- [ ] **6.2** Integration: four malformed requests — no body, a non-JSON body, a missing `dropoff`, and
-      an out-of-range latitude — each answer **400**, `application/problem+json`, with the request
-      id in the body (AC5). The last one is the important one: it proves PUB-4-1's `INVALID_ARGUMENT`
-      is mapped rather than leaking as a 500.
+**Every integration test below runs against D7's in-process stub, never against `matching-service`.**
+The subject is this service: the HTTP surface, the translation in both directions, the error mapping
+and the request-id chain.
+
+- [ ] **6.1** Integration: `POST /rider/v1/quotes` returns 200 with `fare` and `distance` carrying the
+      values the stub returned, and **no `eta` key at all** (AC1b, AC2). **Assert the key's absence,
+      not that its value is null** — the `non_null`/`non_absent` slip in D5 produces `"eta":null`,
+      which a null-valued assertion would wave through.
+      **This is a translation test, not a pricing test, and the values must make that obvious.**
+      Have the stub return numbers no fare rule would ever produce — `fare_minor_units = 7`,
+      `distance_metres = 3` — so a reader cannot mistake it for a pricing assertion and nobody tries to
+      keep it in step with `fare_rules`. Pricing is proven inside `matching-service` by PUB-3 and is
+      not re-proven here. **Also assert the request the stub received** carries the two coordinate
+      strings unchanged (D4: this service passes them through and parses nothing).
+- [ ] **6.2** Integration: four failures — no body, a non-JSON body, a missing `dropoff`, and **the
+      stub answering `INVALID_ARGUMENT`** — each answer **400**, `application/problem+json`, with the
+      request id in the body (AC5). The fourth is the important one: it proves the gRPC status is
+      mapped rather than leaking as a 500. **Whether `matching-service` really returns
+      `INVALID_ARGUMENT` for an out-of-range latitude is PUB-4-1's business and PUB-4-1 tested it** —
+      do not re-prove it here, and do not send a bad latitude expecting the stub to judge it. Add one
+      more case while you are here: the stub answering `UNAVAILABLE` maps to **503** (Task 2.7's table).
 - [ ] **6.3** Integration: a request with no `X-Rider-Id` answers 400; a request carrying a rider id
       never seen before answers 200 (AC6 — "trusted as-is, no registration").
 - [ ] **6.4** Integration: health is UP and `/actuator/prometheus` serves Prometheus text format
@@ -725,13 +797,14 @@ Unit tests in `src/test/java`, integration tests in `src/integrationTest/java`, 
       prefix.
 - [ ] **6.5** Integration: a request carrying a known `X-Request-Id` gets it back on the response,
       and a request carrying none gets a minted one back (AC4b).
-- [ ] **6.6** **One test that proves the id crossed the gRPC hop** (AC4b's third clause). The cheap
-      honest form: send a known id, then assert it appears in `matching-service`'s log output for that
-      call. If that proves awkward, the alternative is a test-scoped server interceptor asserting on
-      received metadata — **say in the completion notes which one you built and what it does not
-      cover.** Asserting the id on the HTTP response only proves the filter ran.
-- [ ] **6.7** Unit: `RequestQuote` maps an absent `eta_minutes` to an absent ETA, and a present one to
-      a present one. The second case has no production producer yet and is the cheapest possible guard
+- [ ] **6.6** **One test that proves the id crossed the gRPC hop** (AC4b's third clause): send a known
+      `X-Request-Id`, then assert **D7's stub received it** in metadata under `x-request-id`. The stub
+      is the receiver, so this proves the header arrived rather than merely that something attached it.
+      **Asserting the id on the HTTP response only proves the filter ran** — that is Task 6.5, and it
+      is not this. **No log scraping**: reading another process's stdout to assert a header races the
+      flush and breaks on any log-format edit.
+- [ ] **6.7** Unit: `RequestQuote` maps an absent `eta_minutes` to `OptionalLong.empty()`, and a
+      present one to `OptionalLong.of(...)`. The second case has no production producer yet and is the cheapest possible guard
       against Story 2.6 discovering the mapping was never written.
 - [ ] **6.8** Integration: **both** shorter spellings answer `404` — `POST /quotes` and
       `POST /v1/quotes`. Cheap, and the only thing that proves the prefix is real rather than
@@ -776,6 +849,12 @@ Unit tests in `src/test/java`, integration tests in `src/integrationTest/java`, 
       trap. **Do not restate AD-5, AD-33, AD-37, AD-38 or AD-54** — CLAUDE.md forbids duplicating a
       rule across files.
 - [ ] **7.4** `deferred-work.md`: Task 4.8's closure.
+- [ ] **7.6** **The stub rule is already written** — project-context.md → "Own datastores are real.
+      Another service is stubbed.", and AGENTS.md's narrowed bullet, both edited 2026-09-11 before this
+      story was picked up. **Do not restate either** (CLAUDE.md forbids the second copy). What this
+      task owes is the one thing they defer to: raise a `sprint-status.yaml` action item, targeted at
+      **PUB-4-3**, for the single end-to-end test that closes the agreement gap. Without that item the
+      gap is recorded only in a story file nobody reads again.
 - [ ] **7.5** Anything deferred out of this slice goes in `deferred-work.md` **and** in whichever of
       the epic file / `sprint-status.yaml` `action_items` / `project-context.md` will actually surface
       it. `deferred-work.md` alone is an audit trail nothing reads.
@@ -916,6 +995,14 @@ identical is the *surface*: the same two endpoints, exposed the same way, with t
 `show-details`, `probes.enabled` and `cache.time-to-live`. **Assert on the surface, not on a body
 comparison.**
 
+**Nothing in this slice proves the two services still agree on behaviour.** Its tests run against
+D7's stub, so shapes cannot drift — both compile against the same `contracts/proto` — but nothing here
+shows `matching-service` returns what `rider-service` expects. **That is deliberate and it is covered
+once, at PUB-4-3**, which brings the whole stack up for the gateway: one end-to-end quote through
+HAProxy → `rider-service` → `matching-service`. Until that lands, the gap is real and open. Do not
+close it by reaching for the real peer here — project-context.md → "Own datastores are real. Another
+service is stubbed."
+
 **Nothing outside the Compose network can reach this endpoint yet.** `rider-service` publishes no
 port, by design — PUB-4-3's gateway is the front door. So the only callers this slice has are the
 integration tests, and a human wanting to try it must go through `docker compose exec`.
@@ -996,7 +1083,7 @@ services/rider-service/                          (new, entire tree -- AD-52: its
   src/main/java/com/puber/rider/
     RiderServiceApplication.java
     shared/      RequestId.java  RequestIdFilter.java                  (D5a -- one flat
-                 RequestIdClientInterceptor.java  ProblemDetailsHandler.java   directory, copied
+                 RequestIdClientInterceptor.java  ErrorDetailsHandler.java   directory, copied
                                                                           per service)
     config/      GrpcClientConfiguration.java  ApiVersionConfiguration.java
     controller/v1/
@@ -1012,6 +1099,7 @@ services/rider-service/                          (new, entire tree -- AD-52: its
   src/integrationTest/java/com/puber/rider/
     QuoteIntegrationTest.java                          (Tasks 6.1-6.3, 6.5, 6.6)
     HealthAndMetricsIntegrationTest.java               (Task 6.4)
+    support/StubQuoteService.java                      (D7 -- the in-process peer)
     rules/TestNamingRulesIntegrationTest.java
 
 services/matching-service/src/                   (edited -- D5a, Tasks 3.5-3.9)
@@ -1236,6 +1324,33 @@ what justifies either. `matching-service` had **one** class needing the four nam
 type would have been indirection with nothing to hold together. This service has **three**: the
 filter, the client interceptor, and the log pattern's key.
 
+### A8 — why `matching-service` is stubbed rather than called (D7)
+
+**Settled by the repo owner on 2026-09-11**, reversing how this story first read. The rule itself now
+lives in project-context.md; this records the argument.
+
+**The deciding reason is portability, not speed.** `infra/docker-compose.yml` holding every service is
+a convenience of this repository. The architecture is one repo per service — AD-52 already gives each
+its own wrapper, build file and Dockerfile — so a suite that passes only because a *sibling* service
+happens to be running cannot move to that service's own repository, and cannot run in a per-repo CI
+job. With GitHub Actions free for public repositories, that stopped being hypothetical.
+
+**The rule it replaced overreached.** AGENTS.md read *"no mocked collaborator that the Compose stack is
+already running"*, which was written when `matching-service` was the only service and nothing called
+anything. It was aimed at fake repositories and in-memory substitutes — where the point is that
+race-safety *is* Postgres's behaviour — and it caught a sibling service by accident.
+
+**Two arguments were made for keeping the real call and both were weaker than they looked.** That
+Task 6.1's hand-computed fare would become meaningless: it does lose the pricing assertion, but
+pricing is proven inside `matching-service` by PUB-3 and does not need proving twice — against the
+stub, 6.1 proves the *translation*, which is the only thing `rider-service` does. And that Task 6.2
+would stop proving `INVALID_ARGUMENT` maps to 400: it still proves the mapping, which is this
+service's code; whether `matching-service` emits that status for a bad latitude is PUB-4-1's
+criterion and PUB-4-1 tested it.
+
+**The one real loss is agreement on behaviour**, and it is named in "Honest limits" and handed to
+PUB-4-3 by Task 7.6 rather than left implicit.
+
 ---
 
 ## Questions for the repo owner
@@ -1252,9 +1367,9 @@ are frozen.
    (A1), the `/rider/v1/…` path scheme and its package-derived prefix (A2), bare `fare` / `distance` /
    `eta` (A3), the gRPC interceptor wired in `config` (A5), wire DTOs in `dto/v1` (A6). Each has its
    full argument in Appendix A, including what was rejected and why.
-3. **`make test` gets slower.** `test-integration` gains `images` and brings up `matching-service` as
-   well as Postgres, because `rider-service`'s tests need a real gRPC peer. `pre-push` runs
-   `make test`, so every push pays it. PUB-4-3 adds two more containers on top.
+3. **`make test` gets no slower for this service, which is a change from how this story first read.**
+   `rider-service` owns no datastore and stubs its one peer (D7), so its suite adds no container at
+   all. PUB-4-3 is where the cost comes back: it brings the whole stack up for one end-to-end test.
 
 ---
 
@@ -1275,4 +1390,7 @@ are frozen.
 | 2026-08-25 | Story created from epic-1 Story 1.4 as PUB-4, then split into PUB-4-1/2/3 at the repo owner's request; this is slice 2 | bmad-create-story |
 | 2026-09-09 | Wire DTOs moved from `controller/v1` to their own `dto/v1` package at the repo owner's request (D1, D5). Adds `onlyControllerDependsOnDto` and Task 4.7 to replace the guard `nothingDependsOnController` was giving them for free; Task 7.2's spine row now also records `dto` as a layer AD-7 does not list | bmad-create-story |
 | 2026-09-09 | `RequestIdClientInterceptor` is now a plain class in `shared`, registered as a `@Bean @GlobalClientInterceptor` in `GrpcClientConfiguration`, at the repo owner's request — one file holds the whole gRPC client setup (D3, D5a, Tasks 2.4, 3.2, 7.1). `RequestIdFilter` and `ProblemDetailsHandler` still self-register; D5a records why the two cases differ | bmad-create-story |
+| 2026-09-11 | Cross-service test strategy reversed at the repo owner's request: `rider-service`'s tests stub `matching-service` in-process against `contracts/proto` instead of calling it. The rule was narrowed at source — `AGENTS.md`'s "no mocked collaborator that the Compose stack is already running" and `project-context.md`'s "Real datastores only" — because each service is notionally its own repo and per-repo CI cannot boot a sibling. Adds D7 and Appendix A8; reverses Tasks 5.3 and 5.5; rewrites 6.1, 6.2 and 6.6; names the agreement gap in Honest limits and hands it to PUB-4-3 via Task 7.6 | bmad-create-story |
+| 2026-09-11 | `shared/ProblemDetailsHandler` renamed to `shared/ErrorDetailsHandler` at the repo owner's request. It still returns `org.springframework.http.ProblemDetail` as `application/problem+json`; D5a and Task 2.7 now carry the RFC 9457 reference the old name carried | bmad-create-story |
+| 2026-09-11 | `model/Quote`'s ETA pinned to `OptionalLong` at the repo owner's request (Task 2.2). Consequence found by testing `jackson-databind 3.1.4`: `non_null` emits `"eta":null` for an empty `OptionalLong` and would fail AC2, so D5's inclusion setting becomes `non_absent`, and Task 2.5 pins the DTO's `eta` to a nullable `Long` rather than mirroring the domain shape | bmad-create-story |
 | 2026-09-09 | Decisions section trimmed from 473 to 320 lines and marked **FROZEN** at the repo owner's request: D1–D6 now carry only what to build, and every rejected-alternative and justification paragraph moved verbatim into the new **Appendix A**. Nothing deleted, nothing duplicated. "Questions for the repo owner" reduced to the one item still open | bmad-create-story |
