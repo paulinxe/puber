@@ -92,6 +92,31 @@ so 120 minor-units/km x 5.327 km is 639.240. The discriminator is the type — `
 `shared` has no `controller` and no `repository`. Do not duplicate its contents per feature either —
 four private `Coordinate` types in one JVM is a convention nobody can enforce.
 
+**In a layered service `shared` means the same thing with different surroundings.** `rider-service`
+has no features (AD-9 scopes the feature split to `matching-service`), so "the bottom of the feature
+order" does not describe it. The membership test is unchanged — *does the type encode a convention?*
+— but what it collects there is **the conventions every service's edge implements identically**: the
+request id and the error vocabulary. Copied per service, never extracted into a library.
+
+**`shared`'s root holds cross-cutting plumbing; its sub-packages hold layer-shaped content.** That is
+why `RequestId` sits beside `shared/model/Money` rather than inside it — `model` is a layer and
+`RequestId` is not domain. Sub-layer only when a class genuinely belongs to a layer.
+
+**Copying `shared` is not enough on its own: not every class in it self-registers.** The HTTP-edge
+classes carry their own stereotype (`RequestIdFilter` is a `@Component`, `ErrorDetailsHandler` a
+`@RestControllerAdvice`) and the gRPC *server* interceptor carries `@GlobalServerInterceptor`. The
+gRPC **client** interceptor carries nothing: it attaches to a channel, and the channel is what the
+receiving service's own `GrpcClientConfiguration` configures, so it is declared there as a
+`@Bean @GlobalClientInterceptor`. **Drop that annotation and the failure is silent** — the bean is
+built, no channel intercepts, the request id stops crossing the gRPC hop, nothing is logged and
+nothing turns red except the one test that asserts the receiver saw it.
+
+**`sharedDependsOnNothingElseInThisService` is what keeps the directory liftable**: no class under
+`com.puber.<service>.shared..` may depend on anything else under `com.puber.<service>..`. It sits
+**beside** `sharedDependsOnNoFeaturePackage` in `matching-service` rather than replacing it — the
+feature clause is AD-9's and still binds, and `config` is not a feature, so the older clause never
+looked at it.
+
 ## Pricing a trip: the unit conversion (PUB-3)
 
 **The architecture side of this now lives in `ARCHITECTURE-SPINE.md` → AD-62** (haversine, the earth
@@ -202,6 +227,46 @@ The scanner is a **text** scan over `src/main/**/*.sql` and `src/main/**/*.java`
 limit: it reads one line at a time, so SQL split across lines or assembled by string concatenation
 gets past it, and it only ever sees `matching-service`. **It is a backstop for the rule, not the
 rule.** The rule is the paragraph above, and it is on whoever writes the SQL and whoever reviews it.
+
+## The request id, end to end (AD-54)
+
+One id per request, on every log line of every hop. The four names it is spelled with — the HTTP
+header, the gRPC metadata key, the MDC key, and the `%X{...}` the log pattern reads — live in one
+`shared/RequestId` per service, and **nothing else in a service spells any of them**. A mismatch is
+silent: the filter writes MDC under one name, the pattern reads another, every line shows a blank id
+and every test still passes.
+
+- **Clear the MDC in a `finally`, always.** A pooled request thread otherwise carries the previous
+  request's id into the next one's logs, which is worse than no id at all. On the gRPC server side
+  that means wrapping the *listener* — see "The gRPC server".
+- **A surface the gateway does not front mints its own** (AD-5). Until PUB-4-3 there is no gateway,
+  so `rider-service` minting on an absent header is the only reason the suite runs traced at all.
+- **`logging.pattern.level=%5p [%X{requestId:-}]`, not `logging.pattern.correlation`.** In Boot that
+  slot is driven by Micrometer tracing's trace and span ids, which this project does not have.
+
+## A new service's rule copies are hand-made, and two of them change
+
+ArchUnit rules are test code and no service depends on another's, so each new service gets its own
+copies. They are **not** byte-identical, and the differences are the point:
+
+- **A rule that names a type the new service does not have must not be copied.** It would scan
+  nothing and pass forever, which is indistinguishable from enforcement.
+  `theRealClockIsOnlyEverInjected` names `SystemClock`; `rider-service` deliberately has **no
+  `Clock`** — it varies nothing and reads no time — so that rule is absent and arrives with the
+  story that gives the service a clock.
+- **A rule whose exemption has no subject gets stronger, not copied verbatim.**
+  `timeIsReadOnlyThroughTheClock` exempts `SystemClock` and `floatingPointIsConfinedToDistance`
+  exempts `Distance`; `rider-service` has neither, so both copies drop the exemption. **A copy that
+  drops an exemption is renamed too** — `rider-service`'s is `noProductionTypeDeclaresFloatingPoint`,
+  because a rule still called "confined to `Distance`" in a service with no `Distance` advertises an
+  exemption nothing has, and a reader grepping for the type finds only the rule promising it.
+- **`DatabaseNeverReadsTimeTest.no_migration_asks_the_database_for_the_time` asserts it scanned at
+  least one file.** A service that owns no database ships no `.sql`, so copying that method verbatim
+  gives a red suite on a service behaving correctly. Keep the Java-source scan and the planted-tree
+  tests; drop the migration scan until the service gains a migration.
+- **Prove every copy can fail in its new home** (`CLAUDE.md` → "Prove it, don't reason about it").
+  A rule naming an absolute package — `com.puber.<service>.shared..` — is the one to check hardest:
+  a typo there leaves it scanning an empty set.
 
 ## Static analysis: ArchUnit + Spotless, nothing else
 
@@ -442,6 +507,19 @@ Each looks like a mistake to anyone working from Boot 3 documentation. None is.
 - **Jackson 3, not 2.** `ObjectMapper` and `JsonNode` are `tools.jackson.databind.*`;
   `com.fasterxml.jackson.databind` is not on the classpath at all. Do not add Jackson 2 to "fix" the
   missing package.
+- **A `@RestControllerAdvice` does not cover 404, 405, 415 or an unreadable body unless it extends
+  `ResponseEntityExceptionHandler`.** Those four are resolved before any handler runs, so they fall
+  through to Boot's default `/error` rendering — plain JSON with no request id, while every path the
+  advice names explicitly looks correct. **And the hook for decorating those bodies is
+  `createResponseEntity`, not `handleExceptionInternal`:** the latter is called with a **null** body
+  and the parent builds the `ProblemDetail` from the `ErrorResponse` afterwards, so an override there
+  silently decorates nothing. Both measured 2026-09-12 during PUB-4-2's code review — the
+  `handleExceptionInternal` version compiled, ran, and left 400/405/415 without the id.
+- **Do not add an `@ExceptionHandler` for a type `ResponseEntityExceptionHandler` already lists.**
+  Two mappings for one type in one class is an `IllegalStateException` at startup, not a silent
+  override. A service's own rejections need their **own exception type** so the advice can echo their
+  message; Spring's binding exceptions get the parent's fixed detail, which is what keeps a framework
+  message naming Java internals off an external wire.
 - **Postgres 18+ mounts at `/var/lib/postgresql`**, not `.../data`, and refuses to start with the old
   path. Its healthcheck needs `pg_isready -h 127.0.0.1` — without `-h` it probes the Unix socket and
   reports healthy during the first-start `initdb`.

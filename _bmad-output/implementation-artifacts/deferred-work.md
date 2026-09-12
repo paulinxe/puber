@@ -109,6 +109,33 @@ Items raised by a workflow, real but not actionable at the time they were found.
   split into PUB-4-1/2/3. PUB-4-1 added no second service, so the pointer was aimed at a slice that
   had already passed without touching it.
 
+  **CLOSED by PUB-4-2 on 2026-09-12.** `rider-service` carries its own copies and every one was
+  proven capable of failing there — violation planted, suite run red, reverted, suite green again.
+
+  | Rule | In `rider-service` | Proven by planting |
+  | --- | --- | --- |
+  | `timeIsReadOnlyThroughTheClock` | yes, **stronger** — no `SystemClock` exemption | `Instant.now()` in `RequestQuote` |
+  | `theLegacyDateApiIsNotUsedAtAll` | yes, verbatim | a `java.util.Date` returned from `Quote` |
+  | `DatabaseNeverReadsTimeTest` | yes, **minus the migration scan** | `now()` inside a Java string |
+  | `theRealClockIsOnlyEverInjected` | **no** — names `SystemClock`, absent here | — |
+  | `modelDependsOnNothingFrameworkFlavoured` | yes, with PUB-4-1's contracts exclusion | a `GetQuoteResponse` in `Quote` |
+  | `serviceDependsOnStrategyInterfacesOnly`, `nothingDependsOnController`, `noPackageIsNamedEntity` | yes | fixtures + a controller import in `RequestQuote` |
+  | `floatingPointIsConfinedToDistance` → `noProductionTypeDeclaresFloatingPoint` | yes, **stronger** — no `Distance` exemption, and renamed for it in code review | a `double` field on `ErrorDetailsHandler` |
+  | `bigDecimalIsNeverBuiltFromADouble` | yes, verbatim | `new BigDecimal(0.1)` in `RequestQuote` |
+  | `TestNamingRulesTest` + `TestNamingRulesIntegrationTest` | yes, both | a camelCase `@Test` in each source set |
+  | `sharedDependsOnNoFeaturePackage`, `featureDependenciesRunOneWay` | **no** — AD-9 scopes the feature split to `matching-service` | — |
+  | `sharedDependsOnNothingElseInThisService` | **new, written here**, and added to `matching-service` too | `shared` naming `model` (rider) / `config` (matching) |
+  | `onlyControllerDependsOnDto` | **new, written here**; `rider-service` only | a `dto` import in `RequestQuote` |
+
+  **Two rules are absent on purpose and that is the residue of this item.** `theRealClockIsOnlyEverInjected`
+  returns with the story that gives `rider-service` a clock, and `DatabaseNeverReadsTimeTest`'s migration
+  scan with its first migration. Both are recorded in `project-context.md` → "A new service's rule copies
+  are hand-made", which is what a **third** service reads — this file is an audit trail nothing consults.
+
+  **What this item did not fix, and could not.** Nothing still reminds anyone to make the copies: the
+  reminder is now a paragraph in `project-context.md`, which every BMad workflow loads, rather than a
+  mechanism. A rule that a new service silently omits is still a rule nothing turns red about.
+
 ## Deferred from: PUB-4-1 implementation (2026-08-26)
 
 - **Three of PUB-3's four deferred value-type guards are still unreachable, and were deliberately not
@@ -193,3 +220,93 @@ Items raised by a workflow, real but not actionable at the time they were found.
   was routed to handle is the one it does not currently handle.
 
   **Routed to Epic 2, Story 2.3** — one sentence to add to the existing note, not new code here.
+
+## Deferred from: PUB-4-2 implementation (2026-09-12)
+
+- **Nothing proves `rider-service` and `matching-service` agree on *behaviour*** (the whole of
+  `services/rider-service/src/integrationTest/`)
+
+  `rider-service`'s suite stubs `matching-service` in-process against `contracts/proto`
+  (`project-context.md` → "Own datastores are real. Another service is stubbed."). The two therefore
+  cannot drift in **shape** — both compile against the same `.proto`, and the stub extends the
+  generated `QuoteServiceImplBase`, so a proto change breaks both sides at compile time. They can
+  drift in **behaviour**: nothing here shows `matching-service` returns what `rider-service` expects.
+
+  That is deliberate and it is the named cost of the stub rule, not an oversight. **Routed to
+  PUB-4-3 as `AI-4` in `sprint-status.yaml`** — one end-to-end quote through HAProxy →
+  `rider-service` → `matching-service`, which costs almost nothing there because that slice brings
+  the whole stack up for the gateway anyway. Do not close it a second time inside either service's
+  own suite.
+
+- **`rider-service` has no `Clock` and no migration, so two rules it will eventually need are absent**
+  (`services/rider-service/src/test/java/com/puber/rider/rules/`)
+
+  `theRealClockIsOnlyEverInjected` names `SystemClock` and
+  `DatabaseNeverReadsTimeTest.no_migration_asks_the_database_for_the_time` asserts it scanned at least
+  one `.sql`. Copying either into a service that has neither gives a rule that scans nothing — which
+  passes forever and is indistinguishable from enforcement — or a red suite on correct code.
+
+  **Routed to whichever story first gives `rider-service` a clock or a migration**, and recorded where
+  that author will actually see it: `project-context.md` → "A new service's rule copies are hand-made,
+  and two of them change". This file is the audit trail; that paragraph is the reminder.
+
+- **`javax.annotation:javax.annotation-api` was specified by the story and is not needed**
+  (`services/rider-service/build.gradle`)
+
+  Task 1.3 listed it `compileOnly`, on the reasoning that `protoc-gen-grpc-java` 1.80.0 emits
+  `@javax.annotation.Generated` and Java 25 ships no `javax.annotation`. Checked against this
+  service's own generated output on 2026-09-12 — `grep -r javax.annotation build/generated/sources/proto`
+  returns nothing — and the build is green without the dependency. That matches what PUB-4-1 recorded
+  in `project-context.md` → "The gRPC server" and contradicts the story's own Dev Notes, which had
+  flagged the point as one to confirm rather than assume. **Nothing to route:** the dependency is
+  simply absent.
+
+## Deferred from: code review of PUB-4-2-rider-service-delivers-the-quote (2026-09-12)
+
+- **No deadline on the gRPC call to `matching-service`**
+  (`services/rider-service/src/main/java/com/puber/rider/config/GrpcClientConfiguration.java`,
+  `src/main/resources/application.properties`, call site `.../service/RequestQuote.java:27`)
+
+  Proven twice during review: `quotes.getCallOptions().getDeadline()` is `null`, and with the peer
+  blocked for 9000 ms `rider-service` answered after **9213 ms** with a `200`. Tomcat's 200 request
+  threads fill with waiters, `/actuator/health` then stops answering, and Compose — and Epic 7's
+  Kubernetes probe, which is the same `exec` — kills a service whose only fault is a slow peer.
+
+  **Routed to Epic 4**, by this story's own Scope boundaries: *"Rate limits, HAProxy queue bounds,
+  AD-6's bound chain → Epic 4 — and AD-47 says those numbers are measured, not guessed."* A gRPC
+  deadline is a bound in the request path and AD-6 requires every one of them to be explicit, so it
+  belongs with the rest of the chain and with a measured number rather than a guessed one.
+
+  **One thing for whoever sets it:** `DEADLINE_EXCEEDED` cannot occur today, and the moment it can it
+  falls into `ErrorDetailsHandler`'s `default ->` arm and returns **500, not 504**. Add that row at
+  the same time, or the first timeout reports itself as this service's fault.
+
+- **A non-ASCII request id is silently mangled on the gRPC hop, and an oversized one is unbounded**
+  (`services/rider-service/src/main/java/com/puber/rider/shared/RequestId.java`,
+  `.../shared/RequestIdClientInterceptor.java`, `.../shared/RequestIdFilter.java`)
+
+  `X-Request-Id: café-ééé` → `rider-service` echoes and logs `café-ééé` while the peer receives
+  `caf?-??`, because the metadata key uses `Metadata.ASCII_STRING_MARSHALLER`. Nothing logs and
+  nothing fails; the only symptom is two sets of logs that cannot be joined — which is the single
+  thing AD-54 exists to prevent. Separately, a 7000-character request id crossed to the peer intact:
+  Tomcat's 8 KB header cap is the only bound and it is not gRPC's, whose default
+  `maxInboundMetadataSize` is 8192 for the whole metadata block.
+
+  **Routed to PUB-4-3**, where the gateway becomes the minting point and is the natural place to
+  decide whether a caller-supplied id is accepted, normalised, or replaced. Neither case is reachable
+  today with a minted UUID.
+
+  **Honest limit on the length case:** it was exercised over the in-process gRPC transport, which
+  bypasses HTTP/2 header limits. It proves nothing in `rider-service` bounds the value; it does *not*
+  prove the real Netty channel would accept it.
+
+- **Compose makes `rider-service` unable to start when `matching-service` is down**
+  (`infra/docker-compose.yml` — `depends_on: matching-service: condition: service_healthy`)
+
+  `ErrorDetailsHandler` maps `UNAVAILABLE` → 503 precisely so the rider surface degrades rather than
+  dies. In the stack as configured the container never comes up to serve that 503, so the degraded
+  path cannot be demonstrated locally at all. The dependency is a startup-ordering convenience that
+  quietly asserts an availability coupling AD-38 spent effort denying.
+
+  **Routed to PUB-4-3**, which is where the gateway fronts `rider-service` and where showing the
+  degraded path actually matters.

@@ -1,4 +1,4 @@
-package com.puber.matching.rules;
+package com.puber.rider.rules;
 
 import static com.tngtech.archunit.base.DescribedPredicate.not;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.INTERFACES;
@@ -7,8 +7,6 @@ import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAnyP
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
-import com.puber.matching.shared.model.Distance;
-import com.puber.matching.shared.strategy.SystemClock;
 import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.AccessTarget.ConstructorCallTarget;
 import com.tngtech.archunit.core.domain.JavaAccess;
@@ -25,7 +23,6 @@ import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
-import com.tngtech.archunit.library.Architectures;
 import java.math.BigDecimal;
 import java.util.Calendar;
 import java.util.Date;
@@ -37,23 +34,22 @@ import java.util.TimeZone;
 /**
  * The structural rules of this service, asserted as ordinary tests.
  *
- * <p>Several rules are still vacuously true: {@code config} and {@code shared} arrived with Story
- * 1.2, and the feature packages arrive with the stories that first need them. They are written
- * before the code they govern on purpose. These are the rules four more services inherit, and a
- * rule added after the code it governs is a rule that gets negotiated against existing violations
- * rather than enforced. {@code allowEmptyShould(true)} is therefore deliberate, not a workaround.
+ * <p>Hand-copied from matching-service rather than shared: these are test code, and no service
+ * depends on another's. Two rules are stronger here because this service has neither of the types
+ * the matching-service versions exempt, and three are absent because they name things that do not
+ * exist here -- {@code theRealClockIsOnlyEverInjected} names {@code SystemClock}, and the feature
+ * rules are AD-9's, which scopes the feature split to matching-service. A rule that scans nothing
+ * passes forever, so an inapplicable copy is worse than none.
  */
-@AnalyzeClasses(
-        packages = "com.puber.matching",
-        importOptions = ImportOption.DoNotIncludeTests.class)
+@AnalyzeClasses(packages = "com.puber.rider", importOptions = ImportOption.DoNotIncludeTests.class)
 class ArchitectureRulesTest {
 
-    private static final String MATCHING = "com.puber.matching.";
+    private static final String RIDER = "com.puber.rider.";
 
     /**
-     * The generated contract stubs. They live outside {@link #MATCHING} on purpose -- they belong
-     * to neither service -- so this scan does not import them; the name is here only to subtract
-     * them from what {@code model} may depend on.
+     * The generated contract stubs. They live outside {@link #RIDER} on purpose -- they belong to
+     * neither service -- so this scan does not import them; the name is here only to subtract them
+     * from what {@code model} may depend on.
      */
     private static final String CONTRACTS = "com.puber.contracts..";
 
@@ -80,35 +76,22 @@ class ArchitectureRulesTest {
                     "a BigDecimal constructed from a double",
                     ArchitectureRulesTest::buildsABigDecimalFromADouble);
 
-    /** NFR-9, AD-58: every reading of the current time comes from the {@code Clock} strategy. */
+    /**
+     * NFR-9, AD-58: every reading of the current time comes from the {@code Clock} strategy.
+     *
+     * <p>Stronger than matching-service's copy, which exempts {@code SystemClock}. This service has
+     * no clock at all and reads no time, so there is nothing to exempt and <em>nothing</em> may
+     * read the clock. The exemption comes back with the story that gives this service a clock, and
+     * {@code theRealClockIsOnlyEverInjected} comes with it.
+     */
     @ArchTest
     static final ArchRule timeIsReadOnlyThroughTheClock =
             noClasses()
-                    .that()
-                    .doNotBelongToAnyOf(SystemClock.class)
                     .should()
                     .accessTargetWhere(A_SYSTEM_TIME_SOURCE)
                     .because(
-                            "NFR-9: time is read only through the Clock strategy, so durations are"
-                                    + " monotonic and every window is testable without waiting");
-
-    /**
-     * The rule above exempts {@code SystemClock}, so a class building its own would read the clock
-     * and pass. No test can advance a clock it was never given. {@code config} is excepted because
-     * that is where the bean is declared.
-     */
-    @ArchTest
-    static final ArchRule theRealClockIsOnlyEverInjected =
-            noClasses()
-                    .that()
-                    .resideOutsideOfPackage(MATCHING + "config..")
-                    .should()
-                    .dependOnClassesThat()
-                    .areAssignableTo(SystemClock.class)
-                    .because(
-                            "NFR-9: the real clock is wired once in config and injected everywhere"
-                                    + " else -- a class that constructs its own reads a clock no"
-                                    + " test can advance");
+                            "NFR-9: time is read only through the Clock strategy, and this service"
+                                    + " has no clock -- so it reads no time at all");
 
     /**
      * Listing the clock-reading methods of {@code Date} and {@code Calendar} one by one is what let
@@ -131,11 +114,9 @@ class ArchitectureRulesTest {
      * AD-8: the domain model is plain Java. Anything framework-flavoured reaching {@code model}
      * means persistence or transport concerns have leaked into the domain.
      *
-     * <p>Expressed as what the model <em>may</em> depend on, not as a list of what it may not. The
-     * list form named {@code com.fasterxml.jackson..} -- Jackson 2, which is not on the classpath
-     * at all -- and did not name {@code tools.jackson..}, the Jackson 3 that is; so the one
-     * framework it called out for the domain was the one it could never meet. Every framework, and
-     * every framework added later, fails this form without anybody remembering to add it.
+     * <p>Expressed as what the model <em>may</em> depend on, not as a list of what it may not, so a
+     * framework added later fails it without anybody remembering to add it. The generated contract
+     * is subtracted from the {@code com.puber..} allowance, which would otherwise readmit it.
      */
     @ArchTest
     static final ArchRule modelDependsOnNothingFrameworkFlavoured =
@@ -184,6 +165,29 @@ class ArchitectureRulesTest {
                     .allowEmptyShould(true);
 
     /**
+     * The wire DTOs sit in {@code dto} rather than inside {@code controller}, which cost them the
+     * guard {@code nothingDependsOnController} was giving them for free. This is the replacement.
+     *
+     * <p>The {@code ..dto..} exclusion on the {@code that()} side is load-bearing: {@code
+     * QuoteRequest} holds a nested {@code Coordinates} record, so DTOs depend on DTOs by design.
+     * Without it the rule fails on correct code, and whoever hits that weakens the rule rather than
+     * the code.
+     */
+    @ArchTest
+    static final ArchRule onlyControllerDependsOnDto =
+            noClasses()
+                    .that()
+                    .resideOutsideOfPackage("..dto..")
+                    .and()
+                    .resideOutsideOfPackage("..controller..")
+                    .should()
+                    .dependOnClassesThat()
+                    .resideInAPackage("..dto..")
+                    .because(
+                            "the wire shape reaches no further in than the controller that serves it")
+                    .allowEmptyShould(true);
+
+    /**
      * AD-7: the domain package is named {@code model}. {@code entity} implies an ORM, and there is
      * none.
      */
@@ -197,102 +201,46 @@ class ArchitectureRulesTest {
                     .allowEmptyShould(true);
 
     /**
-     * AD-9: {@code shared} sits at the bottom of the feature order, so it may depend on no feature.
+     * {@code shared} holds the conventions every service's edge implements identically, so it has
+     * to stay liftable into the next service: one directory to copy, one package line to change.
      *
-     * <p>This is the rule that stops {@code shared} becoming a dumping ground. The membership test
-     * for {@code shared} is whether a type encodes a <em>convention</em> (Money's minor units,
-     * Coordinates' precision and axis order) rather than domain behaviour; "two features happen to
-     * use it" is not a reason to promote anything into it. That test is a judgement, so it is
-     * guarded by a rule instead of by discipline.
-     */
-    @ArchTest
-    static final ArchRule sharedDependsOnNoFeaturePackage =
-            noClasses()
-                    .that()
-                    .resideInAPackage(MATCHING + "shared..")
-                    .should()
-                    .dependOnClassesThat()
-                    .resideInAnyPackage(
-                            MATCHING + "fare..",
-                            MATCHING + "ride..",
-                            MATCHING + "dispatch..",
-                            MATCHING + "quote..")
-                    .because(
-                            "AD-9: shared is the bottom of shared <- fare <- ride <- dispatch <- quote")
-                    .allowEmptyShould(true);
-
-    /**
-     * {@code shared} also holds the conventions every service's edge implements identically --
-     * {@code RequestId} and the two interceptors -- and those have to stay liftable into the next
-     * service: one directory to copy, one package line to change.
-     *
-     * <p>Beside {@link #sharedDependsOnNoFeaturePackage} rather than instead of it. That one is
-     * AD-9's feature order and still binds; this one is stronger in a different direction, because
-     * {@code config} and {@code controller} are not features and the feature clause never looked at
-     * them.
+     * <p>Stronger than matching-service's {@code sharedDependsOnNoFeaturePackage}, which forbids a
+     * dependency on a <em>feature</em> -- this service has none. The moment {@code
+     * ErrorDetailsHandler} names {@code Quote}, the directory stops being liftable and nobody finds
+     * out until they try.
      */
     @ArchTest
     static final ArchRule sharedDependsOnNothingElseInThisService =
             noClasses()
                     .that()
-                    .resideInAPackage(MATCHING + "shared..")
+                    .resideInAPackage(RIDER + "shared..")
                     .should()
                     .dependOnClassesThat(
-                            resideInAPackage(MATCHING + ".")
-                                    .and(not(resideInAPackage(MATCHING + "shared..")))
+                            resideInAPackage(RIDER + ".")
+                                    .and(not(resideInAPackage(RIDER + "shared..")))
                                     .as("anything else in this service"))
                     .because(
                             "shared is copied per service, so it may name nothing that only this"
                                     + " service has")
                     .allowEmptyShould(true);
 
-    /** AD-9: the feature packages of matching-service form a one-way order. */
-    @ArchTest
-    static final ArchRule featureDependenciesRunOneWay =
-            Architectures.layeredArchitecture()
-                    .consideringOnlyDependenciesInLayers()
-                    .layer("shared")
-                    .definedBy(MATCHING + "shared..")
-                    .layer("fare")
-                    .definedBy(MATCHING + "fare..")
-                    .layer("ride")
-                    .definedBy(MATCHING + "ride..")
-                    .layer("dispatch")
-                    .definedBy(MATCHING + "dispatch..")
-                    .layer("quote")
-                    .definedBy(MATCHING + "quote..")
-                    .whereLayer("quote")
-                    .mayNotBeAccessedByAnyLayer()
-                    .whereLayer("dispatch")
-                    .mayOnlyBeAccessedByLayers("quote")
-                    .whereLayer("ride")
-                    .mayOnlyBeAccessedByLayers("dispatch", "quote")
-                    .whereLayer("fare")
-                    .mayOnlyBeAccessedByLayers("ride", "dispatch", "quote")
-                    .withOptionalLayers(true)
-                    .because("AD-9: shared <- fare <- ride <- dispatch <- quote");
-
     /**
-     * AC5: money is integer minor units, so no production type declares floating point. {@code
-     * Distance} is the single exemption, derived from the type rather than from a list: it is the
-     * one type that stores the trigonometric result, and every arithmetic caller takes a {@code
-     * BigDecimal} back out of it.
+     * AC5: money is integer minor units, so no production type declares floating point.
+     *
+     * <p>Stronger than matching-service's {@code floatingPointIsConfinedToDistance}, which exempts
+     * {@code Distance} -- the type that stores the trigonometric result. There is no such type
+     * here: this service does no arithmetic at all, it passes decimal strings through. **That is
+     * why the name differs**: a rule called "confined to Distance" in a service with no {@code
+     * Distance} advertises an exemption that does not exist, and the two rules are not the same
+     * rule anyway.
      *
      * <p><strong>Declarations only -- fields, return types and parameters, including array
-     * components and generic arguments.</strong> Method bodies are not read, so {@code
-     * Coordinates.distanceTo} computes the haversine in {@code double} locals and passes. That is
-     * intended (the trigonometry has to happen somewhere) but it is a limit, not a clean bill: a
-     * class doing its money arithmetic in locals would pass too. Proven by planting a local-only
-     * method and watching the rule stay green.
-     *
-     * <p>Nothing enforced this before. The old Money convention said "DECIMAL at rest", which a
-     * {@code double} field satisfies right up to the moment it is stored.
+     * components and generic arguments.</strong> Method bodies are not read, so a class doing its
+     * arithmetic in locals would pass. That is a limit, not a clean bill.
      */
     @ArchTest
-    static final ArchRule floatingPointIsConfinedToDistance =
+    static final ArchRule noProductionTypeDeclaresFloatingPoint =
             classes()
-                    .that()
-                    .doNotBelongToAnyOf(Distance.class)
                     .should(neverDeclareOrReturnFloatingPoint())
                     .because(
                             "AC5: money is integer minor units -- a float or a double in a"

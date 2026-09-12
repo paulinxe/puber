@@ -148,7 +148,7 @@ build: hooks $(DB_PASSWORD_FILE) gradle-home analyzer-config contract-config
 	@$(MAKE) --no-print-directory verify-no-root-owned-files
 
 run: $(DB_PASSWORD_FILE) images
-	$(COMPOSE) up -d --wait matching-postgres matching-service
+	$(COMPOSE) up -d --wait matching-postgres $(SERVICES)
 	@echo "==> stack up."
 
 stop:

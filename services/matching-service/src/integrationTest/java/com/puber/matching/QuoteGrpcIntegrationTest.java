@@ -16,8 +16,8 @@ import com.puber.contracts.quote.v1.Coordinates;
 import com.puber.contracts.quote.v1.GetQuoteRequest;
 import com.puber.contracts.quote.v1.GetQuoteResponse;
 import com.puber.contracts.quote.v1.QuoteServiceGrpc;
-import com.puber.matching.config.RequestIdServerInterceptor;
 import com.puber.matching.fixtures.FareRulesFixture;
+import com.puber.matching.shared.RequestId;
 import io.grpc.ManagedChannel;
 import io.grpc.Metadata;
 import io.grpc.StatusRuntimeException;
@@ -339,9 +339,7 @@ class QuoteGrpcIntegrationTest {
     private QuoteServiceGrpc.QuoteServiceBlockingStub stubCarryingRequestId(String requestId) {
         Metadata metadata = new Metadata();
         metadata.put(
-                Metadata.Key.of(
-                        RequestIdServerInterceptor.REQUEST_ID_HEADER,
-                        Metadata.ASCII_STRING_MARSHALLER),
+                Metadata.Key.of(RequestId.METADATA_NAME, Metadata.ASCII_STRING_MARSHALLER),
                 requestId);
         return stub().withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata));
     }

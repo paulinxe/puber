@@ -1,11 +1,10 @@
-package com.puber.matching.config;
+package com.puber.matching.shared;
 
 import io.grpc.ForwardingServerCallListener.SimpleForwardingServerCallListener;
 import io.grpc.Metadata;
 import io.grpc.ServerCall;
 import io.grpc.ServerCallHandler;
 import io.grpc.ServerInterceptor;
-import java.util.UUID;
 import org.slf4j.MDC;
 import org.springframework.grpc.server.GlobalServerInterceptor;
 import org.springframework.stereotype.Component;
@@ -18,22 +17,11 @@ import org.springframework.stereotype.Component;
 @GlobalServerInterceptor
 public class RequestIdServerInterceptor implements ServerInterceptor {
 
-    public static final String REQUEST_ID_HEADER = "x-request-id";
-
-    private static final String MDC_KEY = "requestId";
-
-    /**
-     * gRPC rejects an uppercase metadata key at construction, so the lowercase spelling matters.
-     */
-    private static final Metadata.Key<String> REQUEST_ID =
-            Metadata.Key.of(REQUEST_ID_HEADER, Metadata.ASCII_STRING_MARSHALLER);
-
     @Override
     public <R, S> ServerCall.Listener<R> interceptCall(
             ServerCall<R, S> call, Metadata headers, ServerCallHandler<R, S> next) {
-        String incoming = headers.get(REQUEST_ID);
-        String requestId =
-                incoming == null || incoming.isBlank() ? UUID.randomUUID().toString() : incoming;
+        String incoming = headers.get(RequestId.METADATA_KEY);
+        String requestId = incoming == null || incoming.isBlank() ? RequestId.mint() : incoming;
 
         // The wrapping goes on the LISTENER, not around startCall. startCall only builds the
         // listener; the service method itself runs later, from onHalfClose -- so setting the id
@@ -72,11 +60,11 @@ public class RequestIdServerInterceptor implements ServerInterceptor {
      * logs, which is worse than no id at all.
      */
     private static void carrying(String requestId, Runnable work) {
-        MDC.put(MDC_KEY, requestId);
+        MDC.put(RequestId.MDC_KEY, requestId);
         try {
             work.run();
         } finally {
-            MDC.remove(MDC_KEY);
+            MDC.remove(RequestId.MDC_KEY);
         }
     }
 }

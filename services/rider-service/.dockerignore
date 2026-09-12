@@ -1,0 +1,9 @@
+# Build output is regenerated inside the image; copying it in would import the host's
+# artefacts and defeat the layer cache.
+build/*
+.gradle/
+
+# ... with two exceptions: the analyzer configuration and the contracts `make build`
+# copies into build output are genuine build inputs for the image (AD-52).
+!build/static-analyzers/
+!build/contracts/

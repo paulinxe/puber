@@ -1,4 +1,4 @@
-package com.puber.matching.config;
+package com.puber.matching.shared;
 
 import io.grpc.Status;
 import io.grpc.StatusException;
