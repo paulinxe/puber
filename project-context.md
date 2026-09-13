@@ -92,6 +92,44 @@ so 120 minor-units/km x 5.327 km is 639.240. The discriminator is the type — `
 `shared` has no `controller` and no `repository`. Do not duplicate its contents per feature either —
 four private `Coordinate` types in one JVM is a convention nobody can enforce.
 
+**In a layered service `shared` means the same thing with different surroundings.** `rider-service`
+has no features (AD-9 scopes the feature split to `matching-service`), so "the bottom of the feature
+order" does not describe it. The membership test is unchanged — *does the type encode a convention?*
+— but what it collects there is **the types this service's own code calls directly**, such as the
+exception a controller throws for a request it rejected itself.
+
+**A class only the framework ever calls belongs in `config`, not `shared`** (PUB-4-2). Filters,
+interceptors, `@RestControllerAdvice`es and the constants they alone spell are wiring: nothing in
+the service calls them, Spring or spring-grpc does. That is why the request id classes and both
+error mappers live in `config` — `config/RequestId`, `config/RequestIdFilter`,
+`config/RequestIdClientInterceptor` in `rider-service`; `config/RequestId`,
+`config/RequestIdServerInterceptor`, `config/UnexpectedGrpcFailureStatusMapper` in
+`matching-service`; and `config/ErrorDetailsHandler`, which names the gRPC statuses this service's
+own upstream can return and is therefore about this service, not a convention.
+
+Another service usually needs the same convention and writes its own version; that is not a rule,
+and the copies are **not** required to match. Never extracted into a library, and never kept in step
+for its own sake — a constant no code in this service spells is deleted, not commented.
+
+**`shared`'s root holds what is not layer-shaped; its sub-packages hold what is.** `InvalidRequestException`
+sits beside `shared/model/Money` rather than inside it — `model` is a layer and an exception is not
+domain. Sub-layer only when a class genuinely belongs to a layer.
+
+**Copying these classes is not enough on its own: not every one of them self-registers.** The
+HTTP-edge classes carry their own stereotype (`RequestIdFilter` is a `@Component`,
+`ErrorDetailsHandler` a `@RestControllerAdvice`) and the gRPC *server* interceptor carries `@GlobalServerInterceptor`. The
+gRPC **client** interceptor carries nothing: it attaches to a channel, and the channel is what the
+receiving service's own `GrpcClientConfiguration` configures, so it is declared there as a
+`@Bean @GlobalClientInterceptor`. **Drop that annotation and the failure is silent** — the bean is
+built, no channel intercepts, the request id stops crossing the gRPC hop, nothing is logged and
+nothing turns red except the one test that asserts the receiver saw it.
+
+**`sharedDependsOnNothingElseInThisService` is what keeps the directory liftable**: no class under
+`com.puber.<service>.shared..` may depend on anything else under `com.puber.<service>..`. It sits
+**beside** `sharedDependsOnNoFeaturePackage` in `matching-service` rather than replacing it — the
+feature clause is AD-9's and still binds, and `config` is not a feature, so the older clause never
+looked at it.
+
 ## Pricing a trip: the unit conversion (PUB-3)
 
 **The architecture side of this now lives in `ARCHITECTURE-SPINE.md` → AD-62** (haversine, the earth
@@ -202,6 +240,48 @@ The scanner is a **text** scan over `src/main/**/*.sql` and `src/main/**/*.java`
 limit: it reads one line at a time, so SQL split across lines or assembled by string concatenation
 gets past it, and it only ever sees `matching-service`. **It is a backstop for the rule, not the
 rule.** The rule is the paragraph above, and it is on whoever writes the SQL and whoever reviews it.
+
+## The request id, end to end (AD-54)
+
+One id per request, on every log line of every hop. The names it is spelled with — the HTTP header,
+the gRPC metadata key, the MDC key, and the `%X{...}` the log pattern reads — live in one
+`config/RequestId` per service, and **nothing else in a service spells any of them**. A service
+carries only the names it actually uses: `matching-service` has no HTTP edge, so its copy has no
+header constant. A mismatch is
+silent: the filter writes MDC under one name, the pattern reads another, every line shows a blank id
+and every test still passes.
+
+- **Clear the MDC in a `finally`, always.** A pooled request thread otherwise carries the previous
+  request's id into the next one's logs, which is worse than no id at all. On the gRPC server side
+  that means wrapping the *listener* — see "The gRPC server".
+- **A surface the gateway does not front mints its own** (AD-5). Until PUB-4-3 there is no gateway,
+  so `rider-service` minting on an absent header is the only reason the suite runs traced at all.
+- **`logging.pattern.level=%5p [%X{requestId:-}]`, not `logging.pattern.correlation`.** In Boot that
+  slot is driven by Micrometer tracing's trace and span ids, which this project does not have.
+
+## A new service's rule copies are hand-made, and two of them change
+
+ArchUnit rules are test code and no service depends on another's, so each new service gets its own
+copies. They are **not** byte-identical, and the differences are the point:
+
+- **A rule that names a type the new service does not have must not be copied.** It would scan
+  nothing and pass forever, which is indistinguishable from enforcement.
+  `theRealClockIsOnlyEverInjected` names `SystemClock`; `rider-service` deliberately has **no
+  `Clock`** — it varies nothing and reads no time — so that rule is absent and arrives with the
+  story that gives the service a clock.
+- **A rule whose exemption has no subject gets stronger, not copied verbatim.**
+  `timeIsReadOnlyThroughTheClock` exempts `SystemClock` and `floatingPointIsConfinedToDistance`
+  exempts `Distance`; `rider-service` has neither, so both copies drop the exemption. **A copy that
+  drops an exemption is renamed too** — `rider-service`'s is `noProductionTypeDeclaresFloatingPoint`,
+  because a rule still called "confined to `Distance`" in a service with no `Distance` advertises an
+  exemption nothing has, and a reader grepping for the type finds only the rule promising it.
+- **`DatabaseNeverReadsTimeTest.no_migration_asks_the_database_for_the_time` asserts it scanned at
+  least one file.** A service that owns no database ships no `.sql`, so copying that method verbatim
+  gives a red suite on a service behaving correctly. Keep the Java-source scan and the planted-tree
+  tests; drop the migration scan until the service gains a migration.
+- **Prove every copy can fail in its new home** (`CLAUDE.md` → "Prove it, don't reason about it").
+  A rule naming an absolute package — `com.puber.<service>.shared..` — is the one to check hardest:
+  a typo there leaves it scanning an empty set.
 
 ## Static analysis: ArchUnit + Spotless, nothing else
 
@@ -406,7 +486,11 @@ every service rather than none. `pre-push` needs no case — it already runs eve
 - **A gRPC test uses the in-process transport**, `@AutoConfigureTestGrpcTransport` plus the
   auto-configured `GrpcChannelFactory`. That is the honest subject — the service implementation, the
   interceptors and the status mapping — and asserts nothing about networking.
-- **gRPC metadata keys must be lowercase.** `Metadata.Key.of` throws at construction otherwise.
+- **Spell metadata keys lowercase, but do not expect a guard.** `Metadata.Key.of` *lowercases* the
+  name it is given; it does not reject an uppercase one. Verified 2026-09-13 against
+  `grpc-api-1.80.0` — `Metadata.Key.of("X-Request-Id", ASCII_STRING_MARSHALLER).name()` returns
+  `x-request-id`. It throws only for a `-bin` suffix with the ASCII marshaller. A PUB-4-2 comment
+  claimed the opposite and was believed through a code review.
 - **A `ServerInterceptor` that sets the MDC must wrap the *listener*, not just `interceptCall`.**
   `startCall` only builds the listener; the service method runs later, from `onHalfClose`. Clearing
   the MDC in `interceptCall`'s `finally` leaves it unset exactly where the logging happens.
@@ -425,6 +509,33 @@ every service rather than none. `pre-push` needs no case — it already runs eve
   comment claiming the opposite shipped in PUB-4-1. A last-resort handler that logs and returns
   `INTERNAL` is why `config/UnexpectedGrpcFailureStatusMapper` exists.
 
+## The gRPC client (PUB-4-2)
+
+- **A `ClientInterceptor` bean is attached by `@GlobalClientInterceptor`, not by its type.**
+  `ClientInterceptorsConfigurer.findGlobalInterceptors` asks the context for beans *with that
+  annotation* — verified from the bytecode of `spring-grpc-core-1.1.0.jar` on 2026-09-13. Without
+  it the bean is built and never attached to a channel: nothing is logged, and nothing goes red
+  except a test asserting the request id crossed the hop.
+- **Import stubs by type**, `@ImportGrpcClients(target = ..., types = ...)`, not by package scan, so
+  a contract that grows a second service does not silently import stubs nothing asked for.
+
+## The HTTP edge (PUB-4-2)
+
+- **Version prefixes come from `PathMatchConfigurer.addPathPrefix`, never
+  `server.servlet.context-path`.** A context path prefixes `/actuator` too, and health and metrics
+  are neither versioned nor service-scoped — AD-54 fixes them at `/actuator/**`. Keep the
+  predicates disjoint: `RequestMappingHandlerMapping.getPathPrefix` returns the **first** entry
+  whose predicate matches, iterating the map in insertion order (bytecode, 2026-09-13). A v2 is one
+  more line there and no edit to v1.
+- **Check presence at the edge; leave range and format to the service that owns the values (D4).**
+  Two copies of a range check is two answers to one question. Presence is not optional at the edge,
+  though: protobuf's generated setters throw `NullPointerException` on a null — verified 2026-09-13
+  against the generated `Coordinates.Builder` — so a null that reaches the stub call leaves as a
+  500 without ever reaching the service that would have judged it.
+- **An absent optional field loses its key, rather than being sent as null.**
+  `spring.jackson.default-property-inclusion=non_absent` is what does it; `non_null` would emit
+  `"eta": null`, and a test asserting on a null value would wave that through.
+
 ## Boot 4.1 / Java 25 — these contradict most existing guidance
 
 Each looks like a mistake to anyone working from Boot 3 documentation. None is.
@@ -442,6 +553,19 @@ Each looks like a mistake to anyone working from Boot 3 documentation. None is.
 - **Jackson 3, not 2.** `ObjectMapper` and `JsonNode` are `tools.jackson.databind.*`;
   `com.fasterxml.jackson.databind` is not on the classpath at all. Do not add Jackson 2 to "fix" the
   missing package.
+- **A `@RestControllerAdvice` does not cover 404, 405, 415 or an unreadable body unless it extends
+  `ResponseEntityExceptionHandler`.** Those four are resolved before any handler runs, so they fall
+  through to Boot's default `/error` rendering — plain JSON with no request id, while every path the
+  advice names explicitly looks correct. **And the hook for decorating those bodies is
+  `createResponseEntity`, not `handleExceptionInternal`:** the latter is called with a **null** body
+  and the parent builds the `ProblemDetail` from the `ErrorResponse` afterwards, so an override there
+  silently decorates nothing. Both measured 2026-09-12 during PUB-4-2's code review — the
+  `handleExceptionInternal` version compiled, ran, and left 400/405/415 without the id.
+- **Do not add an `@ExceptionHandler` for a type `ResponseEntityExceptionHandler` already lists.**
+  Two mappings for one type in one class is an `IllegalStateException` at startup, not a silent
+  override. A service's own rejections need their **own exception type** so the advice can echo their
+  message; Spring's binding exceptions get the parent's fixed detail, which is what keeps a framework
+  message naming Java internals off an external wire.
 - **Postgres 18+ mounts at `/var/lib/postgresql`**, not `.../data`, and refuses to start with the old
   path. Its healthcheck needs `pg_isready -h 127.0.0.1` — without `-h` it probes the Unix socket and
   reports healthy during the first-start `initdb`.

@@ -5,39 +5,23 @@ import io.grpc.Metadata;
 import io.grpc.ServerCall;
 import io.grpc.ServerCallHandler;
 import io.grpc.ServerInterceptor;
-import java.util.UUID;
 import org.slf4j.MDC;
 import org.springframework.grpc.server.GlobalServerInterceptor;
 import org.springframework.stereotype.Component;
 
-/**
- * AD-54: every log line a call produces carries the caller's request id. AD-5: a surface the
- * gateway does not front mints its own when none arrives, so no call is ever untraceable.
- */
+/** Mints or forwards the request id for every gRPC call. See project-context.md, AD-54. */
 @Component
 @GlobalServerInterceptor
 public class RequestIdServerInterceptor implements ServerInterceptor {
 
-    public static final String REQUEST_ID_HEADER = "x-request-id";
-
-    private static final String MDC_KEY = "requestId";
-
-    /**
-     * gRPC rejects an uppercase metadata key at construction, so the lowercase spelling matters.
-     */
-    private static final Metadata.Key<String> REQUEST_ID =
-            Metadata.Key.of(REQUEST_ID_HEADER, Metadata.ASCII_STRING_MARSHALLER);
-
     @Override
     public <R, S> ServerCall.Listener<R> interceptCall(
             ServerCall<R, S> call, Metadata headers, ServerCallHandler<R, S> next) {
-        String incoming = headers.get(REQUEST_ID);
-        String requestId =
-                incoming == null || incoming.isBlank() ? UUID.randomUUID().toString() : incoming;
+        String incoming = headers.get(RequestId.METADATA_KEY);
+        String requestId = incoming == null || incoming.isBlank() ? RequestId.mint() : incoming;
 
-        // The wrapping goes on the LISTENER, not around startCall. startCall only builds the
-        // listener; the service method itself runs later, from onHalfClose -- so setting the id
-        // around startCall would leave it unset exactly where the logging happens.
+        // Wrap the listener, not startCall: startCall only builds the listener, and the service
+        // method itself runs later, from onHalfClose.
         return new SimpleForwardingServerCallListener<>(next.startCall(call, headers)) {
             @Override
             public void onMessage(R message) {
@@ -66,17 +50,13 @@ public class RequestIdServerInterceptor implements ServerInterceptor {
         };
     }
 
-    /**
-     * Set and cleared around each callback, because gRPC can deliver them on different pooled
-     * threads. Cleared in a finally: a pooled thread otherwise carries this id into the next call's
-     * logs, which is worse than no id at all.
-     */
+    /** Around each callback, because gRPC can deliver them on different pooled threads. */
     private static void carrying(String requestId, Runnable work) {
-        MDC.put(MDC_KEY, requestId);
+        MDC.put(RequestId.MDC_KEY, requestId);
         try {
             work.run();
         } finally {
-            MDC.remove(MDC_KEY);
+            MDC.remove(RequestId.MDC_KEY);
         }
     }
 }

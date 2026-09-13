@@ -221,6 +221,30 @@ class ArchitectureRulesTest {
                             "AD-9: shared is the bottom of shared <- fare <- ride <- dispatch <- quote")
                     .allowEmptyShould(true);
 
+    /**
+     * {@code shared} has to stay liftable into the next service: nothing in it may name something
+     * only this service has, whatever layer that thing sits in.
+     *
+     * <p>Beside {@link #sharedDependsOnNoFeaturePackage} rather than instead of it. That one is
+     * AD-9's feature order and still binds; this one is stronger in a different direction, because
+     * {@code config} and {@code controller} are not features and the feature clause never looked at
+     * them.
+     */
+    @ArchTest
+    static final ArchRule sharedDependsOnNothingElseInThisService =
+            noClasses()
+                    .that()
+                    .resideInAPackage(MATCHING + "shared..")
+                    .should()
+                    .dependOnClassesThat(
+                            resideInAPackage(MATCHING + ".")
+                                    .and(not(resideInAPackage(MATCHING + "shared..")))
+                                    .as("anything else in this service"))
+                    .because(
+                            "shared is copied per service, so it may name nothing that only this"
+                                    + " service has")
+                    .allowEmptyShould(true);
+
     /** AD-9: the feature packages of matching-service form a one-way order. */
     @ArchTest
     static final ArchRule featureDependenciesRunOneWay =

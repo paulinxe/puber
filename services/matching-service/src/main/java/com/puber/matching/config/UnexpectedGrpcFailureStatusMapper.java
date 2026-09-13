@@ -9,14 +9,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * The last word on any failure no feature claimed, so a broken deployment is loud instead of blank.
- *
- * <p>Without this, spring-grpc's own fallback calls {@code Status.fromThrowable}, which returns
- * {@code UNKNOWN.withCause(t)} -- and the cause is not serialized, so the caller gets UNKNOWN with
- * a null description. That fallback's only log call is guarded by {@code isDebugEnabled()}, so at
- * the default INFO level nothing reaches the log either. An empty {@code fare_rules} table reaches
- * this path today: {@code FareRuleRepository} throws {@code IllegalStateException}.
- *
- * <p>The description is fixed text, never the exception's own message: the detail belongs in this
+ * Without it the caller gets UNKNOWN with no description and nothing is logged -- see
+ * project-context.md, "The gRPC server". The description is fixed text: the detail belongs in this
  * service's log, not on a wire an external caller reads.
  */
 @Component

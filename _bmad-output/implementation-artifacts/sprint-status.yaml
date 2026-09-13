@@ -1,5 +1,5 @@
 # generated: 2026-08-17
-# last_updated: 2026-09-11 (PUB-4-2 reviewed by the repo owner and released to dev; PUB-4 umbrella in-progress until 4-3 lands)
+# last_updated: 2026-09-12 (PUB-4-2 code-reviewed, 12 patches applied, done; PUB-4 umbrella stays in-progress until 4-3 lands)
 # project: puber
 # project_key: PUB
 # tracking_system: file-system
@@ -66,7 +66,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-08-17
-last_updated: 2026-09-11
+last_updated: 2026-09-12
 project: puber
 project_key: PUB
 tracking_system: file-system
@@ -95,7 +95,7 @@ development_status:
   # interceptor wired in `GrpcClientConfiguration`; the decisions section frozen with its reasoning
   # split into Appendix A; `model/Quote`'s ETA pinned to `OptionalLong`; and `matching-service` stubbed
   # rather than called in tests -- which narrowed a rule in AGENTS.md and project-context.md.
-  PUB-4-2-rider-service-delivers-the-quote: ready-for-dev  # Story 1.4, slice 2 of 3 -- owner-reviewed 2026-09-11
+  PUB-4-2-rider-service-delivers-the-quote: done  # Story 1.4, slice 2 of 3 -- code-reviewed 2026-09-12
   PUB-4-3-the-gateway-is-the-front-door: backlog  # Story 1.4, slice 3 of 3 -- file written, awaiting review
   # Added 2026-08-26. Sequenced after all of PUB-4, so it covers both services.
   # JSpecify annotations + an ArchUnit coverage rule. Adds no nullness checker -- see the story.
@@ -214,3 +214,18 @@ action_items:
       FareRule is read from NOT NULL columns, so it becomes real only if a second construction site
       appears -- whoever adds one owns the guard. Notes are in the Story 2.3 and Story 4.7 sections of
       the epic files; detail is in implementation-artifacts/deferred-work.md
+  - id: AI-4
+    status: open
+    raised_by: PUB-4-2
+    raised_on: 2026-09-12
+    target: PUB-4-3
+    summary: >-
+      Nothing proves rider-service and matching-service still agree on BEHAVIOUR. PUB-4-2 stubs
+      matching-service in-process against contracts/proto (project-context.md -> "Own datastores are
+      real. Another service is stubbed."), so the two cannot drift in SHAPE -- both compile against the
+      same proto -- but nothing exercises the real pair. PUB-4-3 must close it with ONE end-to-end test,
+      which costs almost nothing there because that slice brings the whole stack up for the gateway
+      anyway: HAProxy -> rider-service -> matching-service, one real quote, asserting the fare and
+      distance a real fare_rules row produces. Do not close it a second time inside either service's own
+      suite -- that is exactly what the stub rule removed. Detail and the argument are in
+      implementation-artifacts/PUB-4-2-rider-service-delivers-the-quote.md (D7, Honest limits, Appendix A8)
