@@ -201,13 +201,12 @@ class ArchitectureRulesTest {
                     .allowEmptyShould(true);
 
     /**
-     * {@code shared} holds the conventions every service's edge implements identically, so it has
-     * to stay liftable into the next service: one directory to copy, one package line to change.
+     * {@code shared} has to stay liftable: nothing in it may name something only this service has.
      *
      * <p>Stronger than matching-service's {@code sharedDependsOnNoFeaturePackage}, which forbids a
      * dependency on a <em>feature</em> -- this service has none. The moment {@code
-     * ErrorDetailsHandler} names {@code Quote}, the directory stops being liftable and nobody finds
-     * out until they try.
+     * InvalidRequestException} names {@code Quote}, the directory stops being liftable and nobody
+     * finds out until they try.
      */
     @ArchTest
     static final ArchRule sharedDependsOnNothingElseInThisService =

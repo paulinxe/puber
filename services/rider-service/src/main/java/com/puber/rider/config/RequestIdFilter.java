@@ -1,4 +1,4 @@
-package com.puber.rider.shared;
+package com.puber.rider.config;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -9,10 +9,7 @@ import org.slf4j.MDC;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-/**
- * AD-54: every log line a request produces carries the caller's request id. AD-5: a surface the
- * gateway does not front mints its own when none arrives, so no request is ever untraceable.
- */
+/** Mints or forwards the request id for every HTTP request. See project-context.md, AD-54. */
 @Component
 public class RequestIdFilter extends OncePerRequestFilter {
 
@@ -28,8 +25,6 @@ public class RequestIdFilter extends OncePerRequestFilter {
         try {
             chain.doFilter(request, response);
         } finally {
-            // A pooled request thread otherwise carries this id into the next request's logs,
-            // which is worse than no id at all.
             MDC.remove(RequestId.MDC_KEY);
         }
     }

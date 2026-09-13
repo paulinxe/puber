@@ -222,9 +222,8 @@ class ArchitectureRulesTest {
                     .allowEmptyShould(true);
 
     /**
-     * {@code shared} also holds the conventions every service's edge implements identically --
-     * {@code RequestId} and the two interceptors -- and those have to stay liftable into the next
-     * service: one directory to copy, one package line to change.
+     * {@code shared} has to stay liftable into the next service: nothing in it may name something
+     * only this service has, whatever layer that thing sits in.
      *
      * <p>Beside {@link #sharedDependsOnNoFeaturePackage} rather than instead of it. That one is
      * AD-9's feature order and still binds; this one is stronger in a different direction, because

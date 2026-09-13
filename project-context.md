@@ -95,16 +95,29 @@ four private `Coordinate` types in one JVM is a convention nobody can enforce.
 **In a layered service `shared` means the same thing with different surroundings.** `rider-service`
 has no features (AD-9 scopes the feature split to `matching-service`), so "the bottom of the feature
 order" does not describe it. The membership test is unchanged — *does the type encode a convention?*
-— but what it collects there is **the conventions every service's edge implements identically**: the
-request id and the error vocabulary. Copied per service, never extracted into a library.
+— but what it collects there is **the types this service's own code calls directly**, such as the
+exception a controller throws for a request it rejected itself.
 
-**`shared`'s root holds cross-cutting plumbing; its sub-packages hold layer-shaped content.** That is
-why `RequestId` sits beside `shared/model/Money` rather than inside it — `model` is a layer and
-`RequestId` is not domain. Sub-layer only when a class genuinely belongs to a layer.
+**A class only the framework ever calls belongs in `config`, not `shared`** (PUB-4-2). Filters,
+interceptors, `@RestControllerAdvice`es and the constants they alone spell are wiring: nothing in
+the service calls them, Spring or spring-grpc does. That is why the request id classes and both
+error mappers live in `config` — `config/RequestId`, `config/RequestIdFilter`,
+`config/RequestIdClientInterceptor` in `rider-service`; `config/RequestId`,
+`config/RequestIdServerInterceptor`, `config/UnexpectedGrpcFailureStatusMapper` in
+`matching-service`; and `config/ErrorDetailsHandler`, which names the gRPC statuses this service's
+own upstream can return and is therefore about this service, not a convention.
 
-**Copying `shared` is not enough on its own: not every class in it self-registers.** The HTTP-edge
-classes carry their own stereotype (`RequestIdFilter` is a `@Component`, `ErrorDetailsHandler` a
-`@RestControllerAdvice`) and the gRPC *server* interceptor carries `@GlobalServerInterceptor`. The
+Another service usually needs the same convention and writes its own version; that is not a rule,
+and the copies are **not** required to match. Never extracted into a library, and never kept in step
+for its own sake — a constant no code in this service spells is deleted, not commented.
+
+**`shared`'s root holds what is not layer-shaped; its sub-packages hold what is.** `InvalidRequestException`
+sits beside `shared/model/Money` rather than inside it — `model` is a layer and an exception is not
+domain. Sub-layer only when a class genuinely belongs to a layer.
+
+**Copying these classes is not enough on its own: not every one of them self-registers.** The
+HTTP-edge classes carry their own stereotype (`RequestIdFilter` is a `@Component`,
+`ErrorDetailsHandler` a `@RestControllerAdvice`) and the gRPC *server* interceptor carries `@GlobalServerInterceptor`. The
 gRPC **client** interceptor carries nothing: it attaches to a channel, and the channel is what the
 receiving service's own `GrpcClientConfiguration` configures, so it is declared there as a
 `@Bean @GlobalClientInterceptor`. **Drop that annotation and the failure is silent** — the bean is
@@ -230,9 +243,11 @@ rule.** The rule is the paragraph above, and it is on whoever writes the SQL and
 
 ## The request id, end to end (AD-54)
 
-One id per request, on every log line of every hop. The four names it is spelled with — the HTTP
-header, the gRPC metadata key, the MDC key, and the `%X{...}` the log pattern reads — live in one
-`shared/RequestId` per service, and **nothing else in a service spells any of them**. A mismatch is
+One id per request, on every log line of every hop. The names it is spelled with — the HTTP header,
+the gRPC metadata key, the MDC key, and the `%X{...}` the log pattern reads — live in one
+`config/RequestId` per service, and **nothing else in a service spells any of them**. A service
+carries only the names it actually uses: `matching-service` has no HTTP edge, so its copy has no
+header constant. A mismatch is
 silent: the filter writes MDC under one name, the pattern reads another, every line shows a blank id
 and every test still passes.
 
@@ -471,7 +486,11 @@ every service rather than none. `pre-push` needs no case — it already runs eve
 - **A gRPC test uses the in-process transport**, `@AutoConfigureTestGrpcTransport` plus the
   auto-configured `GrpcChannelFactory`. That is the honest subject — the service implementation, the
   interceptors and the status mapping — and asserts nothing about networking.
-- **gRPC metadata keys must be lowercase.** `Metadata.Key.of` throws at construction otherwise.
+- **Spell metadata keys lowercase, but do not expect a guard.** `Metadata.Key.of` *lowercases* the
+  name it is given; it does not reject an uppercase one. Verified 2026-09-13 against
+  `grpc-api-1.80.0` — `Metadata.Key.of("X-Request-Id", ASCII_STRING_MARSHALLER).name()` returns
+  `x-request-id`. It throws only for a `-bin` suffix with the ASCII marshaller. A PUB-4-2 comment
+  claimed the opposite and was believed through a code review.
 - **A `ServerInterceptor` that sets the MDC must wrap the *listener*, not just `interceptCall`.**
   `startCall` only builds the listener; the service method runs later, from `onHalfClose`. Clearing
   the MDC in `interceptCall`'s `finally` leaves it unset exactly where the logging happens.
@@ -489,6 +508,33 @@ every service rather than none. `pre-push` needs no case — it already runs eve
   Verified from the bytecode of `spring-grpc-core-1.1.0.jar` and `grpc-api` on 2026-08-26, after a
   comment claiming the opposite shipped in PUB-4-1. A last-resort handler that logs and returns
   `INTERNAL` is why `config/UnexpectedGrpcFailureStatusMapper` exists.
+
+## The gRPC client (PUB-4-2)
+
+- **A `ClientInterceptor` bean is attached by `@GlobalClientInterceptor`, not by its type.**
+  `ClientInterceptorsConfigurer.findGlobalInterceptors` asks the context for beans *with that
+  annotation* — verified from the bytecode of `spring-grpc-core-1.1.0.jar` on 2026-09-13. Without
+  it the bean is built and never attached to a channel: nothing is logged, and nothing goes red
+  except a test asserting the request id crossed the hop.
+- **Import stubs by type**, `@ImportGrpcClients(target = ..., types = ...)`, not by package scan, so
+  a contract that grows a second service does not silently import stubs nothing asked for.
+
+## The HTTP edge (PUB-4-2)
+
+- **Version prefixes come from `PathMatchConfigurer.addPathPrefix`, never
+  `server.servlet.context-path`.** A context path prefixes `/actuator` too, and health and metrics
+  are neither versioned nor service-scoped — AD-54 fixes them at `/actuator/**`. Keep the
+  predicates disjoint: `RequestMappingHandlerMapping.getPathPrefix` returns the **first** entry
+  whose predicate matches, iterating the map in insertion order (bytecode, 2026-09-13). A v2 is one
+  more line there and no edit to v1.
+- **Check presence at the edge; leave range and format to the service that owns the values (D4).**
+  Two copies of a range check is two answers to one question. Presence is not optional at the edge,
+  though: protobuf's generated setters throw `NullPointerException` on a null — verified 2026-09-13
+  against the generated `Coordinates.Builder` — so a null that reaches the stub call leaves as a
+  500 without ever reaching the service that would have judged it.
+- **An absent optional field loses its key, rather than being sent as null.**
+  `spring.jackson.default-property-inclusion=non_absent` is what does it; `non_null` would emit
+  `"eta": null`, and a test asserting on a null value would wave that through.
 
 ## Boot 4.1 / Java 25 — these contradict most existing guidance
 

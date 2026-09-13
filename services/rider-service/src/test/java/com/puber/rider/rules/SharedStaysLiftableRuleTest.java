@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.puber.rider.model.Quote;
-import com.puber.rider.shared.RequestId;
+import com.puber.rider.shared.InvalidRequestException;
 import com.puber.rider.shared.SharedTypeThatDependsOnThisService;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
@@ -47,7 +47,7 @@ class SharedStaysLiftableRuleTest {
     @Test
     @DisplayName("AC11: a shared type naming only shared is accepted")
     void accepts_shared_that_depends_on_nothing_else() {
-        JavaClasses shared = new ClassFileImporter().importClasses(RequestId.class);
+        JavaClasses shared = new ClassFileImporter().importClasses(InvalidRequestException.class);
 
         ArchitectureRulesTest.sharedDependsOnNothingElseInThisService.check(shared);
     }

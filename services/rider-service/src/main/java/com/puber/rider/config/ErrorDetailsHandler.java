@@ -1,5 +1,6 @@
-package com.puber.rider.shared;
+package com.puber.rider.config;
 
+import com.puber.rider.shared.InvalidRequestException;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import org.slf4j.Logger;
@@ -16,33 +17,23 @@ import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 /**
- * AD-38's one error vocabulary, mapped at the facade: every failure leaves this service as RFC 9457
- * Problem Details carrying the request id, never as a stack trace.
- *
- * <p>Extends {@code ResponseEntityExceptionHandler} so the statuses Spring resolves before any
- * handler runs -- 404, 405, 415, an unreadable body -- are Problem Details too. Without it those
- * four fall through to Boot's default {@code /error} rendering, which is plain JSON with no request
- * id, and only the paths this class names explicitly satisfy AC4b. Do not add an
- * {@code @ExceptionHandler} for a type that parent already lists: two mappings for one type in one
- * class is an {@code IllegalStateException} at startup, not a silent override.
- *
- * <p>Only the gRPC statuses something can actually produce today are mapped. {@code NOT_FOUND},
- * {@code ALREADY_EXISTS} and {@code FAILED_PRECONDITION} arrive with the stories that create rides;
- * a mapping with no producer is a guard guarding nothing.
+ * Turns every failure into RFC 9457 Problem Details carrying the request id, never a stack trace
+ * (AD-38). The parent class is what covers 404, 405, 415 and an unreadable body -- see
+ * project-context.md, "Boot 4.1 / Java 25", before adding a handler here.
  */
 @RestControllerAdvice
-public class ErrorDetailsHandler extends ResponseEntityExceptionHandler {
+class ErrorDetailsHandler extends ResponseEntityExceptionHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ErrorDetailsHandler.class);
 
     /** A request this service rejected itself, so the message is ours and is safe to echo. */
     @ExceptionHandler(InvalidRequestException.class)
-    public ProblemDetail handleInvalidRequest(InvalidRequestException rejected) {
+    ProblemDetail handleInvalidRequest(InvalidRequestException rejected) {
         return problem(HttpStatus.BAD_REQUEST, rejected.getMessage());
     }
 
     @ExceptionHandler(StatusRuntimeException.class)
-    public ProblemDetail handleUpstreamFailure(StatusRuntimeException rejected) {
+    ProblemDetail handleUpstreamFailure(StatusRuntimeException rejected) {
         Status status = rejected.getStatus();
         return switch (status.getCode()) {
             // matching-service names the offending field in the description, and that is the only
@@ -63,13 +54,8 @@ public class ErrorDetailsHandler extends ResponseEntityExceptionHandler {
     }
 
     /**
-     * The one place every Problem Details body the parent produces passes through, so the request
-     * id is attached once rather than per overridden handler.
-     *
-     * <p>Not {@code handleExceptionInternal}: it is called with a null body, and the parent builds
-     * the {@code ProblemDetail} from the {@code ErrorResponse} only afterwards. Measured on
-     * 2026-09-12 -- overriding that one left the 400, 405 and 415 bodies with no id while still
-     * looking correct.
+     * Every body the parent produces passes through here, so the id is attached once. Not {@code
+     * handleExceptionInternal} -- see project-context.md, "Boot 4.1 / Java 25".
      */
     @Override
     protected ResponseEntity<Object> createResponseEntity(

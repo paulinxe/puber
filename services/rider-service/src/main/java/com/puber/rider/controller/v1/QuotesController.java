@@ -12,7 +12,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Served at {@code /rider/v1/quotes}; the prefix comes from {@code ApiVersionConfiguration}. */
 @RestController
 public class QuotesController {
 
@@ -52,12 +51,8 @@ public class QuotesController {
     }
 
     /**
-     * Presence only, never range or format -- D4 leaves those to {@code matching-service}'s own
-     * value types, and two copies of a range check is two answers to one question.
-     *
-     * <p>The two string fields are checked, not just the object holding them: protobuf's generated
-     * setter throws {@code NullPointerException} on a null, so a null that reaches {@code
-     * RequestQuote} never gets as far as the service D4 assigns it to, and leaves as a 500.
+     * Presence only: range and format belong to matching-service (D4). Each string is checked, not
+     * just the object holding them -- see project-context.md, "The HTTP edge".
      */
     private static void requireCoordinates(QuoteRequest.Coordinates point, String side) {
         if (point == null) {

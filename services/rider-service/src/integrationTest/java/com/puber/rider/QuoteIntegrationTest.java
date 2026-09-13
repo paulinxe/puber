@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.puber.contracts.quote.v1.GetQuoteRequest;
-import com.puber.rider.shared.RequestId;
+import com.puber.rider.config.RequestId;
 import com.puber.rider.support.StubQuoteService;
 import io.grpc.Status;
 import org.junit.jupiter.api.BeforeEach;
@@ -91,8 +91,6 @@ class QuoteIntegrationTest {
         JsonNode body = json(response);
         assertEquals(STUBBED_FARE_MINOR_UNITS, body.path("fare").asLong());
         assertEquals(STUBBED_DISTANCE_METRES, body.path("distance").asLong());
-        // The key's absence, not a null value: `non_null` would emit "eta":null and an
-        // assertion on null would wave that through.
         assertFalse(
                 body.has("eta"),
                 () ->

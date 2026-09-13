@@ -1,4 +1,4 @@
-package com.puber.rider.shared;
+package com.puber.rider.config;
 
 import io.grpc.CallOptions;
 import io.grpc.Channel;
@@ -10,13 +10,10 @@ import io.grpc.MethodDescriptor;
 import org.slf4j.MDC;
 
 /**
- * AD-54: the request id crosses the gRPC hop, so one id traces a rider's request through both
- * services.
+ * Carries the request id across the gRPC hop. See project-context.md, AD-54.
  *
- * <p>Carries no stereotype on purpose. A {@code ClientInterceptor} attaches to a channel, and the
- * channel is what {@code GrpcClientConfiguration} configures, so it is declared as a {@code @Bean}
- * there -- with {@code @GlobalClientInterceptor}, without which the bean is built and never
- * attached.
+ * <p>No stereotype here on purpose: it is declared as a {@code @Bean} in {@code
+ * GrpcClientConfiguration}, where the channel it attaches to is configured.
  */
 public class RequestIdClientInterceptor implements ClientInterceptor {
 
